@@ -624,6 +624,19 @@ input[type="range"] {
   margin-top: 14px;
 }
 
+.bento-row-2 {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.meter-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
 @media (max-width: 1180px) {
   .hero-grid {
     grid-template-columns: 1fr;
@@ -634,7 +647,8 @@ input[type="range"] {
 }
 
 @media (max-width: 780px) {
-  .bento-row-3 {
+  .bento-row-3,
+  .bento-row-2 {
     grid-template-columns: 1fr;
   }
 }

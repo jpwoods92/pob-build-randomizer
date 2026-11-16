@@ -350,8 +350,6 @@ async function main() {
             ${b.tree.summary.keystones.includes('Chaos Inoculation')
               ? meterHtml('Chaos Resistance (CI)', 'Immune (CI)', 100, '#8b5cf6')
               : meterHtml('Chaos Resistance (post-Kitava)', `${Math.min(75, r.chaos)}% / 75% (${r.chaos}%)`, (Math.max(0, r.chaos) / 75) * 100, '#8b5cf6')}
-            ${meterHtml('Strength / Dexterity', `${at.str}(${req.str}) · ${at.dex}(${req.dex})`, Math.min(100, (at.str / Math.max(1, req.str)) * 50 + (at.dex / Math.max(1, req.dex)) * 50), 'var(--lime)')}
-            ${meterHtml('Intelligence vs Gem Req', `${at.int} / ${req.int} req`, (at.int / Math.max(1, req.int)) * 100, 'var(--emerald)')}
           </div>
         </div>
 
@@ -380,7 +378,22 @@ async function main() {
         </div>
       </div>
 
-      <div class="bento-row-3">
+      <div class="bento-row-2">
+        <div class="bento-card">
+          <div class="card-head">
+            <div>
+              <h3>Attribute Requirements</h3>
+              <p class="card-sub">Total attributes vs highest gem requirement</p>
+            </div>
+            <span class="badge">${at.str >= req.str && at.dex >= req.dex && at.int >= req.int ? 'All Met' : 'Deficit'}</span>
+          </div>
+          <div class="meter-stack">
+            ${meterHtml('Strength', `${at.str} / ${req.str} req`, req.str > 0 ? (at.str / req.str) * 100 : 100, 'var(--gem-r)')}
+            ${meterHtml('Dexterity', `${at.dex} / ${req.dex} req`, req.dex > 0 ? (at.dex / req.dex) * 100 : 100, 'var(--gem-g)')}
+            ${meterHtml('Intelligence', `${at.int} / ${req.int} req`, req.int > 0 ? (at.int / req.int) * 100 : 100, 'var(--gem-b)')}
+          </div>
+        </div>
+
         <div class="bento-card">
           <div class="card-head">
             <div>
