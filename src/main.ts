@@ -6,13 +6,39 @@ import type { BuildOptions, DamageStyle, DefenseStyle, EconomyMode, LeagueMode }
 import type { GameData } from './lib/types.ts';
 import { TreeCanvas } from './components/TreeCanvas.ts';
 
+type ThemePref = 'system' | 'light' | 'dark';
+type NavView = 'dashboard' | 'tree' | 'skills' | 'gear' | 'export';
+
+const THEME_STORAGE_KEY = 'pob-randomizer-theme';
+
 function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+function getSavedTheme(): ThemePref {
+  try {
+    const v = localStorage.getItem(THEME_STORAGE_KEY);
+    if (v === 'light' || v === 'dark' || v === 'system') return v;
+  } catch {
+    // ignore storage errors
+  }
+  return 'system';
+}
+
+function resolveIsDark(pref: ThemePref, media: MediaQueryList): boolean {
+  if (pref === 'dark') return true;
+  if (pref === 'light') return false;
+  return media.matches;
+}
+
 async function main() {
+  const media = window.matchMedia('(prefers-color-scheme: dark)');
+  let themePref: ThemePref = getSavedTheme();
+  let isDark = resolveIsDark(themePref, media);
+  document.documentElement.dataset.theme = isDark ? 'dark' : 'light';
+
   const root = document.getElementById('app')!;
-  root.innerHTML = `<div class="loading">Loading Path of Exile 3.30 tree, gems, bases, mods & uniques...</div>`;
+  root.innerHTML = `<div class="loading">Loading Path of Exile 3.30 tree, gems, bases, mods &amp; uniques...</div>`;
 
   const data: GameData = await loadGameData();
 
@@ -27,117 +53,162 @@ async function main() {
     defenseStyle: 'random',
   };
 
-  let activeTab: 'tree' | 'skills' | 'gear' | 'export' = 'tree';
+  let activeView: NavView = 'dashboard';
   let currentBuild: GeneratedBuild | null = null;
   let treeCanvas: TreeCanvas | null = null;
 
   root.innerHTML = `
-    <div class="layout">
+    <div class="layout" id="app-layout">
       <aside class="sidebar">
         <div class="brand">
-          <h1>PoB Build Randomizer</h1>
-          <p>Path of Exile 1 (3.30) · Full Tree, Gems &amp; Gear</p>
-        </div>
-
-        <div class="knob">
-          <div class="knob-label">League Mode</div>
-          <div class="segmented" id="league-seg">
-            <button type="button" data-mode="softcore" class="active">Softcore</button>
-            <button type="button" data-mode="hardcore">Hardcore</button>
-          </div>
-          <div class="knob-hint" id="league-hint">Balanced offense &amp; crit scaling, full unique pool.</div>
-        </div>
-
-        <div class="knob">
-          <div class="knob-label">Economy</div>
-          <div class="segmented" id="eco-seg">
-            <button type="button" data-eco="ssf">SSF</button>
-            <button type="button" data-eco="trade" class="active">Trade</button>
-          </div>
-          <div class="knob-hint" id="eco-hint">Endgame rares, chase uniques &amp; Awakened supports enabled.</div>
-        </div>
-
-        <div class="knob">
-          <label for="class-select">Class</label>
-          <select id="class-select">
-            <option value="random">Random Class</option>
-            ${data.tree.classes.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}
-          </select>
-        </div>
-
-        <div class="knob">
-          <label for="asc-select">Ascendancy</label>
-          <select id="asc-select" disabled>
-            <option value="random">Random Ascendancy</option>
-          </select>
-        </div>
-
-        <div class="knob">
-          <label for="style-select">Damage Archetype</label>
-          <select id="style-select">
-            <option value="random">Random Style</option>
-            <option value="attack">Attack</option>
-            <option value="spell">Spell</option>
-            <option value="minion">Minion</option>
-            <option value="totem">Totem</option>
-            <option value="trap_mine">Trap / Mine</option>
-            <option value="dot">Damage Over Time</option>
-          </select>
-        </div>
-
-        <div class="knob">
-          <label for="def-select">Defense Layer</label>
-          <select id="def-select">
-            <option value="random">Random Defense</option>
-            <option value="life">Life</option>
-            <option value="es">Energy Shield (CI)</option>
-            <option value="hybrid">Hybrid Life + ES</option>
-          </select>
-        </div>
-
-        <div class="knob">
-          <label for="level-range">Target Level: <span id="level-val">92</span></label>
-          <input type="range" id="level-range" min="80" max="100" value="92" />
-        </div>
-
-        <div class="knob">
-          <label for="seed-input">Build Seed</label>
-          <div class="seed-row">
-            <input type="text" id="seed-input" value="${esc(options.seed)}" />
-            <button type="button" class="btn" id="apply-seed-btn">Apply</button>
+          <div class="brand-mark">PoB</div>
+          <div class="brand-text">
+            <h1>PoB Forge</h1>
+            <p>PoE 1 (3.30) Randomizer</p>
           </div>
         </div>
 
-        <button type="button" class="btn btn-primary btn-full" id="reroll-btn">Randomize New Build</button>
+        <nav class="nav-list" id="sidebar-nav">
+          <button type="button" class="nav-item active" data-view="dashboard">
+            <span class="nav-icon">⊞</span>
+            <span class="nav-label">Dashboard</span>
+          </button>
+          <button type="button" class="nav-item" data-view="tree">
+            <span class="nav-icon">⑂</span>
+            <span class="nav-label">Passive Tree</span>
+            <span class="nav-pill" id="nav-pts-pill">115</span>
+          </button>
+          <button type="button" class="nav-item" data-view="skills">
+            <span class="nav-icon">✦</span>
+            <span class="nav-label">Skills &amp; Gems</span>
+            <span class="nav-pill" id="nav-links-pill">6L</span>
+          </button>
+          <button type="button" class="nav-item" data-view="gear">
+            <span class="nav-icon">◈</span>
+            <span class="nav-label">Gear &amp; Flasks</span>
+          </button>
+          <button type="button" class="nav-item" data-view="export">
+            <span class="nav-icon">⇄</span>
+            <span class="nav-label">PoB Export</span>
+          </button>
+        </nav>
+
+        <div class="sidebar-section">
+          <div class="section-caption">Build Knobs</div>
+
+          <div class="knob">
+            <div class="knob-label">League Mode</div>
+            <div class="segmented" id="league-seg">
+              <button type="button" data-mode="softcore" class="active">Softcore</button>
+              <button type="button" data-mode="hardcore">Hardcore</button>
+            </div>
+          </div>
+
+          <div class="knob">
+            <div class="knob-label">Economy</div>
+            <div class="segmented" id="eco-seg">
+              <button type="button" data-eco="ssf">SSF</button>
+              <button type="button" data-eco="trade" class="active">Trade</button>
+            </div>
+          </div>
+
+          <div class="knob-row">
+            <div class="knob">
+              <label for="class-select">Class</label>
+              <select id="class-select">
+                <option value="random">Random</option>
+                ${data.tree.classes.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}
+              </select>
+            </div>
+            <div class="knob">
+              <label for="asc-select">Ascendancy</label>
+              <select id="asc-select" disabled>
+                <option value="random">Random</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="knob-row">
+            <div class="knob">
+              <label for="style-select">Style</label>
+              <select id="style-select">
+                <option value="random">Random</option>
+                <option value="attack">Attack</option>
+                <option value="spell">Spell</option>
+                <option value="minion">Minion</option>
+                <option value="totem">Totem</option>
+                <option value="trap_mine">Trap / Mine</option>
+                <option value="dot">DoT</option>
+              </select>
+            </div>
+            <div class="knob">
+              <label for="def-select">Defense</label>
+              <select id="def-select">
+                <option value="random">Random</option>
+                <option value="life">Life</option>
+                <option value="es">ES (CI)</option>
+                <option value="hybrid">Hybrid</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="knob">
+            <label for="level-range"><span>Target Level</span><span id="level-val">92</span></label>
+            <input type="range" id="level-range" min="80" max="100" value="92" />
+          </div>
+        </div>
+
+        <div class="promo-card">
+          <h3>Roll a New Build</h3>
+          <p id="sidebar-knob-summary">Softcore · Trade · Level 92</p>
+          <button type="button" class="promo-btn" id="reroll-btn">Randomize Build</button>
+        </div>
+
+        <button type="button" class="collapse-btn" id="collapse-btn">
+          <span>«</span>
+          <span class="collapse-label">Collapse sidebar</span>
+        </button>
       </aside>
 
       <main class="workspace">
-        <section class="build-header" id="build-header"></section>
+        <header class="topbar">
+          <div class="seed-search">
+            <span>Seed</span>
+            <input type="text" id="seed-input" value="${esc(options.seed)}" aria-label="Build seed" />
+            <button type="button" class="btn btn-sm" id="apply-seed-btn">Apply</button>
+          </div>
 
-        <nav class="tabs" id="tabs-nav">
-          <button type="button" class="tab-btn active" data-tab="tree">Passive Tree</button>
-          <button type="button" class="tab-btn" data-tab="skills">Skills &amp; Gems</button>
-          <button type="button" class="tab-btn" data-tab="gear">Gear, Flasks &amp; Jewels</button>
-          <button type="button" class="tab-btn" data-tab="export">PoB Code &amp; XML</button>
-        </nav>
+          <div class="topbar-actions">
+            <div class="theme-switch" id="theme-switch" title="Color Theme">
+              <button type="button" data-theme-pref="system">Auto</button>
+              <button type="button" data-theme-pref="light">Light</button>
+              <button type="button" data-theme-pref="dark">Dark</button>
+            </div>
+            <button type="button" class="btn btn-cta" id="copy-pob-btn">Copy PoB Code</button>
+            <button type="button" class="btn" id="download-xml-btn">Download .xml</button>
+            <a class="btn" id="official-tree-link" href="#" target="_blank" rel="noreferrer">Official Tree</a>
+          </div>
+        </header>
 
-        <section class="tab-panel active" id="panel-tree">
+        <section class="view-panel active" id="view-dashboard"></section>
+
+        <section class="view-panel" id="view-tree">
           <div class="tree-grid">
             <div id="tree-canvas-host"></div>
             <div class="tree-side" id="tree-side"></div>
           </div>
         </section>
-        <section class="tab-panel" id="panel-skills"></section>
-        <section class="tab-panel" id="panel-gear"></section>
-        <section class="tab-panel" id="panel-export"></section>
+
+        <section class="view-panel" id="view-skills"></section>
+        <section class="view-panel" id="view-gear"></section>
+        <section class="view-panel" id="view-export"></section>
       </main>
     </div>
   `;
 
-  treeCanvas = new TreeCanvas(document.getElementById('tree-canvas-host')!, data.tree);
+  treeCanvas = new TreeCanvas(document.getElementById('tree-canvas-host')!, data.tree, isDark);
 
-  const leagueHint = document.getElementById('league-hint')!;
-  const ecoHint = document.getElementById('eco-hint')!;
+  const layoutEl = document.getElementById('app-layout')!;
   const classSel = document.getElementById('class-select') as HTMLSelectElement;
   const ascSel = document.getElementById('asc-select') as HTMLSelectElement;
   const styleSel = document.getElementById('style-select') as HTMLSelectElement;
@@ -145,26 +216,73 @@ async function main() {
   const levelRange = document.getElementById('level-range') as HTMLInputElement;
   const levelVal = document.getElementById('level-val')!;
   const seedInput = document.getElementById('seed-input') as HTMLInputElement;
+  const knobSummaryEl = document.getElementById('sidebar-knob-summary')!;
+  const officialTreeLink = document.getElementById('official-tree-link') as HTMLAnchorElement;
+
+  function applyTheme(pref: ThemePref) {
+    themePref = pref;
+    try {
+      localStorage.setItem(THEME_STORAGE_KEY, pref);
+    } catch {
+      // ignore
+    }
+    isDark = resolveIsDark(pref, media);
+    document.documentElement.dataset.theme = isDark ? 'dark' : 'light';
+    treeCanvas?.setTheme(isDark);
+    document.querySelectorAll('#theme-switch button').forEach((btn) => {
+      btn.classList.toggle('active', (btn as HTMLElement).dataset.themePref === pref);
+    });
+  }
+
+  media.addEventListener('change', () => {
+    if (themePref === 'system') applyTheme('system');
+  });
+  applyTheme(themePref);
+
+  function switchView(view: NavView) {
+    activeView = view;
+    document.querySelectorAll('#sidebar-nav .nav-item').forEach((b) => {
+      b.classList.toggle('active', (b as HTMLElement).dataset.view === view);
+    });
+    document.querySelectorAll('.view-panel').forEach((p) => {
+      p.classList.toggle('active', p.id === `view-${view}`);
+    });
+    if (view === 'tree') {
+      treeCanvas?.resize();
+      if (currentBuild) treeCanvas?.fitToBuild();
+    }
+  }
 
   function syncAscDropdown() {
     if (options.classId === 'random') {
-      ascSel.innerHTML = `<option value="random">Random Ascendancy</option>`;
+      ascSel.innerHTML = `<option value="random">Random</option>`;
       ascSel.disabled = true;
       options.ascendancyIndex = 'random';
       return;
     }
     const cls = data.tree.classes.find((c) => c.id === options.classId);
     ascSel.disabled = false;
-    ascSel.innerHTML = `<option value="random">Random Ascendancy</option>` +
+    ascSel.innerHTML = `<option value="random">Random</option>` +
       (cls?.ascendancies.map((a) => `<option value="${a.id}">${esc(a.name)}</option>`).join('') ?? '');
     if (options.ascendancyIndex !== 'random') ascSel.value = String(options.ascendancyIndex);
+  }
+
+  function updateSidebarMeta(b: GeneratedBuild) {
+    const modeLabel = options.leagueMode === 'hardcore' ? 'Hardcore' : 'Softcore';
+    const ecoLabel = options.economy === 'ssf' ? 'SSF' : 'Trade';
+    knobSummaryEl.textContent = `${modeLabel} · ${ecoLabel} · Level ${options.level}`;
+    document.getElementById('nav-pts-pill')!.textContent = String(b.tree.pointsUsed);
+    const mainLinks = b.skills.groups[0]?.gems.length ?? 6;
+    document.getElementById('nav-links-pill')!.textContent = `${mainLinks}L`;
+    officialTreeLink.href = b.tree.url;
   }
 
   async function regenerate() {
     seedInput.value = options.seed;
     const build = await generateBuild(data, options);
     currentBuild = build;
-    renderHeader(build);
+    updateSidebarMeta(build);
+    renderDashboard(build);
     renderTreeSide(build);
     renderSkills(build);
     renderGear(build);
@@ -172,85 +290,152 @@ async function main() {
     treeCanvas?.setBuildTree(build.tree);
   }
 
-  function renderHeader(b: GeneratedBuild) {
+  function meterHtml(label: string, valText: string, pct: number, color: string): string {
+    const clamped = Math.max(4, Math.min(100, Math.round(pct)));
+    return `
+      <div class="meter-item">
+        <div class="meter-top">
+          <span>${esc(label)}</span>
+          <span>${esc(valText)}</span>
+        </div>
+        <div class="meter-track">
+          <div class="meter-fill" style="width:${clamped}%;background:${color};"></div>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderDashboard(b: GeneratedBuild) {
     const a = b.archetype;
-    const mainLinks = b.skills.groups[0]?.gems.map((g) => g.gem.name).join(' · ') ?? a.mainSkill.name;
     const r = b.gear.resists;
     const at = b.gear.attributes;
     const req = b.skills.maxReq;
+    const mainGems = b.skills.groups[0]?.gems ?? [];
+    const mainLinksText = mainGems.map((g) => g.gem.name).join(' · ') || a.mainSkill.name;
     const pantheonMaj = data.pantheons.major.find((p) => p.id === a.pantheonMajor)?.name ?? a.pantheonMajor;
     const pantheonMin = data.pantheons.minor.find((p) => p.id === a.pantheonMinor)?.name ?? a.pantheonMinor;
 
-    document.getElementById('build-header')!.innerHTML = `
-      <div class="header-top">
-        <div>
-          <h2 class="build-title">${esc(a.title)}</h2>
-          <p class="build-subtitle">Level ${a.options.level} ${esc(a.classData.name)} (${esc(a.ascendancy.name)}) · ${esc(mainLinks)}</p>
-          <div class="badges">
-            <span class="badge ${a.options.leagueMode === 'hardcore' ? 'badge-hc' : 'badge-sc'}">${esc(a.options.leagueMode)}</span>
-            <span class="badge ${a.options.economy === 'ssf' ? 'badge-ssf' : 'badge-trade'}">${esc(a.options.economy)}</span>
-            <span class="badge">${esc(a.damageStyle)}</span>
-            <span class="badge">${esc(a.defenseStyle)}</span>
-            <span class="badge">${esc(a.critMode === 'crit' ? 'Crit' : a.critMode === 'dot' ? 'DoT' : 'Non-Crit')}</span>
-            <span class="badge">Seed: ${esc(a.options.seed)}</span>
+    const reserved = Math.min(100, b.skills.manaReservedPct);
+    const arcLen = Math.PI * 76; // r=76 semi-circle
+    const dashOffset = arcLen * (1 - reserved / 100);
+    const uniques = b.gear.items.filter((i) => i.rarity === 'UNIQUE');
+    const notablePreview = b.tree.summary.notables.slice(0, 8);
+
+    document.getElementById('view-dashboard')!.innerHTML = `
+      <div class="hero-grid">
+        <div class="bento-card">
+          <div class="card-head">
+            <div>
+              <h2 class="hero-title">${esc(a.title)}</h2>
+              <p class="card-sub">Level ${a.options.level} ${esc(a.classData.name)} (${esc(a.ascendancy.name)}) · ${esc(mainLinksText)}</p>
+              <div class="badges">
+                <span class="badge ${a.options.leagueMode === 'hardcore' ? 'badge-hc' : 'badge-sc'}">${esc(a.options.leagueMode)}</span>
+                <span class="badge ${a.options.economy === 'ssf' ? 'badge-ssf' : 'badge-trade'}">${esc(a.options.economy)}</span>
+                <span class="badge">${esc(a.damageStyle)}</span>
+                <span class="badge">${esc(a.defenseStyle)}</span>
+                <span class="badge">${esc(a.critMode === 'crit' ? 'Crit' : a.critMode === 'dot' ? 'DoT' : 'Non-Crit')}</span>
+              </div>
+            </div>
+            <button type="button" class="btn btn-sm" data-jump="tree">View Tree →</button>
+          </div>
+
+          <div class="meter-list">
+            ${meterHtml('Fire Resistance (post-Kitava)', `${r.fire}% / 75%`, (Math.max(0, r.fire) / 135) * 100, '#ef4444')}
+            ${meterHtml('Cold Resistance (post-Kitava)', `${r.cold}% / 75%`, (Math.max(0, r.cold) / 135) * 100, '#3b82f6')}
+            ${meterHtml('Lightning Resistance (post-Kitava)', `${r.lightning}% / 75%`, (Math.max(0, r.lightning) / 135) * 100, '#eab308')}
+            ${meterHtml('Chaos Resistance (post-Kitava)', `${r.chaos}%`, ((r.chaos + 60) / 135) * 100, '#8b5cf6')}
+            ${meterHtml('Strength / Dexterity', `${at.str}(${req.str}) · ${at.dex}(${req.dex})`, Math.min(100, (at.str / Math.max(1, req.str)) * 50 + (at.dex / Math.max(1, req.dex)) * 50), 'var(--lime)')}
+            ${meterHtml('Intelligence vs Gem Req', `${at.int} / ${req.int} req`, (at.int / Math.max(1, req.int)) * 100, 'var(--emerald)')}
           </div>
         </div>
-        <div class="actions">
-          <button type="button" class="btn btn-primary" id="copy-pob-btn">Copy PoB Import Code</button>
-          <button type="button" class="btn" id="download-xml-btn">Download .xml</button>
-          <a class="btn" href="${esc(b.tree.url)}" target="_blank" rel="noreferrer">Official Tree</a>
+
+        <div class="kpi-stack">
+          <div class="kpi-tile">
+            <div>
+              <div class="kpi-label">Passive Tree Scaling</div>
+              <div class="kpi-value">${b.tree.summary.lifePct}% Life · ${b.tree.summary.esPct}% ES</div>
+            </div>
+            <span class="kpi-tag">${b.tree.pointsUsed}/${b.tree.pointsBudget} pts</span>
+          </div>
+          <div class="kpi-tile">
+            <div>
+              <div class="kpi-label">Ascendancy &amp; Keystones</div>
+              <div class="kpi-value">${esc(a.ascendancy.name)} (${b.tree.ascPointsUsed}/8)</div>
+            </div>
+            <span class="kpi-tag">${b.tree.summary.keystones.length} KS</span>
+          </div>
+          <div class="kpi-tile">
+            <div>
+              <div class="kpi-label">Bandit &amp; Pantheon</div>
+              <div class="kpi-value" style="font-size:1rem;">${a.bandit === 'None' ? 'Kill All' : esc(a.bandit)} · ${esc(pantheonMaj)} / ${esc(pantheonMin)}</div>
+            </div>
+            <span class="kpi-tag">${uniques.length} Uniques</span>
+          </div>
         </div>
       </div>
 
-      <div class="stats-strip">
-        <div class="stat-box">
-          <div class="k">Passive / Ascendancy</div>
-          <div class="v">${b.tree.pointsUsed}/${b.tree.pointsBudget} · ${b.tree.ascPointsUsed}/8</div>
-        </div>
-        <div class="stat-box">
-          <div class="k">Tree Life / ES</div>
-          <div class="v">${b.tree.summary.lifePct}% Life · ${b.tree.summary.esPct}% ES</div>
-        </div>
-        <div class="stat-box">
-          <div class="k">Resists (after -60%)</div>
-          <div class="v">
-            <span class="res-fire">${r.fire}%</span> /
-            <span class="res-cold">${r.cold}%</span> /
-            <span class="res-light">${r.lightning}%</span> /
-            <span class="res-chaos">${r.chaos}%</span>
+      <div class="bento-row-3">
+        <div class="bento-card">
+          <div class="card-head">
+            <div>
+              <h3>Mana Reservation</h3>
+              <p class="card-sub">Aura &amp; herald allocation budget</p>
+            </div>
+            <button type="button" class="btn btn-sm" data-jump="skills">Skills →</button>
+          </div>
+          <div class="gauge-wrap">
+            <svg class="gauge-svg" viewBox="0 0 200 118">
+              <path d="M 24 100 A 76 76 0 0 1 176 100" fill="none" stroke="var(--surface-subtle)" stroke-width="18" stroke-linecap="round"/>
+              <path d="M 24 100 A 76 76 0 0 1 176 100" fill="none" stroke="var(--lime)" stroke-width="18" stroke-linecap="round"
+                stroke-dasharray="${arcLen.toFixed(1)}" stroke-dashoffset="${dashOffset.toFixed(1)}"/>
+              <text x="100" y="84" text-anchor="middle" class="gauge-num">${reserved}%</text>
+              <text x="100" y="102" text-anchor="middle" class="gauge-sub">${100 - reserved}% unreserved</text>
+            </svg>
           </div>
         </div>
-        <div class="stat-box">
-          <div class="k">Attributes (Req)</div>
-          <div class="v">${at.str}(${req.str}) / ${at.dex}(${req.dex}) / ${at.int}(${req.int})</div>
+
+        <div class="bento-card">
+          <div class="card-head">
+            <div>
+              <h3>Keystones &amp; Notables</h3>
+              <p class="card-sub">${b.tree.summary.masteries.length} masteries · ${b.tree.jewelSockets.length} jewel sockets</p>
+            </div>
+            <button type="button" class="btn btn-sm" data-jump="tree">Inspect →</button>
+          </div>
+          <div class="pill-list">
+            ${b.tree.summary.keystones.map((k) => `<span class="pill pill-accent">${esc(k)}</span>`).join('')}
+            ${notablePreview.map((n) => `<span class="pill">${esc(n)}</span>`).join('')}
+          </div>
         </div>
-        <div class="stat-box">
-          <div class="k">Mana Reserved</div>
-          <div class="v">${b.skills.manaReservedPct}%</div>
-        </div>
-        <div class="stat-box">
-          <div class="k">Bandit · Pantheon</div>
-          <div class="v">${a.bandit === 'None' ? 'Kill All' : a.bandit} · ${esc(pantheonMaj)} / ${esc(pantheonMin)}</div>
+
+        <div class="bento-card">
+          <div class="card-head">
+            <div>
+              <h3>Loadout Highlights</h3>
+              <p class="card-sub">${b.gear.items.length} equipped slots, flasks &amp; jewels</p>
+            </div>
+            <button type="button" class="btn btn-sm" data-jump="gear">Gear →</button>
+          </div>
+          <div class="feed-list">
+            ${b.gear.items.slice(0, 5).map((item) => `
+              <div class="feed-row">
+                <div>
+                  <div class="feed-title item-name-${item.rarity}">${esc(item.name)}</div>
+                  <div class="feed-meta">${esc(item.baseName)}</div>
+                </div>
+                <span class="badge">${esc(item.slot)}</span>
+              </div>
+            `).join('')}
+          </div>
         </div>
       </div>
     `;
 
-    document.getElementById('copy-pob-btn')!.addEventListener('click', async (e) => {
-      const btn = e.currentTarget as HTMLButtonElement;
-      await navigator.clipboard.writeText(b.pobCode);
-      const orig = btn.textContent;
-      btn.textContent = 'Copied PoB Code!';
-      setTimeout(() => { btn.textContent = orig; }, 1600);
-    });
-
-    document.getElementById('download-xml-btn')!.addEventListener('click', () => {
-      const blob = new Blob([b.xml], { type: 'application/xml' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${a.ascendancy.name.toLowerCase()}-${a.options.seed}.xml`;
-      link.click();
-      URL.revokeObjectURL(url);
+    document.querySelectorAll('#view-dashboard [data-jump]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const target = (btn as HTMLElement).dataset.jump as NavView;
+        switchView(target);
+      });
     });
   }
 
@@ -263,13 +448,13 @@ async function main() {
       <div>
         <h3>Ascendancy (${esc(b.archetype.ascendancy.name)})</h3>
         <div class="pill-list">
-          ${ascNodes.map((n) => `<span class="pill pill-keystone">${esc(n.n)}</span>`).join('')}
+          ${ascNodes.map((n) => `<span class="pill pill-accent">${esc(n.n)}</span>`).join('')}
         </div>
       </div>
       <div>
         <h3>Keystones (${s.keystones.length})</h3>
         <div class="pill-list">
-          ${s.keystones.length ? s.keystones.map((k) => `<span class="pill pill-keystone">${esc(k)}</span>`).join('') : '<span class="tt-muted">None</span>'}
+          ${s.keystones.length ? s.keystones.map((k) => `<span class="pill pill-accent">${esc(k)}</span>`).join('') : '<span class="tt-muted">None</span>'}
         </div>
       </div>
       <div>
@@ -288,13 +473,16 @@ async function main() {
   }
 
   function renderSkills(b: GeneratedBuild) {
-    document.getElementById('panel-skills')!.innerHTML = `
+    document.getElementById('view-skills')!.innerHTML = `
       <div class="skills-grid">
         ${b.skills.groups.map((grp) => `
-          <div class="card">
-            <div class="card-title">
-              <span>${esc(grp.label)}</span>
-              <span class="card-slot">${esc(grp.slot)} (${grp.gems.length}L)</span>
+          <div class="bento-card">
+            <div class="card-head">
+              <div>
+                <h3>${esc(grp.label)}</h3>
+                <p class="card-sub">${esc(grp.slot)} · ${grp.gems.length}-Link</p>
+              </div>
+              <span class="badge">${grp.gems.length}L</span>
             </div>
             <div class="gem-list">
               ${grp.gems.map((gi) => `
@@ -314,13 +502,13 @@ async function main() {
   }
 
   function renderGear(b: GeneratedBuild) {
-    document.getElementById('panel-gear')!.innerHTML = `
+    document.getElementById('view-gear')!.innerHTML = `
       <div class="items-grid">
         ${b.gear.items.map((item) => `
           <div class="item-card rarity-${item.rarity}">
             <div>
               <div class="item-name-${item.rarity}">${esc(item.name)}</div>
-              <div class="item-base">${esc(item.baseName)} · <span class="card-slot">${esc(item.slot)}</span></div>
+              <div class="item-base">${esc(item.baseName)} · ${esc(item.slot)}</div>
             </div>
             <div class="item-meta-line">
               <span>iLvl ${item.itemLevel}</span>
@@ -342,20 +530,20 @@ async function main() {
   }
 
   function renderExport(b: GeneratedBuild) {
-    document.getElementById('panel-export')!.innerHTML = `
-      <div class="card" style="display:flex;flex-direction:column;gap:12px;">
-        <div class="card-title">
-          <span>Path of Building Import Code</span>
-          <button type="button" class="btn btn-primary" id="copy-code-tab-btn">Copy Code</button>
+    document.getElementById('view-export')!.innerHTML = `
+      <div class="bento-card" style="display:flex;flex-direction:column;gap:12px;">
+        <div class="card-head" style="margin-bottom:0;">
+          <div>
+            <h2>Path of Building Import Code</h2>
+            <p class="card-sub">In Path of Building Community: Import/Export Build → Import from Pastebin / Code</p>
+          </div>
+          <button type="button" class="btn btn-cta" id="copy-code-tab-btn">Copy Code</button>
         </div>
-        <p class="knob-hint" style="margin:0;">
-          In Path of Building Community: <strong>Import/Export Build → Import from Pastebin / Code</strong> and paste this string.
-        </p>
         <textarea class="code-box" readonly id="pob-code-area">${esc(b.pobCode)}</textarea>
-        <div class="card-title" style="margin-top:8px;">
-          <span>Raw PoB XML Preview</span>
+        <div class="card-head" style="margin:6px 0 0;">
+          <h3>Raw PoB XML Preview</h3>
         </div>
-        <textarea class="code-box" style="min-height:260px;" readonly>${esc(b.xml)}</textarea>
+        <textarea class="code-box" style="min-height:280px;" readonly>${esc(b.xml)}</textarea>
       </div>
     `;
     document.getElementById('copy-code-tab-btn')!.addEventListener('click', async (e) => {
@@ -367,27 +555,58 @@ async function main() {
   }
 
   // Event wiring
+  document.getElementById('sidebar-nav')!.addEventListener('click', (e) => {
+    const btn = (e.target as HTMLElement).closest('button[data-view]') as HTMLElement | null;
+    if (!btn) return;
+    switchView(btn.dataset.view as NavView);
+  });
+
+  document.getElementById('collapse-btn')!.addEventListener('click', () => {
+    layoutEl.classList.toggle('sidebar-collapsed');
+    if (activeView === 'tree') {
+      setTimeout(() => treeCanvas?.resize(), 220);
+    }
+  });
+
+  document.getElementById('theme-switch')!.addEventListener('click', (e) => {
+    const btn = (e.target as HTMLElement).closest('button[data-theme-pref]') as HTMLElement | null;
+    if (!btn) return;
+    applyTheme(btn.dataset.themePref as ThemePref);
+  });
+
+  document.getElementById('copy-pob-btn')!.addEventListener('click', async (e) => {
+    if (!currentBuild) return;
+    const btn = e.currentTarget as HTMLButtonElement;
+    await navigator.clipboard.writeText(currentBuild.pobCode);
+    const orig = btn.textContent;
+    btn.textContent = 'Copied!';
+    setTimeout(() => { btn.textContent = orig; }, 1500);
+  });
+
+  document.getElementById('download-xml-btn')!.addEventListener('click', () => {
+    if (!currentBuild) return;
+    const blob = new Blob([currentBuild.xml], { type: 'application/xml' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${currentBuild.archetype.ascendancy.name.toLowerCase()}-${currentBuild.archetype.options.seed}.xml`;
+    link.click();
+    URL.revokeObjectURL(url);
+  });
+
   document.getElementById('league-seg')!.addEventListener('click', (e) => {
     const btn = (e.target as HTMLElement).closest('button');
     if (!btn) return;
-    const mode = btn.dataset.mode as LeagueMode;
-    options.leagueMode = mode;
+    options.leagueMode = btn.dataset.mode as LeagueMode;
     document.querySelectorAll('#league-seg button').forEach((b) => b.classList.toggle('active', b === btn));
-    leagueHint.textContent = mode === 'hardcore'
-      ? 'Prioritizes Life/ES, overcapped Ele + Chaos res, Spell Suppression, Guard skills & safe uniques.'
-      : 'Balanced offense & crit scaling, full unique pool.';
     void regenerate();
   });
 
   document.getElementById('eco-seg')!.addEventListener('click', (e) => {
     const btn = (e.target as HTMLElement).closest('button');
     if (!btn) return;
-    const eco = btn.dataset.eco as EconomyMode;
-    options.economy = eco;
+    options.economy = btn.dataset.eco as EconomyMode;
     document.querySelectorAll('#eco-seg button').forEach((b) => b.classList.toggle('active', b === btn));
-    ecoHint.textContent = eco === 'ssf'
-      ? 'Filters out Awakened gems & boss/chase uniques; realistic 5–6L and accessible rares.'
-      : 'Endgame rares, chase uniques & Awakened supports enabled.';
     void regenerate();
   });
 
@@ -434,18 +653,6 @@ async function main() {
   document.getElementById('reroll-btn')!.addEventListener('click', () => {
     options.seed = randomSeed();
     void regenerate();
-  });
-
-  document.getElementById('tabs-nav')!.addEventListener('click', (e) => {
-    const btn = (e.target as HTMLElement).closest('button');
-    if (!btn) return;
-    activeTab = btn.dataset.tab as typeof activeTab;
-    document.querySelectorAll('.tab-btn').forEach((b) => b.classList.toggle('active', b === btn));
-    document.querySelectorAll('.tab-panel').forEach((p) => p.classList.toggle('active', p.id === `panel-${activeTab}`));
-    if (activeTab === 'tree') {
-      treeCanvas?.resize();
-      if (currentBuild) treeCanvas?.fitToBuild();
-    }
   });
 
   await regenerate();

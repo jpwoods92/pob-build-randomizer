@@ -1,6 +1,69 @@
 import type { TreeData, TreeNode } from '../lib/types.ts';
 import type { GeneratedTree } from '../lib/tree.ts';
 
+interface TreePalette {
+  unallocEdge: string;
+  allocEdge: string;
+  allocAscEdge: string;
+  nodeNormal: string;
+  nodeNotable: string;
+  nodeKeystone: string;
+  nodeJewel: string;
+  nodeMastery: string;
+  allocNormal: string;
+  allocNotable: string;
+  allocKeystone: string;
+  allocJewel: string;
+  allocMastery: string;
+  allocAsc: string;
+  allocAscNotable: string;
+  strokeDefault: string;
+  strokeAlloc: string;
+  strokeHover: string;
+}
+
+const DARK_PALETTE: TreePalette = {
+  unallocEdge: 'rgba(110, 125, 150, 0.22)',
+  allocEdge: '#a3e635',
+  allocAscEdge: '#f59e0b',
+  nodeNormal: '#1d2433',
+  nodeNotable: '#2d3548',
+  nodeKeystone: '#3f3622',
+  nodeJewel: '#1e3a4c',
+  nodeMastery: '#2e223d',
+  allocNormal: '#84cc16',
+  allocNotable: '#bef264',
+  allocKeystone: '#fde047',
+  allocJewel: '#38bdf8',
+  allocMastery: '#c084fc',
+  allocAsc: '#f59e0b',
+  allocAscNotable: '#fb923c',
+  strokeDefault: '#475569',
+  strokeAlloc: '#ecfccb',
+  strokeHover: '#ffffff',
+};
+
+const LIGHT_PALETTE: TreePalette = {
+  unallocEdge: 'rgba(148, 163, 184, 0.42)',
+  allocEdge: '#65a30d',
+  allocAscEdge: '#ea580c',
+  nodeNormal: '#e2e8f0',
+  nodeNotable: '#cbd5e1',
+  nodeKeystone: '#fef3c7',
+  nodeJewel: '#e0f2fe',
+  nodeMastery: '#f3e8ff',
+  allocNormal: '#84cc16',
+  allocNotable: '#4d7c0f',
+  allocKeystone: '#d97706',
+  allocJewel: '#0284c7',
+  allocMastery: '#7c3aed',
+  allocAsc: '#f97316',
+  allocAscNotable: '#c2410c',
+  strokeDefault: '#94a3b8',
+  strokeAlloc: '#18181b',
+  strokeHover: '#09090b',
+};
+
 export class TreeCanvas {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
@@ -8,6 +71,7 @@ export class TreeCanvas {
   private treeData: TreeData;
   private buildTree: GeneratedTree | null = null;
   private allocSet = new Set<number>();
+  private isDark = false;
 
   private scale = 0.045;
   private offsetX = 0;
@@ -18,8 +82,9 @@ export class TreeCanvas {
   private hoveredId: number | null = null;
   private nodeEntries: [number, TreeNode][];
 
-  constructor(container: HTMLElement, treeData: TreeData) {
+  constructor(container: HTMLElement, treeData: TreeData, isDark = false) {
     this.treeData = treeData;
+    this.isDark = isDark;
     this.nodeEntries = Object.entries(treeData.nodes).map(([k, v]) => [Number(k), v]);
 
     container.classList.add('tree-viewport');
@@ -62,6 +127,12 @@ export class TreeCanvas {
     }
   }
 
+  setTheme(isDark: boolean): void {
+    if (this.isDark === isDark) return;
+    this.isDark = isDark;
+    this.draw();
+  }
+
   setBuildTree(buildTree: GeneratedTree): void {
     this.buildTree = buildTree;
     const cls = this.treeData.classes.find((c) => c.id === buildTree.classId);
@@ -85,7 +156,7 @@ export class TreeCanvas {
   fitToBuild(): void {
     const rect = this.canvas.getBoundingClientRect();
     const w = rect.width || 800;
-    const h = rect.height || 540;
+    const h = rect.height || 500;
     if (!this.buildTree || this.allocSet.size === 0) {
       this.scale = Math.min(w / 24000, h / 20000);
       this.offsetX = w / 2;
@@ -97,7 +168,7 @@ export class TreeCanvas {
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
     for (const id of this.allocSet) {
       const n = this.treeData.nodes[id];
-      if (!n || n.a) continue; // focus viewport on main tree footprint
+      if (!n || n.a) continue;
       minX = Math.min(minX, n.x);
       maxX = Math.max(maxX, n.x);
       minY = Math.min(minY, n.y);
@@ -234,6 +305,7 @@ export class TreeCanvas {
     const h = rect.height;
     if (!w || !h) return;
 
+    const pal = this.isDark ? DARK_PALETTE : LIGHT_PALETTE;
     const ctx = this.ctx;
     ctx.clearRect(0, 0, w, h);
 
@@ -243,7 +315,7 @@ export class TreeCanvas {
 
     // 1. Unallocated edges
     ctx.lineWidth = Math.max(18, 1.1 / this.scale);
-    ctx.strokeStyle = 'rgba(110, 125, 150, 0.18)';
+    ctx.strokeStyle = pal.unallocEdge;
     ctx.beginPath();
     for (const [id, n] of this.nodeEntries) {
       for (const adj of n.adj) {
@@ -257,13 +329,30 @@ export class TreeCanvas {
     }
     ctx.stroke();
 
-    // 2. Allocated edges
+    // 2. Allocated main edges
     ctx.lineWidth = Math.max(38, 2.4 / this.scale);
-    ctx.strokeStyle = '#d4af37';
+    ctx.strokeStyle = pal.allocEdge;
     ctx.beginPath();
     for (const id of this.allocSet) {
       const n = this.treeData.nodes[id];
-      if (!n) continue;
+      if (!n || n.a) continue;
+      for (const adj of n.adj) {
+        if (adj <= id || !this.allocSet.has(adj)) continue;
+        const other = this.treeData.nodes[adj];
+        if (!other || other.a) continue;
+        ctx.moveTo(n.x, n.y);
+        ctx.lineTo(other.x, other.y);
+      }
+    }
+    ctx.stroke();
+
+    // 3. Allocated ascendancy edges
+    ctx.lineWidth = Math.max(38, 2.4 / this.scale);
+    ctx.strokeStyle = pal.allocAscEdge;
+    ctx.beginPath();
+    for (const id of this.allocSet) {
+      const n = this.treeData.nodes[id];
+      if (!n || !n.a) continue;
       for (const adj of n.adj) {
         if (adj <= id || !this.allocSet.has(adj)) continue;
         const other = this.treeData.nodes[adj];
@@ -274,7 +363,7 @@ export class TreeCanvas {
     }
     ctx.stroke();
 
-    // 3. Nodes
+    // 4. Nodes
     for (const [id, n] of this.nodeEntries) {
       const alloc = this.allocSet.has(id);
       const hovered = id === this.hoveredId;
@@ -289,24 +378,24 @@ export class TreeCanvas {
       ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
 
       if (alloc) {
-        if (n.a) ctx.fillStyle = n.t === 'notable' ? '#fb923c' : '#f59e0b';
-        else if (n.t === 'keystone') ctx.fillStyle = '#fde047';
-        else if (n.t === 'jewel') ctx.fillStyle = '#38bdf8';
-        else if (n.t === 'mastery') ctx.fillStyle = '#c084fc';
-        else if (n.t === 'notable') ctx.fillStyle = '#facc15';
-        else ctx.fillStyle = '#d4af37';
+        if (n.a) ctx.fillStyle = n.t === 'notable' ? pal.allocAscNotable : pal.allocAsc;
+        else if (n.t === 'keystone') ctx.fillStyle = pal.allocKeystone;
+        else if (n.t === 'jewel') ctx.fillStyle = pal.allocJewel;
+        else if (n.t === 'mastery') ctx.fillStyle = pal.allocMastery;
+        else if (n.t === 'notable') ctx.fillStyle = pal.allocNotable;
+        else ctx.fillStyle = pal.allocNormal;
       } else {
-        if (n.t === 'keystone') ctx.fillStyle = '#3f3622';
-        else if (n.t === 'notable') ctx.fillStyle = '#2d3548';
-        else if (n.t === 'jewel') ctx.fillStyle = '#1e3a4c';
-        else if (n.t === 'mastery') ctx.fillStyle = '#2e223d';
-        else ctx.fillStyle = '#1d2433';
+        if (n.t === 'keystone') ctx.fillStyle = pal.nodeKeystone;
+        else if (n.t === 'notable') ctx.fillStyle = pal.nodeNotable;
+        else if (n.t === 'jewel') ctx.fillStyle = pal.nodeJewel;
+        else if (n.t === 'mastery') ctx.fillStyle = pal.nodeMastery;
+        else ctx.fillStyle = pal.nodeNormal;
       }
       ctx.fill();
 
       if (alloc || hovered || n.t === 'keystone' || n.t === 'jewel') {
         ctx.lineWidth = hovered ? Math.max(30, 2.5 / this.scale) : Math.max(16, 1.1 / this.scale);
-        ctx.strokeStyle = hovered ? '#ffffff' : alloc ? '#fef08a' : '#475569';
+        ctx.strokeStyle = hovered ? pal.strokeHover : alloc ? pal.strokeAlloc : pal.strokeDefault;
         ctx.stroke();
       }
     }
