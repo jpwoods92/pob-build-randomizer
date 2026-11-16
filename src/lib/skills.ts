@@ -161,6 +161,11 @@ function scoreSupportForMain(sup: GemData, arch: BuildArchetype): number {
   if (arch.damageStyle === 'totem' && /Multiple Totems|Spell Totem|Ballista Totem|Focused Ballista/.test(name)) score += 45;
   if (arch.damageStyle === 'trap_mine' && /Trap and Mine Damage|Cluster Traps|Charged Traps|Minefield|High-Impact Mine|Blastchain Mine|Swift Assembly|Charged Mines/.test(name)) score += 45;
 
+  if (arch.damageStyle === 'link_support') {
+    if (/Less Duration|Swift Affliction|Pinpoint|Spell Totem/.test(name)) return 0;
+    if (/Frigid Bond|More Duration|Empower|Enhance|Inspiration|Faster Casting|Lifetap|Efficacy|Cooldown Recovery/.test(name)) return 55;
+    return 4;
+  }
   if (name === 'Empower' || name === 'Awakened Empower') {
     score += arch.damageStyle === 'spell' || arch.damageStyle === 'minion' ? 35 : 5;
   }

@@ -139,6 +139,7 @@ async function main() {
                 <option value="totem">Totem</option>
                 <option value="trap_mine">Trap / Mine</option>
                 <option value="dot">DoT</option>
+                <option value="link_support">Mercenary / Link</option>
               </select>
             </div>
             <div class="knob">

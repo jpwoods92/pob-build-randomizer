@@ -108,7 +108,7 @@ function isMasteryAllowed(name: string, arch: BuildArchetype): boolean {
     case 'Damage Over Time Mastery': return arch.damageStyle === 'dot';
     case 'Projectile Mastery': return arch.statKeywords.includes('projectile');
     case 'Fortify Mastery': return arch.damageStyle === 'attack';
-    case 'Link Mastery':
+    case 'Link Mastery': return arch.damageStyle === 'link_support';
     case 'Retaliation Mastery':
     case 'Banner Mastery':
     case 'Warcry Mastery':
@@ -184,6 +184,9 @@ function scoreStatsText(stats: string[] | undefined, arch: BuildArchetype): numb
     if (/spell damage|elemental damage|area damage|projectile/.test(text)) score += 9;
   } else if (arch.damageStyle === 'dot') {
     if (/damage over time|dot multiplier|ignite|bleed|poison|ailment/.test(text)) score += 22;
+  } else if (arch.damageStyle === 'link_support') {
+    if (/link skills|effect of non-curse auras|mercenary|light radius|skill effect duration/.test(text)) score += 28;
+    if (/aura/.test(text)) score += 12;
   }
 
   // Crit vs non-crit

@@ -3,7 +3,7 @@ import type { Rng } from './rng.ts';
 
 export type LeagueMode = 'softcore' | 'hardcore';
 export type EconomyMode = 'ssf' | 'trade';
-export type DamageStyle = 'attack' | 'spell' | 'minion' | 'totem' | 'trap_mine' | 'dot';
+export type DamageStyle = 'attack' | 'spell' | 'minion' | 'totem' | 'trap_mine' | 'dot' | 'link_support';
 export type DefenseStyle = 'life' | 'es' | 'hybrid';
 export type CritMode = 'crit' | 'non_crit' | 'dot';
 export type DamageElement = 'physical' | 'fire' | 'cold' | 'lightning' | 'chaos';
@@ -111,7 +111,7 @@ const ASC_AFFINITIES: Record<string, AscAffinity> = {
   Saboteur: { styles: ['trap_mine', 'spell'], defenses: ['life', 'es', 'hybrid'], elements: ['lightning', 'fire', 'cold', 'chaos'], critBias: 0.7, hcFriendly: 1.2 },
   Ascendant: { styles: ['spell', 'attack', 'minion', 'totem', 'dot'], defenses: ['life', 'hybrid', 'es'], critBias: 0.55, hcFriendly: 1.0 },
   Reliquarian: { styles: ['spell', 'attack', 'totem', 'trap_mine'], defenses: ['life', 'hybrid', 'es'], critBias: 0.5, hcFriendly: 1.0 },
-  Luminary: { styles: ['minion', 'spell', 'attack'], defenses: ['life', 'hybrid'], critBias: 0.4, hcFriendly: 1.1 },
+  Luminary: { styles: ['link_support', 'link_support', 'minion', 'spell', 'attack'], defenses: ['life', 'hybrid'], critBias: 0.25, hcFriendly: 1.2 },
 };
 
 const BUILD_ADJECTIVES_HC = [
@@ -123,10 +123,11 @@ const BUILD_ADJECTIVES_SC = [
   'Volatile', 'Relentless', 'Phantom', 'Cataclysm', 'Blazing', 'Overcharged',
 ];
 
-function isValidMainCandidate(gem: GemData): boolean {
+function isValidMainCandidate(gem: GemData, allowLink = false): boolean {
   if (gem.support) return false;
   if (gem.reservePct || gem.reserveFlat) return false;
   if (gem.isTrigger) return false;
+  if (gem.tags.includes('link')) return allowLink;
   if (gem.tags.some((t) => EXCLUDED_MAIN_TAGS.has(t))) return false;
   if (UTILITY_SKILL_NAMES.has(gem.name) || UTILITY_SKILL_NAMES.has(gem.skillId)) return false;
   if (gem.name.startsWith('Summon ') && gem.tags.includes('golem')) return false;
@@ -155,6 +156,7 @@ function isValidMainCandidate(gem: GemData): boolean {
 }
 
 function inferSkillStyle(gem: GemData, preferredStyle: DamageStyle | 'random'): DamageStyle {
+  if (gem.tags.includes('link')) return 'link_support';
   if (gem.tags.includes('minion')) return 'minion';
   if (gem.tags.includes('totem')) return 'totem';
   if (gem.tags.includes('trap') || gem.tags.includes('mine')) return 'trap_mine';
@@ -284,8 +286,8 @@ function chooseWeaponSetup(
     }
   }
 
-  // Spell / Minion / Totem / Trap / DoT / Shield-attack caster weapons
-  if (style === 'minion' || style === 'spell' || style === 'totem' || style === 'trap_mine' || style === 'dot' || rawWt.length === 0) {
+  // Spell / Minion / Totem / Trap / DoT / Link / Shield-attack caster weapons
+  if (style === 'minion' || style === 'spell' || style === 'totem' || style === 'trap_mine' || style === 'dot' || style === 'link_support' || rawWt.length === 0) {
     const esBias = defense === 'es' ? 2.0 : 1.0;
     const hcBias = league === 'hardcore' ? 3.5 : 1.5;
     const casterSetups: { setup: WeaponSetup; w: number; classes: { wc: WeaponClass; types: string[] }[] }[] = [
@@ -385,7 +387,8 @@ export function pickArchetype(data: GameData, options: BuildOptions, rng: Rng): 
   }
 
   // 4. Main active skill
-  const allCandidates = data.gems.filter(isValidMainCandidate);
+  const allowLink = damageStyle === 'link_support';
+  const allCandidates = data.gems.filter((g) => isValidMainCandidate(g, allowLink));
   const mainSkill = rng.weighted(allCandidates, (g) => {
     let w = 1;
     // Transfigured gems are harder to obtain in SSF (still possible via Lab, lower weight)
@@ -394,8 +397,8 @@ export function pickArchetype(data: GameData, options: BuildOptions, rng: Rng): 
 
     // Style match
     const gStyle = inferSkillStyle(g, damageStyle);
-    if (gStyle === damageStyle) w *= 8;
-    else w *= 0.08;
+    if (gStyle === damageStyle) w *= (allowLink ? 50 : 8);
+    else w *= 0.05;
 
     // Class attribute alignment
     const classStr = classData.str > classData.dex && classData.str > classData.int;
@@ -431,7 +434,7 @@ export function pickArchetype(data: GameData, options: BuildOptions, rng: Rng): 
   let critMode: CritMode;
   if (resolvedStyle === 'dot') {
     critMode = rng.chance(0.15) ? 'crit' : 'dot';
-  } else if (resolvedStyle === 'minion') {
+  } else if (resolvedStyle === 'minion' || resolvedStyle === 'link_support') {
     critMode = 'non_crit';
   } else {
     const bias = aff.critBias ?? 0.5;
