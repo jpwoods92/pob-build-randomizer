@@ -325,50 +325,41 @@ async function main() {
     const uniques = b.gear.items.filter((i) => i.rarity === 'UNIQUE');
     const notablePreview = b.tree.summary.notables.slice(0, 8);
 
-    document.getElementById('view-dashboard')!.innerHTML = `
-      <div class="hero-grid">
-        <div class="bento-card">
-          <div class="card-head">
-            <div>
-              <h2 class="hero-title">${esc(a.title)}</h2>
-              <p class="card-sub">Level ${a.options.level} ${esc(a.classData.name)} (${esc(a.ascendancy.name)}) · ${esc(mainLinksText)}</p>
-              <div class="badges">
-                <span class="badge ${a.options.leagueMode === 'hardcore' ? 'badge-hc' : 'badge-sc'}">${esc(a.options.leagueMode)}</span>
-                <span class="badge ${a.options.economy === 'ssf' ? 'badge-ssf' : 'badge-trade'}">${esc(a.options.economy)}</span>
-                <span class="badge">${esc(a.damageStyle)}</span>
-                <span class="badge">${esc(a.defenseStyle)}</span>
-                <span class="badge">${esc(a.critMode === 'crit' ? 'Crit' : a.critMode === 'dot' ? 'DoT' : 'Non-Crit')}</span>
-              </div>
-            </div>
-            <button type="button" class="btn btn-sm" data-jump="tree">View Tree →</button>
-          </div>
+    const eleCapped = r.fire >= 75 && r.cold >= 75 && r.lightning >= 75;
 
-          <div class="meter-list">
-            ${meterHtml('Fire Resistance (post-Kitava)', `${Math.min(75, r.fire)}% / 75% (${r.fire}%)`, (Math.max(0, r.fire) / 75) * 100, '#ef4444')}
-            ${meterHtml('Cold Resistance (post-Kitava)', `${Math.min(75, r.cold)}% / 75% (${r.cold}%)`, (Math.max(0, r.cold) / 75) * 100, '#3b82f6')}
-            ${meterHtml('Lightning Resistance (post-Kitava)', `${Math.min(75, r.lightning)}% / 75% (${r.lightning}%)`, (Math.max(0, r.lightning) / 75) * 100, '#eab308')}
-            ${b.tree.summary.keystones.includes('Chaos Inoculation')
-              ? meterHtml('Chaos Resistance (CI)', 'Immune (CI)', 100, '#8b5cf6')
-              : meterHtml('Chaos Resistance (post-Kitava)', `${Math.min(75, r.chaos)}% / 75% (${r.chaos}%)`, (Math.max(0, r.chaos) / 75) * 100, '#8b5cf6')}
+    document.getElementById('view-dashboard')!.innerHTML = `
+      <div class="bento-card">
+        <div class="card-head">
+          <div>
+            <h2 class="hero-title">${esc(a.title)}</h2>
+            <p class="card-sub">Level ${a.options.level} ${esc(a.classData.name)} (${esc(a.ascendancy.name)}) · ${esc(mainLinksText)}</p>
+            <div class="badges">
+              <span class="badge ${a.options.leagueMode === 'hardcore' ? 'badge-hc' : 'badge-sc'}">${esc(a.options.leagueMode)}</span>
+              <span class="badge ${a.options.economy === 'ssf' ? 'badge-ssf' : 'badge-trade'}">${esc(a.options.economy)}</span>
+              <span class="badge">${esc(a.damageStyle)}</span>
+              <span class="badge">${esc(a.defenseStyle)}</span>
+              <span class="badge">${esc(a.critMode === 'crit' ? 'Crit' : a.critMode === 'dot' ? 'DoT' : 'Non-Crit')}</span>
+            </div>
           </div>
+          <button type="button" class="btn btn-sm" data-jump="tree">View Tree →</button>
         </div>
 
-        <div class="kpi-stack">
-          <div class="kpi-tile">
+        <div class="hero-metrics">
+          <div class="hero-metric">
             <div>
               <div class="kpi-label">Passive Tree Scaling</div>
               <div class="kpi-value">${b.tree.summary.lifePct}% Life · ${b.tree.summary.esPct}% ES</div>
             </div>
             <span class="kpi-tag">${b.tree.pointsUsed}/${b.tree.pointsBudget} pts</span>
           </div>
-          <div class="kpi-tile">
+          <div class="hero-metric">
             <div>
               <div class="kpi-label">Ascendancy &amp; Keystones</div>
               <div class="kpi-value">${esc(a.ascendancy.name)} (${b.tree.ascPointsUsed}/8)</div>
             </div>
             <span class="kpi-tag">${b.tree.summary.keystones.length} KS</span>
           </div>
-          <div class="kpi-tile">
+          <div class="hero-metric">
             <div>
               <div class="kpi-label">Bandit &amp; Pantheon</div>
               <div class="kpi-value" style="font-size:1rem;">${a.bandit === 'None' ? 'Kill All' : esc(a.bandit)} · ${esc(pantheonMaj)} / ${esc(pantheonMin)}</div>
@@ -379,6 +370,24 @@ async function main() {
       </div>
 
       <div class="bento-row-2">
+        <div class="bento-card">
+          <div class="card-head">
+            <div>
+              <h3>Resistances</h3>
+              <p class="card-sub">Post-Kitava (-60%) vs 75% default cap</p>
+            </div>
+            <span class="badge">${eleCapped ? 'Ele Capped' : 'Uncapped'}</span>
+          </div>
+          <div class="meter-stack">
+            ${meterHtml('Fire Resistance', `${Math.min(75, r.fire)}% / 75% (${r.fire}%)`, (Math.max(0, r.fire) / 75) * 100, '#ef4444')}
+            ${meterHtml('Cold Resistance', `${Math.min(75, r.cold)}% / 75% (${r.cold}%)`, (Math.max(0, r.cold) / 75) * 100, '#3b82f6')}
+            ${meterHtml('Lightning Resistance', `${Math.min(75, r.lightning)}% / 75% (${r.lightning}%)`, (Math.max(0, r.lightning) / 75) * 100, '#eab308')}
+            ${b.tree.summary.keystones.includes('Chaos Inoculation')
+              ? meterHtml('Chaos Resistance (CI)', 'Immune (CI)', 100, '#8b5cf6')
+              : meterHtml('Chaos Resistance', `${Math.min(75, r.chaos)}% / 75% (${r.chaos}%)`, (Math.max(0, r.chaos) / 75) * 100, '#8b5cf6')}
+          </div>
+        </div>
+
         <div class="bento-card">
           <div class="card-head">
             <div>
@@ -393,7 +402,9 @@ async function main() {
             ${meterHtml('Intelligence', `${at.int} / ${req.int} req`, req.int > 0 ? (at.int / req.int) * 100 : 100, 'var(--gem-b)')}
           </div>
         </div>
+      </div>
 
+      <div class="bento-row-3">
         <div class="bento-card">
           <div class="card-head">
             <div>
