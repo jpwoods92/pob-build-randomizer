@@ -196,9 +196,11 @@ export function generateSkills(data: GameData, arch: BuildArchetype, rng: Rng): 
   while (chosenSupports.length < mainLinks - 1) {
     const hasBrutality = chosenSupports.some((s) => s.name === 'Brutality');
     const hasEleSup = chosenSupports.some((s) => /Added (Fire|Cold|Lightning)|Elemental|Penetration|Immolate|Combustion|Hypothermia|Ice Bite|Innervate|Cold to Fire|Physical to Lightning|Trinity/.test(s.name));
+    const hasMineOverride = chosenSupports.some((s) => /^(High-Impact Mine|Blastchain Mine|Locus Mine)$/.test(s.name));
     const pool = compatibleSupports.filter((s) => {
       const baseName = s.name.replace(/^Awakened /, '');
       if (chosenBaseNames.has(baseName)) return false;
+      if (hasMineOverride && /^(High-Impact Mine|Blastchain Mine|Locus Mine)$/.test(s.name)) return false;
       if (hasBrutality && /Added (Fire|Cold|Lightning)|Elemental|Penetration|Immolate|Combustion|Hypothermia|Ice Bite|Innervate|Cold to Fire|Physical to Lightning|Trinity/.test(s.name)) return false;
       if (hasEleSup && s.name === 'Brutality') return false;
       return true;
