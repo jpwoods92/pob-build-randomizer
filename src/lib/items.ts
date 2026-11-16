@@ -116,6 +116,9 @@ function scoreModForArchetype(
 ): number {
   const txt = mod.lines.join(' ').toLowerCase();
   if (hasCI && /chaos resistance/.test(txt)) return 0;
+  if ((hasCI || arch.defenseStyle === 'es') && /\bmaximum life\b|life regeneration|regenerate .* life|life leech|life gained|life on kill|life on hit|recouped as life/.test(txt)) {
+    return 0;
+  }
   const isHC = arch.options.leagueMode === 'hardcore';
   const tags = new Set(mod.tags ?? []);
   let w = 1;
@@ -264,10 +267,12 @@ function pickBestBase(
       if (b.tags.includes('wand_can_roll_caster_modifiers')) w *= 6;
     }
     if (b.type === 'Belt' && name === 'Stygian Vise') w *= isTrade ? 5 : 2;
-    if (b.type === 'Belt' && name === 'Leather Belt' && arch.defenseStyle === 'life') w *= 3;
+    if (b.type === 'Belt' && name === 'Leather Belt') w *= arch.defenseStyle === 'es' || hasCI ? 0.05 : (arch.defenseStyle === 'life' ? 3 : 1);
     if (b.type === 'Belt' && name === 'Crystal Belt' && arch.defenseStyle === 'es') w *= 6;
-    if (b.type === 'Ring' && /Two-Stone|Vermilion|Opal|Diamond/.test(name)) w *= 3;
+    if (b.type === 'Ring' && /Two-Stone|Opal|Diamond|Moonstone/.test(name)) w *= 3;
+    if (b.type === 'Ring' && (name === 'Vermilion Ring' || name === 'Coral Ring')) w *= arch.defenseStyle === 'es' || hasCI ? 0.05 : 3;
     if (b.type === 'Ring' && name === 'Amethyst Ring') w *= hasCI ? 0.05 : 3;
+    if (b.type === 'Amulet' && name === 'Coral Amulet' && (arch.defenseStyle === 'es' || hasCI)) w *= 0.05;
     if (b.type === 'Amulet' && /Onyx|Agate|Turquoise|Citrine|Jade|Lapis|Amber/.test(name)) w *= 3;
     if (opts.preferSubType && b.subType === opts.preferSubType) w *= 8;
     if (opts.preferTags && opts.preferTags.some((t) => b.tags.includes(t))) w *= 5;

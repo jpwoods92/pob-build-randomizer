@@ -256,12 +256,16 @@ test('chaos inoculation builds skip chaos resistance on tree and gear', async ()
       const node = data.tree.nodes[id];
       const txt = (node?.s ?? []).join(' ').toLowerCase();
       assert.ok(!/chaos resistance/.test(txt), `CI tree should not allocate chaos res node: ${node?.n}`);
+      if (node?.n !== 'Chaos Inoculation' && !/\bminions?\b/.test(txt)) {
+        assert.ok(!/\bmaximum life\b|life leech|life regeneration|regenerate .* life/.test(txt), `CI tree should not allocate life node: ${node?.n}`);
+      }
     }
     for (const item of build.gear.items) {
       assert.notEqual(item.baseName, 'Amethyst Flask');
       if (item.rarity !== 'UNIQUE') {
         const modTxt = item.explicits.join(' ').toLowerCase();
         assert.ok(!/chaos resistance/.test(modTxt), `CI rare/magic item ${item.name} should not roll chaos res`);
+        assert.ok(!/\bmaximum life\b|life regeneration|regenerate .* life|life leech/.test(modTxt), `CI rare/magic item ${item.name} should not roll life mods`);
       }
     }
   }

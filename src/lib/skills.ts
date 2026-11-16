@@ -80,8 +80,10 @@ function scoreSupportForMain(sup: GemData, arch: BuildArchetype): number {
     return 0;
   }
   if (/Lifetap|Culling Strike/.test(name)) {
+    if (name === 'Lifetap' && arch.defenseStyle === 'es') return 0;
     return name === 'Lifetap' && arch.options.leagueMode === 'hardcore' ? 14 : 6;
   }
+  if (name === 'Bloodthirst' && arch.defenseStyle === 'es') return 0;
   if (/Trap$|Cluster Traps|Multiple Traps|Trap and Mine|Charged Traps|Advanced Traps/.test(name) && arch.damageStyle !== 'trap_mine') return 0;
   if (/Mine$|High-Impact Mine|Blastchain Mine|Locus Mine|Minefield|Swift Assembly|Charged Mines/.test(name) && arch.damageStyle !== 'trap_mine') return 0;
   if (/Spell Totem|Ballista Totem|Multiple Totems|Focused Ballista|Earthbreaker/.test(name) && arch.damageStyle !== 'totem') return 0;
@@ -276,7 +278,7 @@ export function generateSkills(data: GameData, arch: BuildArchetype, rng: Rng): 
     { name: 'Tempest Shield', w: arch.weaponSetup.includes('shield') ? 22 : 2 },
     { name: 'Arctic Armour', w: isHC ? 14 : 4 },
     { name: 'Defiance Banner', w: isHC ? 16 : 6 },
-    { name: 'Vitality', w: isHC ? 12 : 4 },
+    { name: 'Vitality', w: arch.defenseStyle === 'es' ? 0 : (isHC ? 12 : 4) },
     { name: 'Precision', w: arch.critMode === 'crit' || arch.damageStyle === 'attack' ? 18 : 2 },
     { name: 'Clarity', w: arch.damageStyle === 'spell' ? 10 : 2 },
   ];
