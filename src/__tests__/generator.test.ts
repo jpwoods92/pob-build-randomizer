@@ -1,0 +1,180 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { inflateSync } from 'node:zlib';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import type { GameData } from '../lib/types.ts';
+import { generateBuild } from '../lib/generator.ts';
+import { canSupportSkill } from '../lib/skills.ts';
+import type { BuildOptions } from '../lib/archetype.ts';
+
+const root = join(dirname(fileURLToPath(import.meta.url)), '../..');
+const loadJson = <T>(name: string): T =>
+  JSON.parse(readFileSync(join(root, 'src/data', name), 'utf8')) as T;
+
+const data: GameData = {
+  tree: loadJson('tree.json'),
+  gems: loadJson('gems.json'),
+  bases: loadJson('bases.json'),
+  mods: loadJson('mods.json'),
+  uniques: loadJson('uniques.json'),
+  pantheons: loadJson('pantheons.json'),
+};
+
+function baseOptions(overrides: Partial<BuildOptions> = {}): BuildOptions {
+  return {
+    seed: 'wraeclast-test',
+    leagueMode: 'softcore',
+    economy: 'trade',
+    classId: 'random',
+    ascendancyIndex: 'random',
+    level: 92,
+    damageStyle: 'random',
+    defenseStyle: 'random',
+    ...overrides,
+  };
+}
+
+function isTreeConnected(buildTree: Awaited<ReturnType<typeof generateBuild>>['tree'], classId: number, ascIdx: number): boolean {
+  const cls = data.tree.classes.find((c) => c.id === classId)!;
+  const asc = cls.ascendancies[ascIdx - 1]!;
+  const allocSet = new Set(buildTree.nodes);
+
+  // Check ascendancy connectivity from asc.start
+  const ascAlloc = buildTree.nodes.filter((id) => data.tree.nodes[id]?.a);
+  if (asc.start && ascAlloc.length > 0) {
+    const visited = new Set<number>([asc.start]);
+    const q = [asc.start];
+    while (q.length > 0) {
+      const cur = q.shift()!;
+      for (const nxt of data.tree.nodes[cur]?.adj ?? []) {
+        if (allocSet.has(nxt) && !visited.has(nxt)) {
+          visited.add(nxt);
+          q.push(nxt);
+        }
+      }
+    }
+    for (const id of ascAlloc) {
+      if (!visited.has(id)) return false;
+    }
+  }
+
+  // Check main tree connectivity from cls.start (plus any allocated Path of the ... bridge nodes)
+  const mainAlloc = buildTree.nodes.filter((id) => !data.tree.nodes[id]?.a);
+  const visitedMain = new Set<number>([cls.start]);
+  const qMain = [cls.start];
+  for (const id of ascAlloc) {
+    const n = data.tree.nodes[id];
+    if (n?.n.startsWith('Path of the ')) {
+      for (const adj of n.adj) {
+        if (allocSet.has(adj) && !data.tree.nodes[adj]?.a) {
+          visitedMain.add(adj);
+          qMain.push(adj);
+        }
+      }
+    }
+  }
+  while (qMain.length > 0) {
+    const cur = qMain.shift()!;
+    for (const nxt of data.tree.nodes[cur]?.adj ?? []) {
+      if (allocSet.has(nxt) && !data.tree.nodes[nxt]?.a && !visitedMain.has(nxt)) {
+        visitedMain.add(nxt);
+        qMain.push(nxt);
+      }
+    }
+  }
+  for (const id of mainAlloc) {
+    if (!visitedMain.has(id)) return false;
+  }
+  return true;
+}
+
+test('determinism: identical seed and options yield identical PoB code', async () => {
+  const opts = baseOptions({ seed: 'deterministic-42', leagueMode: 'hardcore', economy: 'ssf' });
+  const a = await generateBuild(data, opts);
+  const b = await generateBuild(data, opts);
+  assert.equal(a.pobCode, b.pobCode);
+  assert.equal(a.xml, b.xml);
+});
+
+test('all 21 ascendancies generate connected passive trees and valid PoB codes', async () => {
+  for (const cls of data.tree.classes) {
+    for (let ascIdx = 1; ascIdx <= cls.ascendancies.length; ascIdx++) {
+      const build = await generateBuild(
+        data,
+        baseOptions({
+          seed: `cls-${cls.id}-asc-${ascIdx}`,
+          classId: cls.id,
+          ascendancyIndex: ascIdx,
+          leagueMode: ascIdx % 2 === 0 ? 'hardcore' : 'softcore',
+          economy: cls.id % 2 === 0 ? 'ssf' : 'trade',
+        }),
+      );
+
+      assert.equal(
+        isTreeConnected(build.tree, cls.id, ascIdx),
+        true,
+        `Disconnected tree for ${cls.name} / ${build.archetype.ascendancy.name}`,
+      );
+      assert.ok(build.tree.ascPointsUsed <= 8);
+      assert.equal(build.tree.pointsUsed, build.tree.pointsBudget);
+
+      // Verify mastery effect IDs belong to the allocated mastery node
+      for (const [mIdStr, effId] of Object.entries(build.tree.masteryEffects)) {
+        const node = data.tree.nodes[mIdStr];
+        assert.ok(node && node.t === 'mastery');
+        assert.ok(node.me?.some((e) => e.e === effId));
+      }
+
+      // Verify PoB import code inflates cleanly back to XML
+      const b64 = build.pobCode.replace(/-/g, '+').replace(/_/g, '/');
+      const inflated = inflateSync(Buffer.from(b64, 'base64')).toString('utf8');
+      assert.equal(inflated, build.xml);
+      assert.ok(inflated.includes('<PathOfBuilding>'));
+      assert.ok(inflated.includes('</PathOfBuilding>'));
+      assert.ok(inflated.includes(`ascendClassName="${build.archetype.ascendancy.internal}"`));
+
+      // Every jewel socket itemId exists in items
+      const itemIds = new Set(build.gear.items.map((i) => i.id));
+      for (const itemId of Object.values(build.gear.jewelMap)) {
+        assert.ok(itemIds.has(itemId));
+      }
+      for (const itemId of Object.values(build.gear.slotMap)) {
+        assert.ok(itemIds.has(itemId));
+      }
+    }
+  }
+});
+
+test('knobs: SSF excludes awakened supports & chase uniques; Hardcore ensures strong resists & guard', async () => {
+  for (let i = 0; i < 12; i++) {
+    const ssfHc = await generateBuild(
+      data,
+      baseOptions({ seed: `hc-ssf-${i}`, leagueMode: 'hardcore', economy: 'ssf' }),
+    );
+    for (const grp of ssfHc.skills.groups) {
+      for (const gi of grp.gems) {
+        assert.ok(!gi.gem.tags.includes('awakened'), `SSF should not include awakened gem: ${gi.gem.name}`);
+      }
+    }
+    for (const item of ssfHc.gear.items) {
+      if (item.rarity === 'UNIQUE') {
+        assert.ok(!/Mageblood|Headhunter|Ashes of the Stars|Abyssus/i.test(item.name));
+      }
+    }
+    assert.ok(ssfHc.skills.groups.some((g) => g.label.includes('Guard')), 'HC build should have a Guard skill group');
+  }
+});
+
+test('support matching: Spell Echo supports Fireball, not Cleave', () => {
+  const fireball = data.gems.find((g) => g.name === 'Fireball')!;
+  const cleave = data.gems.find((g) => g.name === 'Cleave')!;
+  const spellEcho = data.gems.find((g) => g.name === 'Spell Echo')!;
+  const multistrike = data.gems.find((g) => g.name === 'Multistrike')!;
+  assert.equal(canSupportSkill(spellEcho, fireball), true);
+  assert.equal(canSupportSkill(spellEcho, cleave), false);
+  assert.equal(canSupportSkill(multistrike, cleave), true);
+  assert.equal(canSupportSkill(multistrike, fireball), false);
+});

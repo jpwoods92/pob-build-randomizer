@@ -75,68 +75,68 @@ function colorChar(color: number): 'R' | 'G' | 'B' | 'W' {
 
 function scoreSupportForMain(sup: GemData, arch: BuildArchetype): number {
   const name = sup.name;
-  // Filter out pure utility/trigger/conversion traps unless synergistic
-  if (/Cast on|Cast when|Cast While|Spellslinger|Hextouch|Mark On Hit|Generosity|Guardian's Blessing|Meat Shield|Elemental Army|Item Rarity|Culling Strike|Lifetap|Second Wind|Swiftbrand|Arcane Surge|Pinpoint/.test(name)) {
-    if (name === 'Lifetap' && arch.options.leagueMode === 'hardcore') return 10;
-    if (name === 'Culling Strike') return 6;
-    if (name === 'Meat Shield' && arch.damageStyle === 'minion') return 6;
-    return 1;
+  // Filter out pure utility/trigger/meme/non-DPS supports
+  if (/Cast on|Cast when|Cast While|Spellslinger|Hextouch|Mark On Hit|Generosity|Guardian's Blessing|Meat Shield|Elemental Army|Item Rarity|Mana Leech|Life Leech|Life Gain on Hit|Stun$|Endurance Charge on Melee Stun|Knockback|Blind|Chance to Flee|Block Chance Reduction|Additional Accuracy|Second Wind|Swiftbrand|Arcane Surge|Urgent Orders|Corrupting Cry|Autoexertion|Summon Phantasm|Pacifism|Invert the Rules|Cull the Weak|Hallow|Foulgrasp|Hextoad|Hexpass|Hex Bloom|Blessed Call|Devour|Greater Devour|Crystalfall|Excommunicate|Exemplar|Machinations|Invention|Transfusion|Communion|Companionship|Congregation|Scornful Herald|Manaforged Arrows|Frigid Bond|Flamewood|Overloaded Intensity|Living Lightning|Voidstorm|Void Shockwave|Bonespire|Eclipse|Fissure|Windburst|Kinetic Instability|Greater Kinetic Instability/.test(name)) {
+    return 0;
   }
-  if (/Trap$|Cluster Traps|Multiple Traps|Trap and Mine|Charged Traps/.test(name) && arch.damageStyle !== 'trap_mine') return 0;
-  if (/Mine$|High-Impact Mine|Blastchain Mine|Locus Mine|Minefield|Swift Assembly/.test(name) && arch.damageStyle !== 'trap_mine') return 0;
-  if (/Spell Totem|Ballista Totem|Multiple Totems|Focused Ballista/.test(name) && arch.damageStyle !== 'totem') return 0;
+  if (/Lifetap|Culling Strike/.test(name)) {
+    return name === 'Lifetap' && arch.options.leagueMode === 'hardcore' ? 14 : 6;
+  }
+  if (/Trap$|Cluster Traps|Multiple Traps|Trap and Mine|Charged Traps|Advanced Traps/.test(name) && arch.damageStyle !== 'trap_mine') return 0;
+  if (/Mine$|High-Impact Mine|Blastchain Mine|Locus Mine|Minefield|Swift Assembly|Charged Mines/.test(name) && arch.damageStyle !== 'trap_mine') return 0;
+  if (/Spell Totem|Ballista Totem|Multiple Totems|Focused Ballista|Earthbreaker/.test(name) && arch.damageStyle !== 'totem') return 0;
 
-  let score = 20;
+  let score = 10;
   const isTrade = arch.options.economy === 'trade';
   const isAwakened = sup.tags.includes('awakened');
   const isExceptional = sup.tags.includes('exceptional');
 
   if (isAwakened && !isTrade) return 0; // No awakened gems in SSF
-  if (isExceptional && !isTrade) score *= 0.15;
-  if (isAwakened && isTrade) score *= 1.35;
+  if (isExceptional && !isTrade) score *= 0.1;
+  if (isAwakened && isTrade) score *= 1.45;
 
-  // Anti-synergies
+  // Anti-synergies & ailment-specific guards
   if (name.includes('Brutality') && !arch.elements.includes('physical')) return 0;
-  if (name.includes('Elemental Focus') && arch.damageStyle === 'dot') return 0.5;
-  if (name.includes('Deadly Ailments') && arch.damageStyle !== 'dot') return 0.5;
-  if (name.includes('Cruelty') && arch.damageStyle !== 'dot' && !arch.elements.includes('physical')) return 4;
+  if (name.includes('Elemental Focus') && arch.damageStyle === 'dot') return 0;
+  if (/Deadly Ailments|Sadism|Rupture|Ignite Proliferation|Chance to Bleed|Bloodlust|Decay|Vile Toxins/.test(name) && arch.damageStyle !== 'dot') return 0;
+  if (/Elemental Proliferation|Bonechill|Overcharge|Cold to Fire/.test(name)) score *= 0.25;
+  if (name.includes('Cruelty') && arch.damageStyle !== 'dot' && !arch.elements.includes('physical')) return 2;
   if (name.includes('Concentrated Effect') && arch.options.leagueMode === 'hardcore') score *= 0.85;
-  if (name.includes('Greater Multiple Projectiles') && arch.damageStyle === 'dot') score *= 0.5;
+  if (name.includes('Greater Multiple Projectiles') && arch.damageStyle === 'dot') score *= 0.4;
 
   // Crit vs non-crit
   if (arch.critMode === 'crit') {
-    if (/Critical/.test(name)) score += 28;
+    if (/Increased Critical Strikes|Increased Critical Damage|Power Charge On Critical|Nightblade/.test(name)) score += 45;
   } else {
     if (/Critical/.test(name)) return 0;
-    if (name.includes('Elemental Overload') || name.includes('Controlled Destruction')) score += 16;
+    if (name.includes('Controlled Destruction') || name.includes('Elemental Overload')) score += 35;
   }
 
   // Element matches
   for (const el of arch.elements) {
-    if (el === 'fire' && /Fire|Burning|Combustion|Immolate/.test(name)) score += 22;
-    if (el === 'cold' && /Cold|Hypothermia|Ice Bite/.test(name)) score += 22;
-    if (el === 'lightning' && /Lightning|Innervate|Overcharge/.test(name)) score += 22;
-    if (el === 'chaos' && /Chaos|Void Manipulation|Vile Toxins|Unbound Ailments|Withering/.test(name)) score += 22;
-    if (el === 'physical' && /Physical|Brutality|Impale|Maim|Melee Physical|Ruthless|Rage/.test(name)) score += 20;
+    if (el === 'fire' && /Fire Penetration|Added Fire|Burning Damage|Combustion|Immolate/.test(name)) score += 38;
+    if (el === 'cold' && /Cold Penetration|Added Cold|Hypothermia|Ice Bite/.test(name)) score += 38;
+    if (el === 'lightning' && /Lightning Penetration|Added Lightning|Innervate/.test(name)) score += 38;
+    if (el === 'chaos' && /Void Manipulation|Added Chaos|Unbound Ailments|Withering Touch/.test(name)) score += 40;
+    if (el === 'physical' && /Brutality|Impale|Maim|Melee Physical Damage|Ruthless|Rage|Pulverise|Fist of War/.test(name)) score += 38;
   }
   if (arch.elements.some((e) => e === 'fire' || e === 'cold' || e === 'lightning')) {
-    if (/Elemental Damage with Attacks|Trinity|Elemental Penetration/.test(name)) score += 20;
+    if (/Elemental Damage with Attacks|Trinity|Elemental Penetration/.test(name)) score += 42;
   }
 
   // Style matches
-  if (arch.damageStyle === 'minion' && /Minion|Feeding Frenzy|Predator/.test(name)) score += 28;
-  if (arch.damageStyle === 'dot' && /Efficacy|Swift Affliction|Unbound Ailments|Deadly Ailments|Burning Damage|Void Manipulation/.test(name)) score += 24;
-  if (arch.damageStyle === 'attack' && /Multistrike|Melee|Close Combat|Fortify|Mirage Archer|Vicious Projectiles|Faster Attacks|Inspiration/.test(name)) {
-    score += 18;
-    if (name === 'Fortify' && arch.options.leagueMode === 'hardcore') score += 16;
+  if (arch.damageStyle === 'minion' && /Minion Damage|Feeding Frenzy|Predator|Multistrike|Melee Physical Damage/.test(name)) score += 48;
+  if (arch.damageStyle === 'dot' && /Efficacy|Swift Affliction|Unbound Ailments|Deadly Ailments|Burning Damage|Void Manipulation|Ignite Proliferation|Chance to Bleed/.test(name)) score += 45;
+  if (arch.damageStyle === 'attack' && /Multistrike|Melee Physical Damage|Close Combat|Fortify|Mirage Archer|Vicious Projectiles|Faster Attacks|Inspiration|Damage on Full Life|Volatility|Returning Projectiles|Barrage/.test(name)) {
+    score += 36;
+    if (name === 'Fortify' && arch.options.leagueMode === 'hardcore') score += 25;
   }
-  if (arch.damageStyle === 'spell' && /Spell Echo|Unleash|Controlled Destruction|Inspiration|Concentrated Effect|Pinpoint|Intensify/.test(name)) score += 18;
-  if (arch.damageStyle === 'totem' && /Multiple Totems|Spell Totem|Ballista Totem/.test(name)) score += 26;
-  if (arch.damageStyle === 'trap_mine' && /Trap and Mine|Cluster Traps|Charged Traps|Minefield|High-Impact Mine|Blastchain Mine|Swift Assembly/.test(name)) score += 26;
+  if (arch.damageStyle === 'spell' && /Spell Echo|Unleash|Controlled Destruction|Inspiration|Concentrated Effect|Intensify|Faster Casting|Energy Leech|Spellblade/.test(name)) score += 36;
+  if (arch.damageStyle === 'totem' && /Multiple Totems|Spell Totem|Ballista Totem|Focused Ballista/.test(name)) score += 45;
+  if (arch.damageStyle === 'trap_mine' && /Trap and Mine Damage|Cluster Traps|Charged Traps|Minefield|High-Impact Mine|Blastchain Mine|Swift Assembly|Charged Mines/.test(name)) score += 45;
 
-  // Prefer single base version if awakened already exists or vice versa (dedupe happens when picking)
   if (name === 'Empower' || name === 'Awakened Empower') {
-    score += arch.damageStyle === 'spell' || arch.damageStyle === 'minion' ? 18 : 4;
+    score += arch.damageStyle === 'spell' || arch.damageStyle === 'minion' ? 35 : 5;
   }
 
   return score;
@@ -184,9 +184,14 @@ export function generateSkills(data: GameData, arch: BuildArchetype, rng: Rng): 
   const chosenBaseNames = new Set(chosenSupports.map((s) => s.name.replace(/^Awakened /, '')));
 
   while (chosenSupports.length < mainLinks - 1) {
+    const hasBrutality = chosenSupports.some((s) => s.name === 'Brutality');
+    const hasEleSup = chosenSupports.some((s) => /Added (Fire|Cold|Lightning)|Elemental|Penetration|Immolate|Combustion|Hypothermia|Ice Bite|Innervate|Cold to Fire|Physical to Lightning|Trinity/.test(s.name));
     const pool = compatibleSupports.filter((s) => {
       const baseName = s.name.replace(/^Awakened /, '');
-      return !chosenBaseNames.has(baseName);
+      if (chosenBaseNames.has(baseName)) return false;
+      if (hasBrutality && /Added (Fire|Cold|Lightning)|Elemental|Penetration|Immolate|Combustion|Hypothermia|Ice Bite|Innervate|Cold to Fire|Physical to Lightning|Trinity/.test(s.name)) return false;
+      if (hasEleSup && s.name === 'Brutality') return false;
+      return true;
     });
     if (pool.length === 0) break;
     const picked = rng.weighted(pool, (s) => scoreSupportForMain(s, arch));

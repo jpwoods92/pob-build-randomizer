@@ -137,11 +137,11 @@ function scoreModForArchetype(
   if (/movement speed/.test(txt)) w *= 24;
 
   // Resistances weighted dynamically by current deficit
-  if (/fire resistance/.test(txt) && needs.fire > 0) w *= isHC ? 16 : 11;
-  if (/cold resistance/.test(txt) && needs.cold > 0) w *= isHC ? 16 : 11;
-  if (/lightning resistance/.test(txt) && needs.lightning > 0) w *= isHC ? 16 : 11;
-  if (/all elemental resistances/.test(txt) && (needs.fire > 0 || needs.cold > 0 || needs.lightning > 0)) w *= isHC ? 18 : 12;
-  if (/chaos resistance/.test(txt) && needs.chaos > 0) w *= isHC ? 18 : 7;
+  if (/fire resistance/.test(txt) && needs.fire > 0) w *= (isHC ? 28 : 22) + needs.fire * 0.25;
+  if (/cold resistance/.test(txt) && needs.cold > 0) w *= (isHC ? 28 : 22) + needs.cold * 0.25;
+  if (/lightning resistance/.test(txt) && needs.lightning > 0) w *= (isHC ? 28 : 22) + needs.lightning * 0.25;
+  if (/all elemental resistances/.test(txt) && (needs.fire > 0 || needs.cold > 0 || needs.lightning > 0)) w *= isHC ? 32 : 24;
+  if (/chaos resistance/.test(txt) && needs.chaos > 0) w *= isHC ? 24 : 9;
 
   // Attributes weighted dynamically by gem/gear deficit
   if (/to strength/.test(txt) && needs.str > 0) w *= 10;
@@ -267,24 +267,27 @@ function isUniqueSuitable(u: UniqueData, arch: BuildArchetype, slotTypes: string
   return true;
 }
 
-function scoreUniqueForArchetype(u: UniqueData, arch: BuildArchetype): number {
+function scoreUniqueForArchetype(u: UniqueData, arch: BuildArchetype, base: BaseData | undefined): number {
   const txt = [...u.implicits, ...u.explicits].join(' ').toLowerCase();
-  let s = 5;
+  const reqLvl = u.levelReq ?? base?.req.level ?? 1;
+  let s = reqLvl >= 50 ? 12 : reqLvl >= 30 ? 5 : 0.6;
+  // Leveling weapons without endgame scaling are weak at lvl 90
+  if (base?.weapon && reqLvl < 40 && !/spell|minion|gems|aura/i.test(txt)) s *= 0.15;
   if (arch.defenseStyle === 'life' && /maximum life/.test(txt)) s += 8;
   if (arch.defenseStyle === 'es' && /maximum energy shield/.test(txt)) s += 10;
-  if (/to all elemental resistances|resistance/.test(txt)) s += arch.options.leagueMode === 'hardcore' ? 9 : 4;
-  if (/suppress spell/.test(txt)) s += arch.options.leagueMode === 'hardcore' ? 12 : 5;
-  if (arch.damageStyle === 'attack' && /attack|weapon|physical/.test(txt)) s += 7;
-  if (arch.damageStyle === 'spell' && /spell|cast speed/.test(txt)) s += 7;
-  if (arch.damageStyle === 'minion' && /minion/.test(txt)) s += 16;
-  if (arch.damageStyle === 'totem' && /totem/.test(txt)) s += 14;
-  if (arch.damageStyle === 'trap_mine' && /trap|mine/.test(txt)) s += 14;
-  if (arch.damageStyle === 'dot' && /damage over time|ignite|poison|bleed/.test(txt)) s += 12;
+  if (/to all elemental resistances|resistance/.test(txt)) s += arch.options.leagueMode === 'hardcore' ? 11 : 5;
+  if (/suppress spell/.test(txt)) s += arch.options.leagueMode === 'hardcore' ? 14 : 6;
+  if (arch.damageStyle === 'attack' && /attack|weapon|physical/.test(txt)) s += 8;
+  if (arch.damageStyle === 'spell' && /spell|cast speed/.test(txt)) s += 8;
+  if (arch.damageStyle === 'minion' && /minion/.test(txt)) s += 18;
+  if (arch.damageStyle === 'totem' && /totem/.test(txt)) s += 15;
+  if (arch.damageStyle === 'trap_mine' && /trap|mine/.test(txt)) s += 15;
+  if (arch.damageStyle === 'dot' && /damage over time|ignite|poison|bleed/.test(txt)) s += 14;
   if (arch.critMode === 'crit' && /critical/.test(txt)) s += 8;
   for (const el of arch.elements) {
     if (txt.includes(el)) s += 6;
   }
-  if (/level of all .* gems|movement speed/.test(txt)) s += 8;
+  if (/level of all .* gems|movement speed/.test(txt)) s += 9;
   return s;
 }
 
@@ -417,7 +420,9 @@ function buildRareItem(
 
   // Reserve 1 slot for a deterministic crafting bench mod when non-jewel so life/res is reliable
   const useBenchCraft = !opts.isJewel;
-  const benchIsPrefix = (arch.defenseStyle === 'life' || arch.defenseStyle === 'hybrid')
+  const maxEleNeed = Math.max(needs.fire, needs.cold, needs.lightning);
+  const benchIsPrefix = maxEleNeed <= 30
+    && (arch.defenseStyle === 'life' || arch.defenseStyle === 'hybrid')
     && !prefixes.some((p) => p.mod.group === 'IncreasedLife');
 
   const rollPrefixCount = useBenchCraft && benchIsPrefix ? Math.min(maxAffix - 1, targetPrefixes) : targetPrefixes;
@@ -651,8 +656,8 @@ export function generateGear(
     int: Math.max(0, skills.maxReq.int - attrs.int),
   });
 
-  // Determine how many uniques to aim for (Trade: 2-4, SSF: 0-2)
-  const targetUniques = isTrade ? rng.int(2, 4) : rng.int(0, 2);
+  // Determine how many uniques to aim for (Trade: 1-3, SSF: 0-2)
+  const targetUniques = isTrade ? rng.int(1, 3) : rng.int(0, 2);
   const candidateUniqueSlots: ItemSlotName[] = rng.shuffle([
     'Weapon 1', 'Weapon 2', 'Helmet', 'Body Armour', 'Gloves', 'Boots', 'Amulet', 'Ring 1', 'Belt',
   ]);
@@ -694,7 +699,7 @@ export function generateGear(
         (u) => !usedUniqueNames.has(u.name) && isUniqueSuitable(u, arch, def.types),
       );
       if (pool.length > 0) {
-        const picked = rng.weighted(pool, (u) => scoreUniqueForArchetype(u, arch));
+        const picked = rng.weighted(pool, (u) => scoreUniqueForArchetype(u, arch, data.bases[u.base]));
         if (picked && data.bases[picked.base]) {
           usedUniqueNames.add(picked.name);
           item = buildUniqueItem(id, def.slot, picked, data.bases[picked.base], sockets, arch, rng);

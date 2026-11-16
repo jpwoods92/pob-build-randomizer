@@ -42,12 +42,12 @@ function scoreStatsText(stats: string[] | undefined, arch: BuildArchetype): numb
 
   // Defenses
   if (arch.defenseStyle === 'life' || arch.defenseStyle === 'hybrid') {
-    if (/maximum life/.test(text)) score += isHC ? 28 : 16;
+    if (/maximum life/.test(text)) score += isHC ? 38 : 18;
     if (/life regeneration|regenerate .* life/.test(text)) score += isHC ? 14 : 6;
     if (/life leech/.test(text)) score += 7;
   }
   if (arch.defenseStyle === 'es' || arch.defenseStyle === 'hybrid') {
-    if (/maximum energy shield/.test(text)) score += isHC ? 26 : 18;
+    if (/maximum energy shield/.test(text)) score += isHC ? 34 : 20;
     if (/energy shield recharge|faster start of energy shield/.test(text)) score += isHC ? 12 : 6;
   }
   if (/suppress spell damage/.test(text)) score += isHC ? 24 : 11;
