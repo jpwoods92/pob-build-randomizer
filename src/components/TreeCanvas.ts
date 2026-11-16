@@ -55,7 +55,11 @@ export class TreeCanvas {
 
     this.attachEvents();
     this.resize();
-    window.addEventListener('resize', () => this.resize());
+    if (typeof ResizeObserver !== 'undefined') {
+      new ResizeObserver(() => this.resize()).observe(container);
+    } else {
+      window.addEventListener('resize', () => this.resize());
+    }
   }
 
   setBuildTree(buildTree: GeneratedTree): void {

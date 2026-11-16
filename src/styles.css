@@ -35,11 +35,11 @@ body {
 
 .layout {
   display: grid;
-  grid-template-columns: 310px 1fr;
+  grid-template-columns: 295px 1fr;
   min-height: 100vh;
 }
 
-@media (max-width: 960px) {
+@media (max-width: 900px) {
   .layout {
     grid-template-columns: 1fr;
   }
@@ -202,6 +202,7 @@ input[type="range"] {
   flex-direction: column;
   gap: 16px;
   min-width: 0;
+  min-height: 100vh;
 }
 
 .build-header {
@@ -327,21 +328,33 @@ input[type="range"] {
   display: block;
 }
 
-.tree-grid {
-  display: grid;
-  grid-template-columns: 1fr 310px;
-  gap: 14px;
+#panel-tree.active {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 420px;
 }
 
-@media (max-width: 1120px) {
+.tree-grid {
+  display: grid;
+  grid-template-columns: 1fr 275px;
+  grid-template-rows: minmax(0, 1fr);
+  gap: 14px;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+@media (max-width: 960px) {
   .tree-grid {
     grid-template-columns: 1fr;
+    grid-template-rows: minmax(420px, 1fr) auto;
   }
 }
 
 .tree-viewport {
   position: relative;
-  height: 560px;
+  height: 100%;
+  min-height: 420px;
   background: #07090e;
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -429,11 +442,19 @@ input[type="range"] {
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 14px;
-  max-height: 560px;
+  height: 100%;
+  min-height: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+@media (max-width: 960px) {
+  .tree-side {
+    height: auto;
+    max-height: 420px;
+  }
 }
 
 .tree-side h3 {
