@@ -81,11 +81,13 @@ export class TreeCanvas {
   private dragStartY = 0;
   private hoveredId: number | null = null;
   private focusedId: number | null = null;
+  private onFocusClear?: () => void;
   private nodeEntries: [number, TreeNode][];
 
-  constructor(container: HTMLElement, treeData: TreeData, isDark = false) {
+  constructor(container: HTMLElement, treeData: TreeData, isDark = false, onFocusClear?: () => void) {
     this.treeData = treeData;
     this.isDark = isDark;
+    this.onFocusClear = onFocusClear;
     this.nodeEntries = Object.entries(treeData.nodes).map(([k, v]) => [Number(k), v]);
 
     container.classList.add('tree-viewport');
@@ -115,6 +117,7 @@ export class TreeCanvas {
       else if (action === 'fit') {
         this.focusedId = null;
         this.tooltip.classList.add('hidden');
+        this.onFocusClear?.();
         this.fitToBuild();
       }
     });

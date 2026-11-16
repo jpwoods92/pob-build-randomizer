@@ -206,7 +206,9 @@ async function main() {
     </div>
   `;
 
-  treeCanvas = new TreeCanvas(document.getElementById('tree-canvas-host')!, data.tree, isDark);
+  treeCanvas = new TreeCanvas(document.getElementById('tree-canvas-host')!, data.tree, isDark, () => {
+    document.querySelectorAll('#tree-side [data-node-id].is-focused').forEach((el) => el.classList.remove('is-focused'));
+  });
 
   const layoutEl = document.getElementById('app-layout')!;
   const classSel = document.getElementById('class-select') as HTMLSelectElement;
