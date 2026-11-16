@@ -551,6 +551,8 @@ input[type="range"] {
   padding: 5px 11px;
   font-size: 0.76rem;
   box-shadow: none;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .btn-cta {
@@ -651,7 +653,7 @@ input[type="range"] {
   gap: 12px;
 }
 
-@media (max-width: 1180px) {
+@media (max-width: 1040px) {
   .hero-metrics,
   .bento-row-3 {
     grid-template-columns: 1fr 1fr;
@@ -690,6 +692,8 @@ input[type="range"] {
   background: var(--surface-subtle);
   border: 1px solid var(--border);
   color: var(--text-2);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .badge-hc { background: var(--hc-bg); border-color: var(--hc-border); color: var(--hc-fg); }
