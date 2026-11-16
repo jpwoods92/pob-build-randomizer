@@ -347,7 +347,9 @@ async function main() {
             ${meterHtml('Fire Resistance (post-Kitava)', `${r.fire}% / 75%`, (Math.max(0, r.fire) / 135) * 100, '#ef4444')}
             ${meterHtml('Cold Resistance (post-Kitava)', `${r.cold}% / 75%`, (Math.max(0, r.cold) / 135) * 100, '#3b82f6')}
             ${meterHtml('Lightning Resistance (post-Kitava)', `${r.lightning}% / 75%`, (Math.max(0, r.lightning) / 135) * 100, '#eab308')}
-            ${meterHtml('Chaos Resistance (post-Kitava)', `${r.chaos}%`, ((r.chaos + 60) / 135) * 100, '#8b5cf6')}
+            ${b.tree.summary.keystones.includes('Chaos Inoculation')
+              ? meterHtml('Chaos Resistance (CI)', 'Immune (CI)', 100, '#8b5cf6')
+              : meterHtml('Chaos Resistance (post-Kitava)', `${r.chaos}%`, ((r.chaos + 60) / 135) * 100, '#8b5cf6')}
             ${meterHtml('Strength / Dexterity', `${at.str}(${req.str}) · ${at.dex}(${req.dex})`, Math.min(100, (at.str / Math.max(1, req.str)) * 50 + (at.dex / Math.max(1, req.dex)) * 50), 'var(--lime)')}
             ${meterHtml('Intelligence vs Gem Req', `${at.int} / ${req.int} req`, (at.int / Math.max(1, req.int)) * 100, 'var(--emerald)')}
           </div>

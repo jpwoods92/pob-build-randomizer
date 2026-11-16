@@ -147,9 +147,10 @@ function scoreStatsText(stats: string[] | undefined, arch: BuildArchetype): numb
     if (/energy shield recharge|faster start of energy shield/.test(text)) score += isHC ? 12 : 6;
   }
   if (/suppress spell damage/.test(text)) score += isHC ? 24 : 11;
-  if (/maximum (all )?(fire|cold|lightning|elemental|chaos) resistance/.test(text)) score += isHC ? 26 : 12;
+  if (/maximum (all )?(fire|cold|lightning|elemental) resistance/.test(text)) score += isHC ? 26 : 12;
+  if (/maximum chaos resistance/.test(text)) score += arch.defenseStyle === 'es' ? -80 : (isHC ? 22 : 10);
   if (/to all elemental resistances|to (fire|cold|lightning) resistance/.test(text)) score += isHC ? 10 : 5;
-  if (/chaos resistance/.test(text)) score += isHC ? 16 : 6;
+  if (/chaos resistance/.test(text)) score += arch.defenseStyle === 'es' ? -80 : (isHC ? 16 : 6);
   if (/armour/.test(text) && (arch.primaryAttr === 'str' || isHC)) score += isHC ? 10 : 4;
   if (/evasion/.test(text) && (arch.primaryAttr === 'dex' || isHC)) score += isHC ? 9 : 4;
   if (/chance to block/.test(text) && arch.weaponSetup.includes('shield')) score += isHC ? 15 : 7;
@@ -307,7 +308,7 @@ function scoreNode(id: number, node: TreeNode, arch: BuildArchetype): number {
     score += arch.options.economy === 'trade' ? 34 : 20;
   } else if (node.t === 'keystone') {
     if (!isKeystoneAllowed(node, arch)) return -9999;
-    score += 22;
+    score += node.n === 'Chaos Inoculation' && arch.defenseStyle === 'es' ? 52 : 22;
   }
   // Small bonus for life/ES cluster travel nodes
   if (node.t === 'normal' && score <= 0) score = 0.5;

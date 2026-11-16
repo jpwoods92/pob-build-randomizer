@@ -112,8 +112,10 @@ function scoreModForArchetype(
   arch: BuildArchetype,
   needs: { fire: number; cold: number; lightning: number; chaos: number; str: number; dex: number; int: number },
   isWeapon: boolean,
+  hasCI: boolean,
 ): number {
   const txt = mod.lines.join(' ').toLowerCase();
+  if (hasCI && /chaos resistance/.test(txt)) return 0;
   const isHC = arch.options.leagueMode === 'hardcore';
   const tags = new Set(mod.tags ?? []);
   let w = 1;
@@ -219,6 +221,7 @@ function pickBestBase(
   data: GameData,
   slotType: string,
   arch: BuildArchetype,
+  hasCI: boolean,
   rng: Rng,
   opts: { allowedTypes?: string[]; preferSubType?: string; preferTags?: string[] } = {},
 ): [string, BaseData] {
@@ -263,7 +266,8 @@ function pickBestBase(
     if (b.type === 'Belt' && name === 'Stygian Vise') w *= isTrade ? 5 : 2;
     if (b.type === 'Belt' && name === 'Leather Belt' && arch.defenseStyle === 'life') w *= 3;
     if (b.type === 'Belt' && name === 'Crystal Belt' && arch.defenseStyle === 'es') w *= 6;
-    if (b.type === 'Ring' && /Two-Stone|Amethyst|Vermilion|Opal|Diamond/.test(name)) w *= 3;
+    if (b.type === 'Ring' && /Two-Stone|Vermilion|Opal|Diamond/.test(name)) w *= 3;
+    if (b.type === 'Ring' && name === 'Amethyst Ring') w *= hasCI ? 0.05 : 3;
     if (b.type === 'Amulet' && /Onyx|Agate|Turquoise|Citrine|Jade|Lapis|Amber/.test(name)) w *= 3;
     if (opts.preferSubType && b.subType === opts.preferSubType) w *= 8;
     if (opts.preferTags && opts.preferTags.some((t) => b.tags.includes(t))) w *= 5;
@@ -407,6 +411,7 @@ function buildRareItem(
   data: GameData,
   arch: BuildArchetype,
   needs: { fire: number; cold: number; lightning: number; chaos: number; str: number; dex: number; int: number },
+  hasCI: boolean,
   rng: Rng,
   opts: { isJewel?: boolean; jewelNodeId?: number } = {},
 ): GeneratedItem {
@@ -437,7 +442,7 @@ function buildRareItem(
     );
     const chosen = rng.weighted(pool, (m) => {
       const baseW = getModWeightForTags(m, itemTags);
-      const archW = scoreModForArchetype(m, arch, needs, isWeapon);
+      const archW = scoreModForArchetype(m, arch, needs, isWeapon, hasCI);
       return Math.sqrt(baseW) * archW;
     });
     if (!chosen) return;
@@ -476,11 +481,11 @@ function buildRareItem(
     }
     if (!craftedMod && suffixes.length < maxAffix) {
       if (needs.fire >= needs.cold && needs.fire >= needs.lightning && needs.fire > 0) {
-        craftedMod = isHC ? '+18% to Fire and Chaos Resistances' : '+32% to Fire Resistance';
+        craftedMod = isHC && !hasCI ? '+18% to Fire and Chaos Resistances' : '+32% to Fire Resistance';
       } else if (needs.cold >= needs.lightning && needs.cold > 0) {
-        craftedMod = isHC ? '+18% to Cold and Chaos Resistances' : '+32% to Cold Resistance';
+        craftedMod = isHC && !hasCI ? '+18% to Cold and Chaos Resistances' : '+32% to Cold Resistance';
       } else if (needs.lightning > 0) {
-        craftedMod = isHC ? '+18% to Lightning and Chaos Resistances' : '+32% to Lightning Resistance';
+        craftedMod = isHC && !hasCI ? '+18% to Lightning and Chaos Resistances' : '+32% to Lightning Resistance';
       } else if (isHC && (base.type === 'Boots' || base.type === 'Gloves' || base.type === 'Helmet')) {
         craftedMod = '+10% chance to Suppress Spell Damage';
       } else if (isWeapon) {
@@ -669,8 +674,9 @@ export function generateGear(
 ): GeneratedGear {
   const isTrade = arch.options.economy === 'trade';
   const isHC = arch.options.leagueMode === 'hardcore';
+  const hasCI = tree.summary.keystones.includes('Chaos Inoculation');
   const targetEleRes = isHC ? 165 : 135; // Accounts for -60% Kitava penalty (135 - 60 = 75%)
-  const targetChaosRes = isHC ? 95 : 40;
+  const targetChaosRes = hasCI ? -999 : (isHC ? 95 : 40);
 
   // Baseline resistances & attributes from tree + Kitava (-60%)
   const resists = { fire: -60, cold: -60, lightning: -60, chaos: -60 };
@@ -751,8 +757,8 @@ export function generateGear(
     }
 
     if (!item) {
-      const [baseName, base] = pickBestBase(data, def.types[0], arch, rng, { allowedTypes: def.types });
-      item = buildRareItem(id, def.slot, baseName, base, sockets, data, arch, currentNeeds(), rng);
+      const [baseName, base] = pickBestBase(data, def.types[0], arch, hasCI, rng, { allowedTypes: def.types });
+      item = buildRareItem(id, def.slot, baseName, base, sockets, data, arch, currentNeeds(), hasCI, rng);
     }
 
     tallyModsStats([...item.implicits, ...item.explicits], resists, attrs);
@@ -767,7 +773,7 @@ export function generateGear(
         { slot: 'Flask 2', bases: isHC ? ['Granite Flask', 'Jade Flask'] : ['Diamond Flask', 'Silver Flask'] },
         { slot: 'Flask 3', bases: ['Granite Flask', 'Basalt Flask'] },
         { slot: 'Flask 4', bases: ['Jade Flask', 'Quartz Flask'] },
-        { slot: 'Flask 5', bases: ['Amethyst Flask', 'Ruby Flask', 'Sapphire Flask', 'Topaz Flask'] },
+        { slot: 'Flask 5', bases: hasCI ? ['Ruby Flask', 'Sapphire Flask', 'Topaz Flask', 'Silver Flask'] : ['Amethyst Flask', 'Ruby Flask', 'Sapphire Flask', 'Topaz Flask'] },
       ]
     : [
         { slot: 'Flask 1', bases: ['Divine Life Flask', 'Eternal Life Flask'] },
@@ -807,6 +813,7 @@ export function generateGear(
         data,
         arch,
         currentNeeds(),
+        hasCI,
         rng,
         { isJewel: true, jewelNodeId: nodeId },
       );
