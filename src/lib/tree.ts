@@ -176,7 +176,6 @@ function isKeystoneAllowed(node: TreeNode, arch: BuildArchetype): boolean {
     case 'Veil of the Night':
     case 'Hollow Palm Technique':
       return false; // Restricts gear/auras in ways that conflict with randomized gear/auras
-    case 'Acrobatics':
     case 'Glancing Blows':
       return arch.weaponSetup.includes('shield');
     case 'Call to Arms':
