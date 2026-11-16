@@ -108,6 +108,7 @@ function isMasteryAllowed(name: string, arch: BuildArchetype): boolean {
     case 'Damage Over Time Mastery': return arch.damageStyle === 'dot';
     case 'Projectile Mastery': return arch.statKeywords.includes('projectile');
     case 'Fortify Mastery': return arch.damageStyle === 'attack';
+    case 'Attributes Mastery': return Boolean(arch.statStack);
     case 'Link Mastery': return arch.damageStyle === 'link_support';
     case 'Retaliation Mastery':
     case 'Banner Mastery':
@@ -307,8 +308,24 @@ function isKeystoneAllowed(node: TreeNode, arch: BuildArchetype): boolean {
   }
 }
 
+function pureAttrKind(node: TreeNode): 'str' | 'dex' | 'int' | null {
+  if (node.t !== 'notable' || !node.s || node.s.length === 0) return null;
+  if (!node.s.every((l) => /^\+\d+ to (Strength|Dexterity|Intelligence|all Attributes|Strength and Dexterity|Strength and Intelligence|Dexterity and Intelligence)$/.test(l.trim()))) {
+    return null;
+  }
+  const joined = node.s.join(' ');
+  if (/Strength/.test(joined) && !/Dexterity|Intelligence/.test(joined)) return 'str';
+  if (/Dexterity/.test(joined) && !/Strength|Intelligence/.test(joined)) return 'dex';
+  if (/Intelligence/.test(joined) && !/Strength|Dexterity/.test(joined)) return 'int';
+  return 'str';
+}
+
 function scoreNode(id: number, node: TreeNode, arch: BuildArchetype): number {
   if (node.t === 'start' || node.t === 'ascStart' || node.t === 'mastery') return 0;
+  const pureKind = pureAttrKind(node);
+  if (pureKind) {
+    return arch.statStack === pureKind ? 22 : -5;
+  }
   let score = scoreStatsText(node.s, arch);
   if (node.t === 'notable') score += 10;
   else if (node.t === 'jewel') {
@@ -453,7 +470,12 @@ function allocateAscendancy(
   };
 }
 
-export function generatePassiveTree(data: GameData, arch: BuildArchetype, rng: Rng): GeneratedTree {
+export function generatePassiveTree(
+  data: GameData,
+  arch: BuildArchetype,
+  rng: Rng,
+  attrReqs: { str: number; dex: number; int: number } = { str: 0, dex: 0, int: 0 },
+): GeneratedTree {
   const tree = data.tree;
   const { ascendancyNodes, ascPointsUsed, extraPassivePoints, extraStartClasses } = allocateAscendancy(tree, arch, rng.fork('asc'));
 
@@ -465,6 +487,34 @@ export function generatePassiveTree(data: GameData, arch: BuildArchetype, rng: R
   const masteryEffects: Record<number, number> = {};
   const usedMasteryEffects = new Set<number>();
   let pointsUsed = 0;
+
+  // Track live attributes so pure +30 stat nodes are only picked if requirements actually demand them
+  const curAttrs = { str: arch.classData.str, dex: arch.classData.dex, int: arch.classData.int };
+  const addNodeAttrs = (nid: number) => {
+    const n = tree.nodes[nid];
+    if (!n) return;
+    if (n.gs) curAttrs.str += n.gs;
+    if (n.gd) curAttrs.dex += n.gd;
+    if (n.gi) curAttrs.int += n.gi;
+    for (const s of n.s ?? []) {
+      const ms = /\+(\d+) to Strength/.exec(s);
+      if (ms) curAttrs.str += Number(ms[1]);
+      const md = /\+(\d+) to Dexterity/.exec(s);
+      if (md) curAttrs.dex += Number(md[1]);
+      const mi = /\+(\d+) to Intelligence/.exec(s);
+      if (mi) curAttrs.int += Number(mi[1]);
+      const ma = /\+(\d+) to all Attributes/.exec(s);
+      if (ma) {
+        const v = Number(ma[1]);
+        curAttrs.str += v; curAttrs.dex += v; curAttrs.int += v;
+      }
+    }
+  };
+  for (const aid of ascendancyNodes) addNodeAttrs(aid);
+  // Leave a small ~30 buffer for basic rare gear/amulets, while guaranteeing tree covers major deficits
+  const needStr = Math.max(0, attrReqs.str - 30);
+  const needDex = Math.max(0, attrReqs.dex - 30);
+  const needInt = Math.max(0, attrReqs.int - 30);
 
   // Extra starting points unlocked by Ascendant "Path of the ..."
   const rootSeeds = new Set<number>([arch.classData.start]);
@@ -561,7 +611,15 @@ export function generatePassiveTree(data: GameData, arch: BuildArchetype, rng: R
       const nn = tree.nodes[id];
       if (!nn) continue;
       if (nn.t !== 'notable' && nn.t !== 'keystone' && nn.t !== 'jewel') continue;
-      const base = nodeScore.get(id) ?? 0;
+      let base = nodeScore.get(id) ?? 0;
+      const pureKind = pureAttrKind(nn);
+      if (pureKind && !arch.statStack) {
+        const missing =
+          (pureKind === 'str' && curAttrs.str < needStr) ||
+          (pureKind === 'dex' && curAttrs.dex < needDex) ||
+          (pureKind === 'int' && curAttrs.int < needInt);
+        if (missing && d <= 2) base = 26;
+      }
       if (base <= 2) continue;
 
       // Also include small bonus for any high-value nodes along the path
@@ -593,6 +651,7 @@ export function generatePassiveTree(data: GameData, arch: BuildArchetype, rng: R
       if (pointsUsed >= pointsBudget) break;
       if (!allocated.has(pid)) {
         allocated.add(pid);
+        addNodeAttrs(pid);
         pointsUsed++;
         if (tree.nodes[pid]?.t === 'notable') {
           tryPickMasteryForNotable(pid);
@@ -615,8 +674,13 @@ export function generatePassiveTree(data: GameData, arch: BuildArchetype, rng: R
       }
     }
     if (frontier.length === 0) break;
-    const pick = rng.weighted(frontier, (id) => Math.max(1, (nodeScore.get(id) ?? 1) + 5))!;
+    const pick = rng.weighted(frontier, (id) => {
+      const sc = nodeScore.get(id) ?? 1;
+      if (sc < 0) return 0.05;
+      return Math.max(1, sc + 5);
+    })!;
     allocated.add(pick);
+    addNodeAttrs(pick);
     pointsUsed++;
   }
 

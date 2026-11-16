@@ -38,6 +38,8 @@ export interface BuildArchetype {
   countsAsAllOneHandMelee: boolean;
   /** Attribute profile used to guide base types and passive node priorities. */
   primaryAttr: 'str' | 'dex' | 'int';
+  /** Optional stat-stacking focus when the build intentionally stacks an attribute. */
+  statStack?: 'str' | 'dex' | 'int';
   /** Keywords used to score passive nodes, supports, and mods. */
   statKeywords: string[];
   bandit: 'None' | 'Alira' | 'Kraityn' | 'Oak';
