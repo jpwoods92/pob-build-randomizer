@@ -80,6 +80,7 @@ export class TreeCanvas {
   private dragStartX = 0;
   private dragStartY = 0;
   private hoveredId: number | null = null;
+  private focusedId: number | null = null;
   private nodeEntries: [number, TreeNode][];
 
   constructor(container: HTMLElement, treeData: TreeData, isDark = false) {
@@ -111,7 +112,11 @@ export class TreeCanvas {
       const action = btn.dataset.zoom;
       if (action === 'in') this.zoomBy(1.28);
       else if (action === 'out') this.zoomBy(1 / 1.28);
-      else if (action === 'fit') this.fitToBuild();
+      else if (action === 'fit') {
+        this.focusedId = null;
+        this.tooltip.classList.add('hidden');
+        this.fitToBuild();
+      }
     });
 
     const ctx = this.canvas.getContext('2d');
@@ -135,12 +140,28 @@ export class TreeCanvas {
 
   setBuildTree(buildTree: GeneratedTree): void {
     this.buildTree = buildTree;
+    this.focusedId = null;
+    this.tooltip.classList.add('hidden');
     const cls = this.treeData.classes.find((c) => c.id === buildTree.classId);
     const asc = cls?.ascendancies[buildTree.ascendClassId - 1];
     this.allocSet = new Set(buildTree.nodes);
     if (cls) this.allocSet.add(cls.start);
     if (asc?.start) this.allocSet.add(asc.start);
     this.fitToBuild();
+  }
+
+  focusNode(nodeId: number): void {
+    const n = this.treeData.nodes[nodeId];
+    if (!n) return;
+    const rect = this.canvas.getBoundingClientRect();
+    const w = rect.width || 800;
+    const h = rect.height || 500;
+    this.focusedId = nodeId;
+    this.scale = Math.max(this.scale, 0.14);
+    this.offsetX = w / 2 - n.x * this.scale;
+    this.offsetY = h / 2 - n.y * this.scale;
+    this.draw();
+    this.showTooltip(nodeId, w / 2, h / 2, rect);
   }
 
   resize(): void {
@@ -271,11 +292,16 @@ export class TreeCanvas {
       return;
     }
 
-    const n = this.treeData.nodes[bestId];
-    const isAlloc = this.allocSet.has(bestId);
+    this.showTooltip(bestId, mx, my, rect);
+  }
+
+  private showTooltip(nodeId: number, mx: number, my: number, rect: DOMRect): void {
+    const n = this.treeData.nodes[nodeId];
+    if (!n) return;
+    const isAlloc = this.allocSet.has(nodeId);
     let statsHtml = '';
-    if (n.t === 'mastery' && this.buildTree?.masteryEffects[bestId]) {
-      const effId = this.buildTree.masteryEffects[bestId];
+    if (n.t === 'mastery' && this.buildTree?.masteryEffects[nodeId]) {
+      const effId = this.buildTree.masteryEffects[nodeId];
       const eff = n.me?.find((m) => m.e === effId);
       if (eff) {
         statsHtml = `<div class="tt-mastery">${eff.s.map(escapeHtml).join('<br>')}</div>`;
@@ -368,12 +394,23 @@ export class TreeCanvas {
     for (const [id, n] of this.nodeEntries) {
       const alloc = this.allocSet.has(id);
       const hovered = id === this.hoveredId;
+      const focused = id === this.focusedId;
       let r = 42;
       if (n.t === 'keystone' || n.t === 'start' || n.t === 'ascStart') r = 95;
       else if (n.t === 'notable' || n.t === 'jewel') r = 68;
       else if (n.t === 'mastery') r = 60;
 
-      if (hovered) r *= 1.35;
+      if (hovered || focused) r *= 1.35;
+
+      if (focused) {
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, r * 2.1, 0, Math.PI * 2);
+        ctx.fillStyle = this.isDark ? 'rgba(163, 230, 53, 0.22)' : 'rgba(132, 204, 22, 0.25)';
+        ctx.fill();
+        ctx.lineWidth = Math.max(24, 2.2 / this.scale);
+        ctx.strokeStyle = this.isDark ? '#bef264' : '#4d7c0f';
+        ctx.stroke();
+      }
 
       ctx.beginPath();
       ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
@@ -394,9 +431,9 @@ export class TreeCanvas {
       }
       ctx.fill();
 
-      if (alloc || hovered || n.t === 'keystone' || n.t === 'jewel') {
-        ctx.lineWidth = hovered ? Math.max(30, 2.5 / this.scale) : Math.max(16, 1.1 / this.scale);
-        ctx.strokeStyle = hovered ? pal.strokeHover : alloc ? pal.strokeAlloc : pal.strokeDefault;
+      if (alloc || hovered || focused || n.t === 'keystone' || n.t === 'jewel') {
+        ctx.lineWidth = (hovered || focused) ? Math.max(30, 2.5 / this.scale) : Math.max(16, 1.1 / this.scale);
+        ctx.strokeStyle = (hovered || focused) ? pal.strokeHover : alloc ? pal.strokeAlloc : pal.strokeDefault;
         ctx.stroke();
       }
     }

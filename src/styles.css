@@ -936,6 +936,38 @@ input[type="range"] {
   border-radius: 999px;
   background: var(--surface-subtle);
   border: 1px solid var(--border);
+  color: var(--text);
+}
+
+.pill-btn {
+  cursor: pointer;
+  font-family: inherit;
+  transition: border-color 0.14s, background 0.14s, transform 0.1s;
+}
+
+.pill-btn:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-hover);
+}
+
+.gem-row-btn {
+  width: 100%;
+  text-align: left;
+  color: var(--text);
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.14s, background 0.14s;
+}
+
+.gem-row-btn:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-hover);
+}
+
+.pill-btn.is-focused,
+.gem-row-btn.is-focused {
+  border-color: var(--lime);
+  box-shadow: 0 0 0 2px var(--lime-soft);
 }
 
 .pill-accent {

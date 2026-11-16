@@ -442,31 +442,39 @@ async function main() {
   function renderTreeSide(b: GeneratedBuild) {
     const s = b.tree.summary;
     const ascNodes = b.tree.ascendancyNodes
-      .map((id) => data.tree.nodes[id])
-      .filter((n) => n && (n.t === 'notable' || n.mco));
-    document.getElementById('tree-side')!.innerHTML = `
+      .map((id) => ({ id, node: data.tree.nodes[id] }))
+      .filter((x) => x.node && (x.node.t === 'notable' || x.node.mco));
+    const keystones = b.tree.nodes
+      .map((id) => ({ id, node: data.tree.nodes[id] }))
+      .filter((x) => x.node && x.node.t === 'keystone');
+    const notables = b.tree.nodes
+      .map((id) => ({ id, node: data.tree.nodes[id] }))
+      .filter((x) => x.node && x.node.t === 'notable' && !x.node.a);
+
+    const sideEl = document.getElementById('tree-side')!;
+    sideEl.innerHTML = `
       <div>
         <h3>Ascendancy (${esc(b.archetype.ascendancy.name)})</h3>
         <div class="pill-list">
-          ${ascNodes.map((n) => `<span class="pill pill-accent">${esc(n.n)}</span>`).join('')}
+          ${ascNodes.map(({ id, node }) => `<button type="button" class="pill pill-btn pill-accent" data-node-id="${id}">${esc(node.n)}</button>`).join('')}
         </div>
       </div>
       <div>
-        <h3>Keystones (${s.keystones.length})</h3>
+        <h3>Keystones (${keystones.length})</h3>
         <div class="pill-list">
-          ${s.keystones.length ? s.keystones.map((k) => `<span class="pill pill-accent">${esc(k)}</span>`).join('') : '<span class="tt-muted">None</span>'}
+          ${keystones.length ? keystones.map(({ id, node }) => `<button type="button" class="pill pill-btn pill-accent" data-node-id="${id}">${esc(node.n)}</button>`).join('') : '<span class="tt-muted">None</span>'}
         </div>
       </div>
       <div>
         <h3>Masteries (${s.masteries.length})</h3>
         <div class="gem-list">
-          ${s.masteries.map((m) => `<div class="gem-row"><span><strong>${esc(m.name)}:</strong> ${esc(m.text)}</span></div>`).join('') || '<span class="tt-muted">None</span>'}
+          ${s.masteries.map((m) => `<button type="button" class="gem-row gem-row-btn" data-node-id="${m.nodeId}"><span><strong>${esc(m.name)}:</strong> ${esc(m.text)}</span></button>`).join('') || '<span class="tt-muted">None</span>'}
         </div>
       </div>
       <div>
-        <h3>Notable Passives (${s.notables.length})</h3>
+        <h3>Notable Passives (${notables.length})</h3>
         <div class="pill-list">
-          ${s.notables.map((n) => `<span class="pill">${esc(n)}</span>`).join('')}
+          ${notables.map(({ id, node }) => `<button type="button" class="pill pill-btn" data-node-id="${id}">${esc(node.n)}</button>`).join('')}
         </div>
       </div>
     `;
@@ -555,6 +563,15 @@ async function main() {
   }
 
   // Event wiring
+  document.getElementById('tree-side')!.addEventListener('click', (e) => {
+    const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-node-id]');
+    if (!btn) return;
+    const nodeId = Number(btn.dataset.nodeId);
+    document.querySelectorAll('#tree-side [data-node-id].is-focused').forEach((el) => el.classList.remove('is-focused'));
+    btn.classList.add('is-focused');
+    treeCanvas?.focusNode(nodeId);
+  });
+
   document.getElementById('sidebar-nav')!.addEventListener('click', (e) => {
     const btn = (e.target as HTMLElement).closest('button[data-view]') as HTMLElement | null;
     if (!btn) return;
