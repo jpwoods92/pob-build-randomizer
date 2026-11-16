@@ -411,6 +411,11 @@ input[type="range"] {
   gap: 8px;
 }
 
+.collapse-icon {
+  display: inline-block;
+  transition: transform 0.2s ease;
+}
+
 .collapse-btn:hover {
   background: var(--surface-subtle);
   color: var(--text);
@@ -423,6 +428,14 @@ input[type="range"] {
 .layout.sidebar-collapsed .promo-card,
 .layout.sidebar-collapsed .collapse-label {
   display: none;
+}
+
+.layout.sidebar-collapsed .collapse-btn {
+  justify-content: center;
+}
+
+.layout.sidebar-collapsed .collapse-icon {
+  transform: rotate(180deg);
 }
 
 .layout.sidebar-collapsed .nav-item {

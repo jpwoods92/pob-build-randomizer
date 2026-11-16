@@ -164,8 +164,8 @@ async function main() {
           <button type="button" class="promo-btn" id="reroll-btn">Randomize Build</button>
         </div>
 
-        <button type="button" class="collapse-btn" id="collapse-btn">
-          <span>«</span>
+        <button type="button" class="collapse-btn" id="collapse-btn" title="Collapse or expand sidebar">
+          <span class="collapse-icon">«</span>
           <span class="collapse-label">Collapse sidebar</span>
         </button>
       </aside>

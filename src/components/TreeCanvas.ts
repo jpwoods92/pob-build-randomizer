@@ -313,7 +313,7 @@ export class TreeCanvas {
     ctx.translate(this.offsetX, this.offsetY);
     ctx.scale(this.scale, this.scale);
 
-    // 1. Unallocated edges
+    // 1. Unallocated edges (keep ascendancy clusters visually separate from main tree)
     ctx.lineWidth = Math.max(18, 1.1 / this.scale);
     ctx.strokeStyle = pal.unallocEdge;
     ctx.beginPath();
@@ -322,6 +322,7 @@ export class TreeCanvas {
         if (adj <= id) continue;
         const other = this.treeData.nodes[adj];
         if (!other) continue;
+        if ((n.a ?? '') !== (other.a ?? '')) continue;
         if (this.allocSet.has(id) && this.allocSet.has(adj)) continue;
         ctx.moveTo(n.x, n.y);
         ctx.lineTo(other.x, other.y);
@@ -356,7 +357,7 @@ export class TreeCanvas {
       for (const adj of n.adj) {
         if (adj <= id || !this.allocSet.has(adj)) continue;
         const other = this.treeData.nodes[adj];
-        if (!other) continue;
+        if (!other || other.a !== n.a) continue;
         ctx.moveTo(n.x, n.y);
         ctx.lineTo(other.x, other.y);
       }
