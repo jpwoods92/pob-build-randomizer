@@ -359,7 +359,6 @@ async function main() {
               <div class="kpi-label">Passive Tree Scaling</div>
               <div class="kpi-value">${b.tree.summary.lifePct}% Life · ${b.tree.summary.esPct}% ES</div>
             </div>
-            <span class="kpi-tag">${b.tree.pointsUsed}/${b.tree.pointsBudget} pts</span>
           </div>
           <div class="hero-metric hero-metric-col">
             <div class="hero-metric-top">
