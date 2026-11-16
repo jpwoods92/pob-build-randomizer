@@ -33,12 +33,108 @@ const PATH_TO_CLASS_START: Record<string, number> = {
   'Path of the Shadow': 6,
 };
 
+const WEAPON_PATTERNS: { wc: string; re: RegExp; oneHandMelee?: boolean }[] = [
+  { wc: 'axe', re: /\baxes?\b/, oneHandMelee: true },
+  { wc: 'sword', re: /\bswords?\b/, oneHandMelee: true },
+  { wc: 'mace', re: /\bmaces?\b|\bsceptres?\b/, oneHandMelee: true },
+  { wc: 'claw', re: /\bclaws?\b/, oneHandMelee: true },
+  { wc: 'dagger', re: /\bdaggers?\b/, oneHandMelee: true },
+  { wc: 'wand', re: /\bwands?\b/ },
+  { wc: 'staff', re: /\bstaves\b|\bstaff\b/ },
+  { wc: 'bow', re: /\bbows?\b|\bquivers?\b/ },
+];
+
+function isWeaponCompatible(wc: string, arch: BuildArchetype): boolean {
+  if (arch.countsAsAllOneHandMelee) {
+    return wc === 'sword' || wc === 'axe' || wc === 'mace' || wc === 'claw' || wc === 'dagger';
+  }
+  return wc === arch.weaponClass;
+}
+
+function hasIncompatibleWeaponOrSetup(text: string, arch: BuildArchetype): boolean {
+  const mentioned = WEAPON_PATTERNS.filter((p) => p.re.test(text));
+  if (mentioned.length > 0) {
+    // Allow if at least one mentioned weapon matches our weaponClass (or Varunastra 1H melee)
+    const anyMatch = mentioned.some((p) => isWeaponCompatible(p.wc, arch));
+    if (!anyMatch) return true;
+    // Non-attack builds shouldn't take melee/bow weapon attack clusters (except caster wands/staves/daggers/sceptres)
+    if (arch.damageStyle !== 'attack' && mentioned.every((p) => p.wc === 'axe' || p.wc === 'sword' || p.wc === 'claw' || p.wc === 'bow')) {
+      return true;
+    }
+  }
+  if (/\bdual wielding\b/.test(text) && arch.weaponSetup !== 'dual_wield') return true;
+  if (/while holding a shield|\bwith shields\b|shield defence/.test(text) && !arch.weaponSetup.includes('shield')) return true;
+  if (/\btwo handed\b/.test(text) && arch.weaponSetup !== 'two_hand' && arch.weaponSetup !== 'staff') return true;
+  return false;
+}
+
+function isMasteryAllowed(name: string, arch: BuildArchetype): boolean {
+  switch (name) {
+    case 'Axe Mastery': return isWeaponCompatible('axe', arch) && arch.damageStyle === 'attack';
+    case 'Sword Mastery': return isWeaponCompatible('sword', arch) && arch.damageStyle === 'attack';
+    case 'Mace Mastery': return isWeaponCompatible('mace', arch) && arch.damageStyle === 'attack';
+    case 'Claw Mastery': return isWeaponCompatible('claw', arch) && arch.damageStyle === 'attack';
+    case 'Dagger Mastery': return isWeaponCompatible('dagger', arch) && (arch.damageStyle === 'attack' || arch.damageStyle === 'spell' || arch.damageStyle === 'dot');
+    case 'Wand Mastery': return isWeaponCompatible('wand', arch);
+    case 'Staff Mastery': return isWeaponCompatible('staff', arch);
+    case 'Bow Mastery': return isWeaponCompatible('bow', arch);
+    case 'Attack Mastery':
+    case 'Accuracy Mastery':
+    case 'Rage Mastery':
+      return arch.damageStyle === 'attack';
+    case 'Caster Mastery':
+      return arch.damageStyle === 'spell' || arch.damageStyle === 'totem' || arch.damageStyle === 'trap_mine' || arch.damageStyle === 'dot';
+    case 'Trap Mastery': return arch.trapOrMine === 'trap';
+    case 'Mine Mastery': return arch.trapOrMine === 'mine';
+    case 'Totem Mastery': return arch.damageStyle === 'totem';
+    case 'Minion Defence Mastery':
+    case 'Minion Offence Mastery':
+      return arch.damageStyle === 'minion';
+    case 'Brand Mastery': return arch.statKeywords.includes('brand');
+    case 'Dual Wielding Mastery': return arch.weaponSetup === 'dual_wield';
+    case 'Shield Mastery': return arch.weaponSetup.includes('shield');
+    case 'Two Hand Mastery': return arch.weaponSetup === 'two_hand' || arch.weaponSetup === 'staff';
+    case 'Life Mastery': return arch.defenseStyle !== 'es';
+    case 'Energy Shield Mastery': return arch.defenseStyle === 'es' || arch.defenseStyle === 'hybrid';
+    case 'Critical Mastery': return arch.critMode === 'crit';
+    case 'Impale Mastery': return arch.damageStyle === 'attack' && arch.elements.includes('physical');
+    case 'Bleeding Mastery': return arch.damageStyle === 'dot' && arch.elements.includes('physical');
+    case 'Poison Mastery': return arch.elements.includes('chaos') || arch.damageStyle === 'dot';
+    case 'Fire Mastery': return arch.elements.includes('fire');
+    case 'Cold Mastery': return arch.elements.includes('cold');
+    case 'Lightning Mastery': return arch.elements.includes('lightning');
+    case 'Chaos Mastery': return arch.elements.includes('chaos');
+    case 'Physical Mastery': return arch.elements.includes('physical');
+    case 'Damage Over Time Mastery': return arch.damageStyle === 'dot';
+    case 'Projectile Mastery': return arch.statKeywords.includes('projectile');
+    case 'Fortify Mastery': return arch.damageStyle === 'attack';
+    case 'Link Mastery':
+    case 'Retaliation Mastery':
+    case 'Banner Mastery':
+    case 'Warcry Mastery':
+    case 'Tincture Mastery':
+      return false;
+    default:
+      return true;
+  }
+}
+
 function scoreStatsText(stats: string[] | undefined, arch: BuildArchetype): number {
   if (!stats || stats.length === 0) return 0;
   const text = stats.join(' | ').toLowerCase();
   const isHC = arch.options.leagueMode === 'hardcore';
   const isTrade = arch.options.economy === 'trade';
   let score = 0;
+
+  // Hard anti-synergy filters (wrong weapon, wrong setup, wrong mechanic)
+  if (hasIncompatibleWeaponOrSetup(text, arch)) return -120;
+  if (arch.damageStyle !== 'minion' && /\bminions?\b/.test(text)) return -100;
+  if (arch.damageStyle !== 'totem' && /\btotems?\b/.test(text)) return -100;
+  if (arch.trapOrMine !== 'trap' && /\btraps?\b/.test(text)) return -100;
+  if (arch.trapOrMine !== 'mine' && /\bmines?\b/.test(text)) return -100;
+  if (arch.damageStyle === 'attack' && /\bspell damage\b|\bcast speed\b/.test(text)) return -80;
+  if (arch.damageStyle !== 'attack' && /\battack damage\b|\bmelee damage\b|\battack speed\b|\bimpale\b/.test(text)) return -80;
+  if (arch.defenseStyle === 'es' && /maximum life/.test(text)) return -80;
 
   // Defenses
   if (arch.defenseStyle === 'life' || arch.defenseStyle === 'hybrid') {
@@ -66,7 +162,7 @@ function scoreStatsText(stats: string[] | undefined, arch: BuildArchetype): numb
   // Offense by damage style
   if (arch.damageStyle === 'attack') {
     if (/attack damage|physical damage with|melee damage|projectile attack|bow damage|with axes|with swords|with maces|with claws|with daggers|with wands/.test(text)) {
-      score += isHC ? 12 : 16;
+      score += isHC ? 14 : 18;
     }
     if (/attack speed/.test(text)) score += isHC ? 10 : 14;
     if (/accuracy/.test(text) && arch.critMode !== 'non_crit') score += 8;
@@ -83,7 +179,8 @@ function scoreStatsText(stats: string[] | undefined, arch: BuildArchetype): numb
     if (/totem/.test(text)) score += 24;
     if (/spell damage|attack damage|elemental damage/.test(text)) score += 9;
   } else if (arch.damageStyle === 'trap_mine') {
-    if (/trap|mine/.test(text)) score += 24;
+    if (arch.trapOrMine === 'trap' && /\btraps?\b/.test(text)) score += 26;
+    if (arch.trapOrMine === 'mine' && /\bmines?\b/.test(text)) score += 26;
     if (/spell damage|elemental damage|area damage|projectile/.test(text)) score += 9;
   } else if (arch.damageStyle === 'dot') {
     if (/damage over time|dot multiplier|ignite|bleed|poison|ailment/.test(text)) score += 22;
@@ -94,7 +191,7 @@ function scoreStatsText(stats: string[] | undefined, arch: BuildArchetype): numb
     if (/critical strike multiplier/.test(text)) score += isHC ? 14 : 21;
     if (/critical strike chance/.test(text)) score += isHC ? 11 : 16;
   } else {
-    if (/critical strike/.test(text)) score -= 6;
+    if (/critical strike/.test(text)) score -= 35;
   }
 
   // Elements
@@ -110,10 +207,10 @@ function scoreStatsText(stats: string[] | undefined, arch: BuildArchetype): numb
   }
 
   // Weapon / tag specifics
-  if (arch.weaponSetup === 'bow_quiver' && /with bows|quiver/.test(text)) score += 14;
-  if (arch.weaponSetup === 'two_hand' && /two handed/.test(text)) score += 13;
-  if (arch.weaponSetup === 'staff' && /staves/.test(text)) score += 12;
-  if (arch.weaponSetup === 'dual_wield' && /dual wielding/.test(text)) score += 12;
+  if (arch.weaponSetup === 'bow_quiver' && /with bows|quiver/.test(text)) score += 16;
+  if (arch.weaponSetup === 'two_hand' && /two handed/.test(text)) score += 15;
+  if (arch.weaponSetup === 'staff' && /staves/.test(text)) score += 15;
+  if (arch.weaponSetup === 'dual_wield' && /dual wielding/.test(text)) score += 15;
   if ((arch.weaponSetup === 'one_hand_shield' || arch.weaponSetup === 'wand_shield') && /holding a shield|shield/.test(text)) score += isHC ? 15 : 9;
   if (arch.statKeywords.includes('projectile') && /projectile/.test(text)) score += 10;
   if (arch.statKeywords.includes('area') && /area of effect|area damage/.test(text)) score += 9;
@@ -157,10 +254,13 @@ function isKeystoneAllowed(node: TreeNode, arch: BuildArchetype): boolean {
     case 'Magebane':
       return arch.defenseStyle === 'life' && isHC;
     case 'Ghost Dance':
-      return arch.defenseStyle === 'hybrid' || arch.defenseStyle === 'es';
+    case 'Ghost Reaver':
     case 'Wicked Ward':
     case 'Zealot\'s Oath':
+    case 'Divine Shield':
       return arch.defenseStyle === 'es' || arch.defenseStyle === 'hybrid';
+    case 'The Agnostic':
+      return arch.defenseStyle === 'life';
     case 'Point Blank':
       return arch.statKeywords.includes('projectile') && arch.damageStyle === 'attack';
     case 'Runebinder':
@@ -352,6 +452,7 @@ export function generatePassiveTree(data: GameData, arch: BuildArchetype, rng: R
 
   const allocated = new Set<number>([arch.classData.start]);
   const masteryEffects: Record<number, number> = {};
+  const usedMasteryEffects = new Set<number>();
   let pointsUsed = 0;
 
   // Extra starting points unlocked by Ascendant "Path of the ..."
@@ -383,9 +484,13 @@ export function generatePassiveTree(data: GameData, arch: BuildArchetype, rng: R
       if (pointsUsed >= pointsBudget) break;
       const m = tree.nodes[adjId];
       if (!m || m.t !== 'mastery' || !m.me || allocated.has(adjId)) continue;
-      // Score each mastery effect
+      if (!isMasteryAllowed(m.n, arch)) continue;
+      // Score each unused mastery effect
       let bestEffect: { e: number; s: string[]; score: number } | null = null;
       for (const eff of m.me) {
+        if (usedMasteryEffects.has(eff.e)) continue;
+        const effText = eff.s.join(' ').toLowerCase();
+        if (/at least 6 life masteries|no life modifiers on equipped body/.test(effText)) continue;
         const sc = scoreStatsText(eff.s, arch);
         if (!bestEffect || sc > bestEffect.score) {
           bestEffect = { ...eff, score: sc };
@@ -394,6 +499,7 @@ export function generatePassiveTree(data: GameData, arch: BuildArchetype, rng: R
       if (bestEffect && bestEffect.score >= 16) {
         allocated.add(adjId);
         masteryEffects[adjId] = bestEffect.e;
+        usedMasteryEffects.add(bestEffect.e);
         pointsUsed++;
       }
     }

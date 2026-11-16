@@ -97,12 +97,22 @@ function scoreSupportForMain(sup: GemData, arch: BuildArchetype): number {
 
   // Anti-synergies & ailment-specific guards
   if (name.includes('Brutality') && !arch.elements.includes('physical')) return 0;
+  if (name.includes('Void Manipulation') && !arch.elements.includes('chaos')) return 0;
+  if (name.includes('Added Chaos Damage') && !arch.elements.includes('chaos')) return 0;
+  if (name.includes('Added Fire Damage') && !arch.elements.includes('fire') && !arch.elements.includes('physical')) return 0;
+  if (name.includes('Added Cold Damage') && !arch.elements.includes('cold')) return 0;
+  if (name.includes('Added Lightning Damage') && !arch.elements.includes('lightning')) return 0;
+  if ((name.includes('Trinity') || name.includes('Unholy Trinity')) && arch.elements.length < 2) return 0;
+  if ((name.includes('Overexertion') || name.includes('Fist of War')) && !arch.mainSkill.tags.includes('slam')) return 0;
+  if (name.includes('Energy Leech') && arch.defenseStyle === 'life') return 0;
   if (name.includes('Elemental Focus') && arch.damageStyle === 'dot') return 0;
   if (/Deadly Ailments|Sadism|Rupture|Ignite Proliferation|Chance to Bleed|Bloodlust|Decay|Vile Toxins/.test(name) && arch.damageStyle !== 'dot') return 0;
-  if (/Elemental Proliferation|Bonechill|Overcharge|Cold to Fire/.test(name)) score *= 0.25;
+  if (/Elemental Proliferation|Bonechill|Overcharge|Cold to Fire/.test(name)) score *= 0.2;
   if (name.includes('Cruelty') && arch.damageStyle !== 'dot' && !arch.elements.includes('physical')) return 2;
   if (name.includes('Concentrated Effect') && arch.options.leagueMode === 'hardcore') score *= 0.85;
   if (name.includes('Greater Multiple Projectiles') && arch.damageStyle === 'dot') score *= 0.4;
+  if (arch.trapOrMine === 'trap' && /Mine|Minefield/.test(name)) return 0;
+  if (arch.trapOrMine === 'mine' && /Trap/.test(name)) return 0;
 
   // Crit vs non-crit
   if (arch.critMode === 'crit') {
@@ -168,7 +178,7 @@ export function generateSkills(data: GameData, arch: BuildArchetype, rng: Rng): 
       if (totemSup.add) addedTypes.push(...totemSup.add);
     }
   } else if (arch.damageStyle === 'trap_mine' && !arch.mainSkill.tags.includes('trap') && !arch.mainSkill.tags.includes('mine')) {
-    const tmSup = rng.chance(0.5) ? getGem('Trap') : getGem('High-Impact Mine');
+    const tmSup = arch.trapOrMine === 'mine' ? getGem('High-Impact Mine') : getGem('Trap');
     if (tmSup && canSupportSkill(tmSup, arch.mainSkill)) {
       forcedSupports.push(tmSup);
       if (tmSup.add) addedTypes.push(...tmSup.add);

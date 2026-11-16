@@ -8,6 +8,7 @@ export type DefenseStyle = 'life' | 'es' | 'hybrid';
 export type CritMode = 'crit' | 'non_crit' | 'dot';
 export type DamageElement = 'physical' | 'fire' | 'cold' | 'lightning' | 'chaos';
 export type WeaponSetup = 'bow_quiver' | 'two_hand' | 'one_hand_shield' | 'dual_wield' | 'wand_shield' | 'staff';
+export type WeaponClass = 'sword' | 'axe' | 'mace' | 'claw' | 'dagger' | 'sceptre' | 'wand' | 'staff' | 'bow' | 'unarmed';
 
 export interface BuildOptions {
   seed: string;
@@ -26,11 +27,15 @@ export interface BuildArchetype {
   ascendancy: AscendancyData;
   mainSkill: GemData;
   damageStyle: DamageStyle;
+  trapOrMine?: 'trap' | 'mine';
   defenseStyle: DefenseStyle;
   critMode: CritMode;
   elements: DamageElement[];
   weaponSetup: WeaponSetup;
+  weaponClass: WeaponClass;
   allowedWeaponTypes: string[];
+  signatureUnique?: string;
+  countsAsAllOneHandMelee: boolean;
   /** Attribute profile used to guide base types and passive node priorities. */
   primaryAttr: 'str' | 'dex' | 'int';
   /** Keywords used to score passive nodes, supports, and mods. */
@@ -171,22 +176,65 @@ function inferElements(gem: GemData, aff: AscAffinity, rng: Rng): DamageElement[
   return els;
 }
 
+function weaponTypeToClass(wt: string): WeaponClass {
+  if (wt === 'Bow') return 'bow';
+  if (wt === 'Wand') return 'wand';
+  if (wt === 'Sceptre') return 'sceptre';
+  if (wt === 'Claw') return 'claw';
+  if (wt === 'Dagger' || wt === 'Rune Dagger') return 'dagger';
+  if (wt === 'Staff' || wt === 'Warstaff') return 'staff';
+  if (wt.includes('Axe')) return 'axe';
+  if (wt.includes('Mace')) return 'mace';
+  if (wt.includes('Sword')) return 'sword';
+  return 'unarmed';
+}
+
 function chooseWeaponSetup(
   gem: GemData,
   style: DamageStyle,
   defense: DefenseStyle,
+  classData: ClassData,
   league: LeagueMode,
+  economy: EconomyMode,
   rng: Rng,
-): { setup: WeaponSetup; allowedWeaponTypes: string[] } {
-  const wt = gem.weaponTypes || [];
-  if (gem.tags.includes('bow') || (wt.length > 0 && wt.every((w) => w === 'Bow'))) {
-    return { setup: 'bow_quiver', allowedWeaponTypes: ['Bow'] };
+): {
+  setup: WeaponSetup;
+  weaponClass: WeaponClass;
+  allowedWeaponTypes: string[];
+  signatureUnique?: string;
+  countsAsAllOneHandMelee: boolean;
+} {
+  const rawWt = (gem.weaponTypes || []).filter((w) => w !== 'None');
+  if ((gem.weaponTypes || []).includes('None') && rawWt.length === 0) {
+    return {
+      setup: 'one_hand_shield',
+      weaponClass: 'unarmed',
+      allowedWeaponTypes: ['One Handed Sword'],
+      countsAsAllOneHandMelee: false,
+    };
   }
-  if (wt.length > 0) {
-    const oneHanded = wt.filter((w) =>
+  if (gem.tags.includes('bow') && rawWt.length === 1 && rawWt[0] === 'Bow') {
+    return { setup: 'bow_quiver', weaponClass: 'bow', allowedWeaponTypes: ['Bow'], countsAsAllOneHandMelee: false };
+  }
+
+  const classAttrWeight = (wc: WeaponClass): number => {
+    if (classData.name === 'Marauder' || classData.name === 'Duelist') {
+      if (wc === 'axe' || wc === 'sword' || wc === 'mace') return 3.0;
+    } else if (classData.name === 'Ranger' || classData.name === 'Shadow') {
+      if (wc === 'bow' || wc === 'claw' || wc === 'dagger' || wc === 'sword' || wc === 'wand') return 3.0;
+    } else if (classData.name === 'Templar') {
+      if (wc === 'sceptre' || wc === 'mace' || wc === 'staff' || wc === 'wand') return 3.0;
+    } else if (classData.name === 'Witch') {
+      if (wc === 'wand' || wc === 'dagger' || wc === 'staff' || wc === 'sceptre') return 3.0;
+    }
+    return 1.0;
+  };
+
+  if (rawWt.length > 0) {
+    const oneHanded = rawWt.filter((w) =>
       w.startsWith('One Handed') || w.startsWith('Thrusting') || w === 'Claw' || w === 'Dagger' || w === 'Rune Dagger' || w === 'Sceptre' || w === 'Wand',
     );
-    const twoHanded = wt.filter((w) => w.startsWith('Two Handed') || w === 'Staff' || w === 'Warstaff');
+    const twoHanded = rawWt.filter((w) => w.startsWith('Two Handed') || w === 'Staff' || w === 'Warstaff');
     const options: { setup: WeaponSetup; w: number; types: string[] }[] = [];
     if (oneHanded.length > 0) {
       options.push({ setup: 'one_hand_shield', w: league === 'hardcore' ? 4 : 2.2, types: oneHanded });
@@ -195,27 +243,80 @@ function chooseWeaponSetup(
     if (twoHanded.length > 0) {
       options.push({ setup: 'two_hand', w: league === 'hardcore' ? 1.4 : 2.0, types: twoHanded });
     }
-    if (wt.includes('Bow')) {
-      options.push({ setup: 'bow_quiver', w: 1.5, types: ['Bow'] });
+    if (rawWt.includes('Bow')) {
+      options.push({ setup: 'bow_quiver', w: 1.8, types: ['Bow'] });
     }
     const picked = rng.weighted(options, (o) => o.w);
-    if (picked) return { setup: picked.setup, allowedWeaponTypes: picked.types };
+    if (picked) {
+      // Narrow down to ONE coherent weaponClass within picked.types
+      const byClass = new Map<WeaponClass, string[]>();
+      for (const t of picked.types) {
+        const wc = weaponTypeToClass(t);
+        if (!byClass.has(wc)) byClass.set(wc, []);
+        byClass.get(wc)!.push(t);
+      }
+      const chosenClass = rng.weighted([...byClass.keys()], classAttrWeight)!;
+      const narrowedTypes = byClass.get(chosenClass)!;
+      const canVarunastra = economy === 'trade'
+        && chosenClass === 'sword'
+        && (picked.setup === 'one_hand_shield' || picked.setup === 'dual_wield')
+        && style === 'attack'
+        && rng.chance(0.14);
+      return {
+        setup: picked.setup,
+        weaponClass: chosenClass,
+        allowedWeaponTypes: narrowedTypes,
+        signatureUnique: canVarunastra ? 'Varunastra' : undefined,
+        countsAsAllOneHandMelee: canVarunastra,
+      };
+    }
   }
 
-  // Spell / Minion / Totem / Trap / DoT caster weapons
-  if (style === 'minion' || style === 'spell' || style === 'totem' || style === 'trap_mine' || style === 'dot') {
+  // Spell / Minion / Totem / Trap / DoT / Shield-attack caster weapons
+  if (style === 'minion' || style === 'spell' || style === 'totem' || style === 'trap_mine' || style === 'dot' || rawWt.length === 0) {
     const esBias = defense === 'es' ? 2.0 : 1.0;
     const hcBias = league === 'hardcore' ? 3.5 : 1.5;
-    const casterOptions: { setup: WeaponSetup; w: number; types: string[] }[] = [
-      { setup: 'wand_shield', w: hcBias * esBias, types: ['Wand', 'Sceptre', 'Rune Dagger'] },
-      { setup: 'staff', w: league === 'hardcore' ? 1.0 : 1.8, types: ['Staff'] },
-      { setup: 'dual_wield', w: league === 'hardcore' ? 0.4 : 1.3, types: ['Wand', 'Sceptre', 'Rune Dagger'] },
+    const casterSetups: { setup: WeaponSetup; w: number; classes: { wc: WeaponClass; types: string[] }[] }[] = [
+      {
+        setup: 'wand_shield',
+        w: hcBias * esBias,
+        classes: [
+          { wc: 'wand', types: ['Wand'] },
+          { wc: 'sceptre', types: ['Sceptre'] },
+          { wc: 'dagger', types: ['Dagger'] },
+        ],
+      },
+      {
+        setup: 'staff',
+        w: league === 'hardcore' ? 1.0 : 1.8,
+        classes: [{ wc: 'staff', types: ['Staff'] }],
+      },
+      {
+        setup: 'dual_wield',
+        w: league === 'hardcore' ? 0.4 : 1.3,
+        classes: [
+          { wc: 'wand', types: ['Wand'] },
+          { wc: 'sceptre', types: ['Sceptre'] },
+          { wc: 'dagger', types: ['Dagger'] },
+        ],
+      },
     ];
-    const picked = rng.weighted(casterOptions, (o) => o.w)!;
-    return { setup: picked.setup, allowedWeaponTypes: picked.types };
+    const picked = rng.weighted(casterSetups, (o) => o.w)!;
+    const chosen = rng.weighted(picked.classes, (c) => classAttrWeight(c.wc))!;
+    return {
+      setup: picked.setup,
+      weaponClass: chosen.wc,
+      allowedWeaponTypes: chosen.types,
+      countsAsAllOneHandMelee: false,
+    };
   }
 
-  return { setup: 'one_hand_shield', allowedWeaponTypes: ['One Handed Sword', 'One Handed Axe'] };
+  return {
+    setup: 'one_hand_shield',
+    weaponClass: 'sword',
+    allowedWeaponTypes: ['One Handed Sword'],
+    countsAsAllOneHandMelee: false,
+  };
 }
 
 export function pickArchetype(data: GameData, options: BuildOptions, rng: Rng): BuildArchetype {
@@ -306,6 +407,12 @@ export function pickArchetype(data: GameData, options: BuildOptions, rng: Rng): 
   })!;
 
   const resolvedStyle = inferSkillStyle(mainSkill, damageStyle);
+  let trapOrMine: 'trap' | 'mine' | undefined;
+  if (resolvedStyle === 'trap_mine') {
+    if (mainSkill.tags.includes('mine') && !mainSkill.tags.includes('trap')) trapOrMine = 'mine';
+    else if (mainSkill.tags.includes('trap') && !mainSkill.tags.includes('mine')) trapOrMine = 'trap';
+    else trapOrMine = rng.chance(0.5) ? 'trap' : 'mine';
+  }
   const elements = inferElements(mainSkill, aff, rng);
 
   // 5. Crit mode
@@ -321,8 +428,8 @@ export function pickArchetype(data: GameData, options: BuildOptions, rng: Rng): 
   }
 
   // 6. Weapon setup
-  const { setup: weaponSetup, allowedWeaponTypes } = chooseWeaponSetup(
-    mainSkill, resolvedStyle, defenseStyle, options.leagueMode, rng,
+  const weaponInfo = chooseWeaponSetup(
+    mainSkill, resolvedStyle, defenseStyle, classData, options.leagueMode, options.economy, rng,
   );
 
   // 7. Primary attribute
@@ -332,11 +439,12 @@ export function pickArchetype(data: GameData, options: BuildOptions, rng: Rng): 
   if (defenseStyle === 'es') primaryAttr = 'int';
 
   // 8. Stat keywords for scoring tree nodes & mods
-  const keywords = new Set<string>([resolvedStyle, defenseStyle, ...elements, critMode]);
-  if (weaponSetup === 'bow_quiver') keywords.add('bow');
-  if (weaponSetup === 'one_hand_shield' || weaponSetup === 'wand_shield') keywords.add('shield');
-  if (weaponSetup === 'two_hand' || weaponSetup === 'staff') keywords.add('twohand');
-  if (weaponSetup === 'dual_wield') keywords.add('dualwield');
+  const keywords = new Set<string>([resolvedStyle, defenseStyle, ...elements, critMode, weaponInfo.weaponClass]);
+  if (trapOrMine) keywords.add(trapOrMine);
+  if (weaponInfo.setup === 'bow_quiver') keywords.add('bow');
+  if (weaponInfo.setup === 'one_hand_shield' || weaponInfo.setup === 'wand_shield') keywords.add('shield');
+  if (weaponInfo.setup === 'two_hand' || weaponInfo.setup === 'staff') keywords.add('twohand');
+  if (weaponInfo.setup === 'dual_wield') keywords.add('dualwield');
   if (mainSkill.tags.includes('projectile')) keywords.add('projectile');
   if (mainSkill.tags.includes('area')) keywords.add('area');
   if (mainSkill.tags.includes('melee')) keywords.add('melee');
@@ -364,11 +472,15 @@ export function pickArchetype(data: GameData, options: BuildOptions, rng: Rng): 
     ascendancy,
     mainSkill,
     damageStyle: resolvedStyle,
+    trapOrMine,
     defenseStyle,
     critMode,
     elements,
-    weaponSetup,
-    allowedWeaponTypes,
+    weaponSetup: weaponInfo.setup,
+    weaponClass: weaponInfo.weaponClass,
+    allowedWeaponTypes: weaponInfo.allowedWeaponTypes,
+    signatureUnique: weaponInfo.signatureUnique,
+    countsAsAllOneHandMelee: weaponInfo.countsAsAllOneHandMelee,
     primaryAttr,
     statKeywords: [...keywords],
     bandit,

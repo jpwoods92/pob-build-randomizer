@@ -178,3 +178,49 @@ test('support matching: Spell Echo supports Fireball, not Cleave', () => {
   assert.equal(canSupportSkill(multistrike, cleave), true);
   assert.equal(canSupportSkill(multistrike, fireball), false);
 });
+
+test('synergy: no duplicate mastery effects, no conflicting weapon masteries unless Varunastra, no mixed trap/mine', async () => {
+  const weaponMasteryMap: Record<string, string> = {
+    'Axe Mastery': 'axe',
+    'Sword Mastery': 'sword',
+    'Mace Mastery': 'mace',
+    'Claw Mastery': 'claw',
+    'Dagger Mastery': 'dagger',
+    'Wand Mastery': 'wand',
+    'Staff Mastery': 'staff',
+    'Bow Mastery': 'bow',
+  };
+
+  for (let i = 0; i < 20; i++) {
+    const build = await generateBuild(
+      data,
+      baseOptions({
+        seed: `synergy-${i}`,
+        leagueMode: i % 2 === 0 ? 'hardcore' : 'softcore',
+        economy: i % 3 === 0 ? 'ssf' : 'trade',
+      }),
+    );
+
+    // 1. No duplicate mastery effects across the tree
+    const effIds = Object.values(build.tree.masteryEffects);
+    assert.equal(new Set(effIds).size, effIds.length, `Duplicate mastery effects on seed synergy-${i}`);
+
+    // 2. Weapon masteries match weaponClass (or 1H melee set when Varunastra is equipped)
+    const hasVarunastra = build.gear.items.some((item) => item.name === 'Varunastra');
+    assert.equal(hasVarunastra, build.archetype.countsAsAllOneHandMelee);
+    for (const m of build.tree.summary.masteries) {
+      const reqWc = weaponMasteryMap[m.name];
+      if (reqWc) {
+        if (hasVarunastra) {
+          assert.ok(['sword', 'axe', 'mace', 'claw', 'dagger'].includes(reqWc));
+        } else {
+          assert.equal(reqWc, build.archetype.weaponClass, `Unexpected ${m.name} for ${build.archetype.weaponClass}`);
+        }
+      }
+    }
+
+    // 3. Never mix Trap Mastery and Mine Mastery
+    const mNames = new Set(build.tree.summary.masteries.map((m) => m.name));
+    assert.ok(!(mNames.has('Trap Mastery') && mNames.has('Mine Mastery')));
+  }
+});

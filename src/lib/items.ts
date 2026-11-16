@@ -149,7 +149,7 @@ function scoreModForArchetype(
   if (/to intelligence/.test(txt) && needs.int > 0) w *= 10;
   if (/to all attributes/.test(txt) && (needs.str > 0 || needs.dex > 0 || needs.int > 0)) w *= 11;
 
-  // Weapon & jewelry offensive mods
+  // Weapon, jewel & jewelry offensive mods
   if (isWeapon) {
     if (arch.damageStyle === 'attack') {
       if (arch.elements.includes('physical') && /physical damage|attack speed/.test(txt)) w *= 14;
@@ -157,7 +157,7 @@ function scoreModForArchetype(
       if (arch.elements.includes('cold') && /cold damage to attacks|elemental damage with attacks|attack speed/.test(txt)) w *= 12;
       if (arch.elements.includes('lightning') && /lightning damage to attacks|elemental damage with attacks|attack speed/.test(txt)) w *= 12;
       if (arch.elements.includes('chaos') && /chaos damage|attack speed|damage over time/.test(txt)) w *= 10;
-      if (/spell damage|to level of all .* spell/.test(txt)) w *= 0.05;
+      if (/spell damage|to level of all .* spell/.test(txt)) w *= 0.01;
     } else {
       if (/spell damage|cast speed|to level of all/.test(txt)) w *= 14;
       if (arch.damageStyle === 'minion' && /minion/.test(txt)) w *= 22;
@@ -166,16 +166,45 @@ function scoreModForArchetype(
       if (arch.elements.includes('cold') && /cold damage|cold skill/.test(txt)) w *= 10;
       if (arch.elements.includes('lightning') && /lightning damage|lightning skill/.test(txt)) w *= 10;
       if (arch.elements.includes('chaos') && /chaos damage|chaos skill/.test(txt)) w *= 10;
-      if (/physical damage|adds .* to attacks/.test(txt) && !tags.has('caster')) w *= 0.05;
+      if (/physical damage|adds .* to attacks/.test(txt) && !tags.has('caster')) w *= 0.01;
     }
     if (arch.critMode === 'crit' && /critical strike/.test(txt)) w *= 9;
-    if (arch.critMode !== 'crit' && /critical strike/.test(txt)) w *= 0.1;
+    if (arch.critMode !== 'crit' && /critical strike/.test(txt)) w *= 0.05;
   } else {
+    // Reject off-weapon / off-setup jewel mods cleanly
+    const weaponHits: [string, boolean][] = [
+      ['axe', /\bwith axes\b/.test(txt)],
+      ['sword', /\bwith swords\b/.test(txt)],
+      ['mace', /\bwith maces|\bsceptres\b/.test(txt)],
+      ['claw', /\bwith claws\b/.test(txt)],
+      ['dagger', /\bwith daggers\b/.test(txt)],
+      ['wand', /\bwith wands\b/.test(txt)],
+      ['staff', /\bwith staves\b/.test(txt)],
+      ['bow', /\bwith bows\b/.test(txt)],
+    ];
+    for (const [wc, matched] of weaponHits) {
+      if (matched) {
+        const ok = arch.countsAsAllOneHandMelee
+          ? ['sword', 'axe', 'mace', 'claw', 'dagger'].includes(wc)
+          : wc === arch.weaponClass;
+        if (!ok || (arch.damageStyle !== 'attack' && !['wand', 'staff', 'dagger', 'mace'].includes(wc))) {
+          return 0;
+        }
+      }
+    }
+    if (/while dual wielding/.test(txt) && arch.weaponSetup !== 'dual_wield') return 0;
+    if (/while holding a shield/.test(txt) && !arch.weaponSetup.includes('shield')) return 0;
+    if (/two handed/.test(txt) && arch.weaponSetup !== 'two_hand' && arch.weaponSetup !== 'staff') return 0;
+    if (/totem/.test(txt) && arch.damageStyle !== 'totem') return 0;
+    if (/minion/.test(txt) && arch.damageStyle !== 'minion') return 0;
+    if (/trap/.test(txt) && arch.trapOrMine !== 'trap') return 0;
+    if (/mine/.test(txt) && arch.trapOrMine !== 'mine') return 0;
+
     if (arch.damageStyle === 'attack' && /elemental damage with attacks|adds .* to attacks|attack speed/.test(txt)) w *= 6;
     if (arch.damageStyle === 'spell' && /spell damage|cast speed|to level of all/.test(txt)) w *= 7;
     if (arch.damageStyle === 'dot' && /damage over time multiplier/.test(txt)) w *= 12;
     if (arch.critMode === 'crit' && /critical strike multiplier|critical strike chance/.test(txt)) w *= 7;
-    if (arch.critMode !== 'crit' && /critical strike/.test(txt)) w *= 0.1;
+    if (arch.critMode !== 'crit' && /critical strike/.test(txt)) w *= 0.05;
   }
 
   // Filter out junk mods like light radius / stun recovery / thorns
@@ -263,7 +292,12 @@ function isUniqueSuitable(u: UniqueData, arch: BuildArchetype, slotTypes: string
   const fullTxt = [...u.implicits, ...u.explicits].join(' ').toLowerCase();
   if (arch.defenseStyle === 'es' && /cannot have energy shield|blood magic/.test(fullTxt)) return false;
   if (arch.defenseStyle === 'life' && /chaos inoculation|maximum life becomes 1/.test(fullTxt)) return false;
+  if (arch.critMode === 'crit' && /never deal critical strikes|critical strikes deal no damage/.test(fullTxt)) return false;
+  if (arch.elements.includes('physical') && /deal no physical damage/.test(fullTxt)) return false;
+  if (arch.elements.some((e) => e === 'fire' || e === 'cold' || e === 'lightning') && /deal no elemental damage/.test(fullTxt)) return false;
+  if (arch.elements.includes('chaos') && /deal no chaos damage/.test(fullTxt)) return false;
   if (/cannot use|deal no .* damage/.test(fullTxt) && /deal no (non-)?chaos|deal no elemental/.test(fullTxt)) return false;
+  if (/your auras do not affect/.test(fullTxt)) return false;
   return true;
 }
 
@@ -662,6 +696,7 @@ export function generateGear(
     'Weapon 1', 'Weapon 2', 'Helmet', 'Body Armour', 'Gloves', 'Boots', 'Amulet', 'Ring 1', 'Belt',
   ]);
   const uniqueSlots = new Set<string>(candidateUniqueSlots.slice(0, targetUniques));
+  if (arch.signatureUnique) uniqueSlots.add('Weapon 1');
   const usedUniqueNames = new Set<string>();
 
   const slotDefs: { slot: ItemSlotName; types: string[]; defaultSockets?: string }[] = [
@@ -694,7 +729,15 @@ export function generateGear(
     const sockets = skills.slotSockets[def.slot] ?? def.defaultSockets;
     let item: GeneratedItem | undefined;
 
-    if (uniqueSlots.has(def.slot)) {
+    if (def.slot === 'Weapon 1' && arch.signatureUnique) {
+      const sig = data.uniques.find((u) => u.name === arch.signatureUnique);
+      if (sig && data.bases[sig.base]) {
+        usedUniqueNames.add(sig.name);
+        item = buildUniqueItem(id, def.slot, sig, data.bases[sig.base], sockets, arch, rng);
+      }
+    }
+
+    if (!item && uniqueSlots.has(def.slot)) {
       const pool = data.uniques.filter(
         (u) => !usedUniqueNames.has(u.name) && isUniqueSuitable(u, arch, def.types),
       );
