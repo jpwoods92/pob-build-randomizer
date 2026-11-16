@@ -116,15 +116,6 @@ const ASC_AFFINITIES: Record<string, AscAffinity> = {
   Luminary: { styles: ['link_support', 'link_support', 'minion', 'spell', 'attack'], defenses: ['life', 'hybrid'], critBias: 0.25, hcFriendly: 1.2 },
 };
 
-const BUILD_ADJECTIVES_HC = [
-  'Ironclad', 'Bastion', 'Stalwart', 'Unbreakable', 'Sentinel', 'Vigilant',
-  'Bulwark', 'Steadfast', 'Resolute', 'Aegis', 'Hardened', 'Indomitable',
-];
-const BUILD_ADJECTIVES_SC = [
-  'Shattering', 'Tempest', 'Ruinous', 'Apex', 'Frenetic', 'Arcane',
-  'Volatile', 'Relentless', 'Phantom', 'Cataclysm', 'Blazing', 'Overcharged',
-];
-
 function isValidMainCandidate(gem: GemData, allowLink = false): boolean {
   if (gem.support) return false;
   if (gem.reservePct || gem.reserveFlat) return false;
@@ -480,8 +471,7 @@ export function pickArchetype(data: GameData, options: BuildOptions, rng: Rng): 
   const pantheonMajor = rng.pick(options.leagueMode === 'hardcore' ? hcMajors : scMajors);
   const pantheonMinor = rng.pick(data.pantheons.minor).id;
 
-  const adjList = options.leagueMode === 'hardcore' ? BUILD_ADJECTIVES_HC : BUILD_ADJECTIVES_SC;
-  const title = `${rng.pick(adjList)} ${mainSkill.name} ${ascendancy.name}`;
+  const title = `${mainSkill.name} ${ascendancy.name}`;
 
   return {
     options,
