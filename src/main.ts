@@ -459,8 +459,8 @@ async function main() {
             <button type="button" class="btn btn-sm" data-jump="gear">Gear →</button>
           </div>
           <div class="feed-list">
-            ${b.gear.items.slice(0, 5).map((item) => `
-              <div class="feed-row">
+            ${b.gear.items.slice(0, 5).map((item, idx) => `
+              <div class="feed-row feed-row-hover" tabindex="0" data-hover-item="${idx}" data-item-mode="full">
                 <div>
                   <div class="feed-title item-name-${item.rarity}">${esc(item.name)}</div>
                   <div class="feed-meta">${esc(item.baseName)}</div>
@@ -562,8 +562,8 @@ async function main() {
   function renderGear(b: GeneratedBuild) {
     document.getElementById('view-gear')!.innerHTML = `
       <div class="items-grid">
-        ${b.gear.items.map((item) => `
-          <div class="item-card rarity-${item.rarity}">
+        ${b.gear.items.map((item, idx) => `
+          <div class="item-card item-card-hover rarity-${item.rarity}" tabindex="0" data-hover-item="${idx}" data-item-mode="detail">
             <div>
               <div class="item-name-${item.rarity}">${esc(item.name)}</div>
               <div class="item-base">${esc(item.baseName)} · ${esc(item.slot)}</div>
@@ -660,22 +660,119 @@ async function main() {
     positionFloatingTip(el);
   };
 
+  const formatItemBaseLines = (item: GeneratedBuild['gear']['items'][number]): string[] => {
+    const out: string[] = [];
+    const b = item.base;
+    if (b.weapon) {
+      const aps = b.weapon.AttackRateBase;
+      const phys = b.weapon.PhysicalMin !== undefined && b.weapon.PhysicalMax !== undefined
+        ? `Phys ${b.weapon.PhysicalMin}-${b.weapon.PhysicalMax}`
+        : '';
+      out.push([phys, `Crit ${b.weapon.CritChanceBase}%`, `APS ${aps}`].filter(Boolean).join(' · '));
+    }
+    if (b.armour) {
+      const parts: string[] = [];
+      if (b.armour.ArmourBaseMax) parts.push(`Armour ${b.armour.ArmourBaseMin}-${b.armour.ArmourBaseMax}`);
+      if (b.armour.EvasionBaseMax) parts.push(`Evasion ${b.armour.EvasionBaseMin}-${b.armour.EvasionBaseMax}`);
+      if (b.armour.EnergyShieldBaseMax) parts.push(`ES ${b.armour.EnergyShieldBaseMin}-${b.armour.EnergyShieldBaseMax}`);
+      if (b.armour.BlockChance) parts.push(`Block ${b.armour.BlockChance}%`);
+      if (parts.length) out.push(parts.join(' · '));
+    }
+    if (b.flask) {
+      const f = b.flask as Record<string, unknown>;
+      const parts: string[] = [];
+      if (f.life) parts.push(`Recovers ${f.life} Life`);
+      if (f.mana) parts.push(`Recovers ${f.mana} Mana`);
+      if (f.duration) parts.push(`Lasts ${f.duration}s`);
+      if (f.chargesUsed && f.chargesMax) parts.push(`${f.chargesUsed}/${f.chargesMax} Charges`);
+      if (Array.isArray(f.buff) && f.buff.length) parts.push(f.buff.join(', '));
+      if (parts.length) out.push(parts.join(' · '));
+    }
+    const reqs: string[] = [];
+    if (b.req.level) reqs.push(`Lv ${b.req.level}`);
+    if (b.req.str) reqs.push(`${b.req.str} Str`);
+    if (b.req.dex) reqs.push(`${b.req.dex} Dex`);
+    if (b.req.int) reqs.push(`${b.req.int} Int`);
+    if (reqs.length) out.push(`Requires ${reqs.join(', ')}`);
+    return out;
+  };
+
+  const showItemTooltipFor = (el: HTMLElement) => {
+    if (!currentBuild) return;
+    const item = currentBuild.gear.items[Number(el.dataset.hoverItem)];
+    if (!item) return;
+    const baseStats = formatItemBaseLines(item);
+    const mode = el.dataset.itemMode;
+
+    if (mode === 'full') {
+      gemTooltip.innerHTML = `
+        <div class="gt-head">
+          <span class="item-name-${item.rarity}">${esc(item.name)}</span>
+          <span class="gt-kind">${esc(item.slot)}</span>
+        </div>
+        <div class="gt-tags" style="color:var(--muted);">${esc(item.baseName)} · iLvl ${item.itemLevel}${item.sockets ? ` · ${esc(item.sockets)}` : ''}</div>
+        ${baseStats.length ? `<div class="gt-desc" style="margin-bottom:5px;color:var(--muted);">${baseStats.map(esc).join('<br>')}</div>` : ''}
+        ${item.implicits.length ? `<div class="gt-desc" style="margin-bottom:5px;">${item.implicits.map(esc).join('<br>')}</div>` : ''}
+        <div class="gt-desc">${item.explicits.map(esc).join('<br>')}</div>
+      `;
+    } else {
+      const affixLines = [
+        ...item.prefixes.map((p) => `<span class="gt-affix">P</span> <strong>${esc(p.mod.affix)}</strong> (Lv ${p.mod.lvl}, ${Math.round(p.range * 100)}% roll): ${p.resolvedLines.map(esc).join(', ')}`),
+        ...item.suffixes.map((s) => `<span class="gt-affix">S</span> <strong>${esc(s.mod.affix)}</strong> (Lv ${s.mod.lvl}, ${Math.round(s.range * 100)}% roll): ${s.resolvedLines.map(esc).join(', ')}`),
+        ...(item.craftedMod ? [`<span class="gt-affix">C</span> <strong>Bench Craft</strong>: ${esc(item.craftedMod)}`] : []),
+      ];
+      gemTooltip.innerHTML = `
+        <div class="gt-head">
+          <span class="item-name-${item.rarity}">${esc(item.name)}</span>
+          <span class="gt-kind">${esc(item.rarity)} · ${esc(item.slot)}</span>
+        </div>
+        <div class="gt-tags" style="color:var(--muted);">${esc(item.baseName)}</div>
+        ${baseStats.length ? `<div class="gt-desc" style="margin-bottom:6px;">${baseStats.map(esc).join('<br>')}</div>` : ''}
+        ${affixLines.length ? `<div class="gt-desc" style="border-top:1px solid var(--border);padding-top:6px;">${affixLines.join('<br>')}</div>` : ''}
+      `;
+    }
+    positionFloatingTip(el);
+  };
+
   const viewDashEl = document.getElementById('view-dashboard')!;
   viewDashEl.addEventListener('mouseover', (e) => {
+    const itemTarget = (e.target as HTMLElement).closest<HTMLElement>('[data-hover-item]');
+    if (itemTarget) { showItemTooltipFor(itemTarget); return; }
     const target = (e.target as HTMLElement).closest<HTMLElement>('[data-hover-node], [data-hover-keystones]');
     if (target) showNodeTooltipFor(target);
   });
   viewDashEl.addEventListener('mouseout', (e) => {
-    const target = (e.target as HTMLElement).closest<HTMLElement>('[data-hover-node], [data-hover-keystones]');
+    const target = (e.target as HTMLElement).closest<HTMLElement>('[data-hover-node], [data-hover-keystones], [data-hover-item]');
     if (!target) return;
     const related = e.relatedTarget as Node | null;
     if (!related || !target.contains(related)) gemTooltip.classList.add('hidden');
   });
   viewDashEl.addEventListener('focusin', (e) => {
+    const itemTarget = (e.target as HTMLElement).closest<HTMLElement>('[data-hover-item]');
+    if (itemTarget) { showItemTooltipFor(itemTarget); return; }
     const target = (e.target as HTMLElement).closest<HTMLElement>('[data-hover-node], [data-hover-keystones]');
     if (target) showNodeTooltipFor(target);
   });
   viewDashEl.addEventListener('focusout', () => {
+    gemTooltip.classList.add('hidden');
+  });
+
+  const viewGearEl = document.getElementById('view-gear')!;
+  viewGearEl.addEventListener('mouseover', (e) => {
+    const target = (e.target as HTMLElement).closest<HTMLElement>('[data-hover-item]');
+    if (target) showItemTooltipFor(target);
+  });
+  viewGearEl.addEventListener('mouseout', (e) => {
+    const target = (e.target as HTMLElement).closest<HTMLElement>('[data-hover-item]');
+    if (!target) return;
+    const related = e.relatedTarget as Node | null;
+    if (!related || !target.contains(related)) gemTooltip.classList.add('hidden');
+  });
+  viewGearEl.addEventListener('focusin', (e) => {
+    const target = (e.target as HTMLElement).closest<HTMLElement>('[data-hover-item]');
+    if (target) showItemTooltipFor(target);
+  });
+  viewGearEl.addEventListener('focusout', () => {
     gemTooltip.classList.add('hidden');
   });
 

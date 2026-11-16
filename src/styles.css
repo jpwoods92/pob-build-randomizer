@@ -1093,6 +1093,35 @@ input[type="range"] {
   outline: none;
 }
 
+.feed-row-hover,
+.item-card-hover {
+  cursor: help;
+  transition: border-color 0.14s, background 0.14s, transform 0.12s;
+}
+
+.feed-row-hover:hover,
+.feed-row-hover:focus-visible {
+  background: var(--surface-hover);
+  outline: none;
+}
+
+.item-card-hover:hover,
+.item-card-hover:focus-visible {
+  transform: translateY(-1px);
+  outline: none;
+}
+
+.gt-affix {
+  display: inline-block;
+  font-size: 0.66rem;
+  font-weight: 700;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  margin-right: 3px;
+}
+
 .gem-tooltip {
   position: fixed;
   z-index: 50;
