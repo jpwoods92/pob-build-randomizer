@@ -323,7 +323,16 @@ async function main() {
     const arcLen = Math.PI * 76; // r=76 semi-circle
     const dashOffset = arcLen * (1 - reserved / 100);
     const uniques = b.gear.items.filter((i) => i.rarity === 'UNIQUE');
-    const notablePreview = b.tree.summary.notables.slice(0, 8);
+    const ascNotableNodes = b.tree.ascendancyNodes
+      .map((id) => ({ id, node: data.tree.nodes[id] }))
+      .filter((x) => x.node && (x.node.t === 'notable' || x.node.mco));
+    const keystoneNodes = b.tree.nodes
+      .map((id) => ({ id, node: data.tree.nodes[id] }))
+      .filter((x) => x.node && x.node.t === 'keystone');
+    const notableNodes = b.tree.nodes
+      .map((id) => ({ id, node: data.tree.nodes[id] }))
+      .filter((x) => x.node && x.node.t === 'notable' && !x.node.a)
+      .slice(0, 8);
 
     const eleCapped = r.fire >= 75 && r.cold >= 75 && r.lightning >= 75;
 
@@ -352,19 +361,24 @@ async function main() {
             </div>
             <span class="kpi-tag">${b.tree.pointsUsed}/${b.tree.pointsBudget} pts</span>
           </div>
-          <div class="hero-metric">
-            <div>
-              <div class="kpi-label">Ascendancy &amp; Keystones</div>
-              <div class="kpi-value">${esc(a.ascendancy.name)} (${b.tree.ascPointsUsed}/8)</div>
+          <div class="hero-metric hero-metric-col">
+            <div class="hero-metric-top">
+              <div>
+                <div class="kpi-label">Ascendancy &amp; Keystones</div>
+                <div class="kpi-value">${esc(a.ascendancy.name)}</div>
+              </div>
+              <span class="kpi-tag kpi-tag-hover" tabindex="0" data-hover-keystones="1">${keystoneNodes.length} KS</span>
             </div>
-            <span class="kpi-tag">${b.tree.summary.keystones.length} KS</span>
+            <div class="pill-list">
+              ${ascNotableNodes.map(({ id, node }) => `<span class="pill pill-hover pill-accent" tabindex="0" data-hover-node="${id}">${esc(node.n)}</span>`).join('')}
+              ${keystoneNodes.map(({ id, node }) => `<span class="pill pill-hover" tabindex="0" data-hover-node="${id}">${esc(node.n)}</span>`).join('')}
+            </div>
           </div>
           <div class="hero-metric">
             <div>
               <div class="kpi-label">Bandit &amp; Pantheon</div>
               <div class="kpi-value" style="font-size:1rem;">${a.bandit === 'None' ? 'Kill All' : esc(a.bandit)} · ${esc(pantheonMaj)} / ${esc(pantheonMin)}</div>
             </div>
-            <span class="kpi-tag">${uniques.length} Uniques</span>
           </div>
         </div>
       </div>
@@ -433,8 +447,8 @@ async function main() {
             <button type="button" class="btn btn-sm" data-jump="tree">Inspect →</button>
           </div>
           <div class="pill-list">
-            ${b.tree.summary.keystones.map((k) => `<span class="pill pill-accent">${esc(k)}</span>`).join('')}
-            ${notablePreview.map((n) => `<span class="pill">${esc(n)}</span>`).join('')}
+            ${keystoneNodes.map(({ id, node }) => `<span class="pill pill-hover pill-accent" tabindex="0" data-hover-node="${id}">${esc(node.n)}</span>`).join('')}
+            ${notableNodes.map(({ id, node }) => `<span class="pill pill-hover" tabindex="0" data-hover-node="${id}">${esc(node.n)}</span>`).join('')}
           </div>
         </div>
 
@@ -442,7 +456,7 @@ async function main() {
           <div class="card-head">
             <div>
               <h3>Loadout Highlights</h3>
-              <p class="card-sub">${b.gear.items.length} equipped slots, flasks &amp; jewels</p>
+              <p class="card-sub">${b.gear.items.length} equipped · ${uniques.length} unique${uniques.length === 1 ? '' : 's'}</p>
             </div>
             <button type="button" class="btn btn-sm" data-jump="gear">Gear →</button>
           </div>
@@ -605,6 +619,68 @@ async function main() {
   gemTooltip.className = 'gem-tooltip hidden';
   document.body.appendChild(gemTooltip);
 
+  const positionFloatingTip = (anchor: HTMLElement) => {
+    gemTooltip.classList.remove('hidden');
+    const r = anchor.getBoundingClientRect();
+    const tipRect = gemTooltip.getBoundingClientRect();
+    const left = Math.min(window.innerWidth - tipRect.width - 12, Math.max(12, r.left));
+    const spaceBelow = window.innerHeight - r.bottom;
+    const top = spaceBelow >= tipRect.height + 14
+      ? r.bottom + 8
+      : Math.max(12, r.top - tipRect.height - 8);
+    gemTooltip.style.left = `${left}px`;
+    gemTooltip.style.top = `${top}px`;
+  };
+
+  const showNodeTooltipFor = (el: HTMLElement) => {
+    if (el.dataset.hoverKeystones && currentBuild) {
+      const ks = currentBuild.tree.nodes
+        .map((id) => data.tree.nodes[id])
+        .filter((n) => n && n.t === 'keystone');
+      gemTooltip.innerHTML = ks.length
+        ? ks.map((k) => `
+            <div style="margin-bottom:8px;">
+              <div class="gt-head"><span>${esc(k.n)}</span><span class="gt-kind">Keystone</span></div>
+              <div class="gt-desc">${(k.s ?? []).map(esc).join('<br>')}</div>
+            </div>
+          `).join('')
+        : `<div class="gt-head"><span>Keystones</span></div><div class="gt-desc">No keystones allocated.</div>`;
+      positionFloatingTip(el);
+      return;
+    }
+    const nodeId = Number(el.dataset.hoverNode);
+    const n = data.tree.nodes[nodeId];
+    if (!n) return;
+    const kind = n.a ? `${n.a} Ascendancy` : n.t === 'keystone' ? 'Keystone' : 'Notable';
+    gemTooltip.innerHTML = `
+      <div class="gt-head">
+        <span>${esc(n.n)}</span>
+        <span class="gt-kind">${esc(kind)}</span>
+      </div>
+      ${n.s?.length ? `<div class="gt-desc">${n.s.map(esc).join('<br>')}</div>` : ''}
+    `;
+    positionFloatingTip(el);
+  };
+
+  const viewDashEl = document.getElementById('view-dashboard')!;
+  viewDashEl.addEventListener('mouseover', (e) => {
+    const target = (e.target as HTMLElement).closest<HTMLElement>('[data-hover-node], [data-hover-keystones]');
+    if (target) showNodeTooltipFor(target);
+  });
+  viewDashEl.addEventListener('mouseout', (e) => {
+    const target = (e.target as HTMLElement).closest<HTMLElement>('[data-hover-node], [data-hover-keystones]');
+    if (!target) return;
+    const related = e.relatedTarget as Node | null;
+    if (!related || !target.contains(related)) gemTooltip.classList.add('hidden');
+  });
+  viewDashEl.addEventListener('focusin', (e) => {
+    const target = (e.target as HTMLElement).closest<HTMLElement>('[data-hover-node], [data-hover-keystones]');
+    if (target) showNodeTooltipFor(target);
+  });
+  viewDashEl.addEventListener('focusout', () => {
+    gemTooltip.classList.add('hidden');
+  });
+
   const showGemTooltipFor = (row: HTMLElement) => {
     if (!currentBuild) return;
     const gIdx = Number(row.dataset.grp);
@@ -621,16 +697,7 @@ async function main() {
       ${tagLine ? `<div class="gt-tags">${esc(tagLine)}</div>` : ''}
       ${gi.gem.description ? `<div class="gt-desc">${esc(gi.gem.description)}</div>` : ''}
     `;
-    gemTooltip.classList.remove('hidden');
-    const r = row.getBoundingClientRect();
-    const tipRect = gemTooltip.getBoundingClientRect();
-    const left = Math.min(window.innerWidth - tipRect.width - 12, Math.max(12, r.left));
-    const spaceBelow = window.innerHeight - r.bottom;
-    const top = spaceBelow >= tipRect.height + 14
-      ? r.bottom + 8
-      : Math.max(12, r.top - tipRect.height - 8);
-    gemTooltip.style.left = `${left}px`;
-    gemTooltip.style.top = `${top}px`;
+    positionFloatingTip(row);
   };
 
   const viewSkillsEl = document.getElementById('view-skills')!;

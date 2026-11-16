@@ -633,6 +633,31 @@ input[type="range"] {
   gap: 10px;
 }
 
+.hero-metric-col {
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 8px;
+}
+
+.hero-metric-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.pill-hover,
+.kpi-tag-hover {
+  cursor: help;
+}
+
+.pill-hover:hover,
+.pill-hover:focus-visible {
+  border-color: var(--border-strong);
+  outline: none;
+}
+
 .bento-row-3 {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
