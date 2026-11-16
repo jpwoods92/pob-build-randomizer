@@ -295,7 +295,7 @@ async function main() {
   }
 
   function meterHtml(label: string, valText: string, pct: number, color: string): string {
-    const clamped = Math.max(4, Math.min(100, Math.round(pct)));
+    const clamped = Math.max(0, Math.min(100, Math.round(pct)));
     return `
       <div class="meter-item">
         <div class="meter-top">
@@ -344,12 +344,12 @@ async function main() {
           </div>
 
           <div class="meter-list">
-            ${meterHtml('Fire Resistance (post-Kitava)', `${r.fire}% / 75%`, (Math.max(0, r.fire) / 135) * 100, '#ef4444')}
-            ${meterHtml('Cold Resistance (post-Kitava)', `${r.cold}% / 75%`, (Math.max(0, r.cold) / 135) * 100, '#3b82f6')}
-            ${meterHtml('Lightning Resistance (post-Kitava)', `${r.lightning}% / 75%`, (Math.max(0, r.lightning) / 135) * 100, '#eab308')}
+            ${meterHtml('Fire Resistance (post-Kitava)', `${Math.min(75, r.fire)}% / 75% (${r.fire}%)`, (Math.max(0, r.fire) / 75) * 100, '#ef4444')}
+            ${meterHtml('Cold Resistance (post-Kitava)', `${Math.min(75, r.cold)}% / 75% (${r.cold}%)`, (Math.max(0, r.cold) / 75) * 100, '#3b82f6')}
+            ${meterHtml('Lightning Resistance (post-Kitava)', `${Math.min(75, r.lightning)}% / 75% (${r.lightning}%)`, (Math.max(0, r.lightning) / 75) * 100, '#eab308')}
             ${b.tree.summary.keystones.includes('Chaos Inoculation')
               ? meterHtml('Chaos Resistance (CI)', 'Immune (CI)', 100, '#8b5cf6')
-              : meterHtml('Chaos Resistance (post-Kitava)', `${r.chaos}%`, ((r.chaos + 60) / 135) * 100, '#8b5cf6')}
+              : meterHtml('Chaos Resistance (post-Kitava)', `${Math.min(75, r.chaos)}% / 75% (${r.chaos}%)`, (Math.max(0, r.chaos) / 75) * 100, '#8b5cf6')}
             ${meterHtml('Strength / Dexterity', `${at.str}(${req.str}) · ${at.dex}(${req.dex})`, Math.min(100, (at.str / Math.max(1, req.str)) * 50 + (at.dex / Math.max(1, req.dex)) * 50), 'var(--lime)')}
             ${meterHtml('Intelligence vs Gem Req', `${at.int} / ${req.int} req`, (at.int / Math.max(1, req.int)) * 100, 'var(--emerald)')}
           </div>
