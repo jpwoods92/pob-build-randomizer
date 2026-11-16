@@ -629,7 +629,7 @@ input[type="range"] {
   padding: 11px 14px;
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
 }
 
@@ -803,6 +803,8 @@ input[type="range"] {
   border-radius: 999px;
   background: var(--lime-soft);
   color: var(--lime-text);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 /* Radial Gauge */

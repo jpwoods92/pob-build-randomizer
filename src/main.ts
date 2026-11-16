@@ -371,7 +371,6 @@ async function main() {
             </div>
             <div class="pill-list">
               ${ascNotableNodes.map(({ id, node }) => `<span class="pill pill-hover pill-accent" tabindex="0" data-hover-node="${id}">${esc(node.n)}</span>`).join('')}
-              ${keystoneNodes.map(({ id, node }) => `<span class="pill pill-hover" tabindex="0" data-hover-node="${id}">${esc(node.n)}</span>`).join('')}
             </div>
           </div>
           <div class="hero-metric">
