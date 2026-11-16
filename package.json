@@ -1,0 +1,20 @@
+{
+  "name": "pob-build-randomizer",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Path of Exile 1 build randomizer that produces Path of Building import codes with a full passive tree, gems and gear",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "fetch-data": "node scripts/fetch-data.mjs",
+    "build-data": "node scripts/build-data.mjs",
+    "test": "node --experimental-strip-types --no-warnings --test src/__tests__/*.test.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11"
+  }
+}
