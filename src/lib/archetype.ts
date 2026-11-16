@@ -48,7 +48,7 @@ export interface BuildArchetype {
 
 const EXCLUDED_MAIN_TAGS = new Set([
   'aura', 'herald', 'curse', 'hex', 'mark', 'guard', 'warcry',
-  'banner', 'stance', 'blessing', 'link', 'golem', 'blink',
+  'banner', 'stance', 'blessing', 'link', 'golem', 'blink', 'pact',
 ]);
 
 // Travel/utility skills that aren't true main DPS skills unless specifically built as such.
@@ -57,7 +57,8 @@ const UTILITY_SKILL_NAMES = new Set([
   'Bone Offering', 'Flesh Offering', 'Spirit Offering', 'Blood Rage',
   'Berserk', 'Withering Step', 'Phase Run', 'Smoke Mine', 'Dash',
   'Flame Dash', 'Frostblink', 'Blink Arrow', 'Mirror Arrow', 'Lightning Warp',
-  'Shield Charge', 'Whirling Blades', 'Leap Slam', 'Bodyswap',
+  'Shield Charge', 'Whirling Blades', 'Leap Slam', 'Leap Slam of Groundbreaking',
+  'Bodyswap', 'Bodyswap of Sacrifice', 'Frostblink of Wintry Blast',
   'Brand Recall', 'Intimidating Cry', 'Enduring Cry', 'Rallying Cry',
   'Seismic Cry', 'Ancestral Cry', 'Infernal Cry', 'General\'s Cry',
   'Battlemage\'s Cry', 'Vengeful Cry', 'Autoexertion', 'Automation',
@@ -72,7 +73,11 @@ const UTILITY_SKILL_NAMES = new Set([
   'Summon Chaos Golem', 'Summon Flame Golem', 'Summon Ice Golem',
   'Summon Lightning Golem', 'Summon Stone Golem', 'Decoy Totem',
   'Devouring Totem', 'Rejuvenation Totem', 'Searing Bond',
-  'Frost Wall', 'Immortal Call', 'Molten Shell', 'Steelskin', 'Arcane Cloak',
+  'Frost Wall', 'Wall of Force', 'Frost Shield', 'Sigil of Power',
+  'Hydrosphere', 'Void Sphere', 'Tornado', 'Siphoning Trap',
+  'Conversion Trap', 'Wither', 'Ambush', 'Energy Blade',
+  'Frozen Legion', 'Frozen Legion of Rallying',
+  'Immortal Call', 'Molten Shell', 'Steelskin', 'Arcane Cloak',
   'Vaal Molten Shell', 'Vortex', 'Snipers Mark', 'Cast on Death',
 ]);
 
@@ -135,6 +140,13 @@ function isValidMainCandidate(gem: GemData): boolean {
     gem.tags.includes('mine') ||
     gem.tags.includes('totem');
   if (!isCombat) return false;
+  // Must have a real damage calculation or minion creation (excludes buffs/walls/shields/utility)
+  const hasDamageCalc =
+    gem.types.includes('Attack') ||
+    gem.types.includes('Damage') ||
+    gem.types.includes('DamageOverTime') ||
+    gem.types.includes('CreatesMinion');
+  if (!hasDamageCalc) return false;
   // Skip pure movement-tagged skills unless they are iconic attack skills like Flicker Strike / Cyclone
   if (gem.tags.includes('travel') && !['Flicker Strike', 'Consecrated Path', 'Charged Dash'].includes(gem.name)) {
     return false;

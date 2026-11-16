@@ -222,5 +222,16 @@ test('synergy: no duplicate mastery effects, no conflicting weapon masteries unl
     // 3. Never mix Trap Mastery and Mine Mastery
     const mNames = new Set(build.tree.summary.masteries.map((m) => m.name));
     assert.ok(!(mNames.has('Trap Mastery') && mNames.has('Mine Mastery')));
+
+    // 4. Main skill must have real damage/minion calculation & coherent supports
+    const main = build.archetype.mainSkill;
+    assert.ok(
+      main.types.includes('Attack') || main.types.includes('Damage') || main.types.includes('DamageOverTime') || main.types.includes('CreatesMinion'),
+      `Main skill ${main.name} lacks damage/minion type`,
+    );
+    const supNames = new Set(build.skills.groups[0].gems.slice(1).map((g) => g.gem.name));
+    assert.ok(!(supNames.has('Fire Penetration') && supNames.has('Physical to Lightning')));
+    assert.ok(!(supNames.has('Cold Penetration') && supNames.has('Physical to Lightning')));
+    assert.ok(!(supNames.has('Elemental Focus') && (supNames.has('Combustion') || supNames.has('Hypothermia') || supNames.has('Innervate'))));
   }
 });
