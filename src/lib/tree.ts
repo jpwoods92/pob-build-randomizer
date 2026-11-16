@@ -511,10 +511,10 @@ export function generatePassiveTree(
     }
   };
   for (const aid of ascendancyNodes) addNodeAttrs(aid);
-  // Leave a small ~30 buffer for basic rare gear/amulets, while guaranteeing tree covers major deficits
-  const needStr = Math.max(0, attrReqs.str - 30);
-  const needDex = Math.max(0, attrReqs.dex - 30);
-  const needInt = Math.max(0, attrReqs.int - 30);
+  // Rare gear & amulets reliably supply ~60 off-attributes; only take +30 nodes late if still short
+  const needStr = Math.max(0, attrReqs.str - 60);
+  const needDex = Math.max(0, attrReqs.dex - 60);
+  const needInt = Math.max(0, attrReqs.int - 60);
 
   // Extra starting points unlocked by Ascendant "Path of the ..."
   const rootSeeds = new Set<number>([arch.classData.start]);
@@ -613,12 +613,12 @@ export function generatePassiveTree(
       if (nn.t !== 'notable' && nn.t !== 'keystone' && nn.t !== 'jewel') continue;
       let base = nodeScore.get(id) ?? 0;
       const pureKind = pureAttrKind(nn);
-      if (pureKind && !arch.statStack) {
+      if (pureKind && !arch.statStack && pointsUsed >= Math.floor(pointsBudget * 0.8)) {
         const missing =
           (pureKind === 'str' && curAttrs.str < needStr) ||
           (pureKind === 'dex' && curAttrs.dex < needDex) ||
           (pureKind === 'int' && curAttrs.int < needInt);
-        if (missing && d <= 2) base = 26;
+        if (missing && d === 1) base = 24;
       }
       if (base <= 2) continue;
 
