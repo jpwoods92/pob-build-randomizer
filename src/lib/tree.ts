@@ -134,7 +134,7 @@ function scoreStatsText(stats: string[] | undefined, arch: BuildArchetype): numb
   if (arch.trapOrMine !== 'mine' && /\bmines?\b/.test(text)) return -100;
   if (arch.damageStyle === 'attack' && /\bspell damage\b|\bcast speed\b/.test(text)) return -80;
   if (arch.damageStyle !== 'attack' && /\battack damage\b|\bmelee damage\b|\battack speed\b|\bimpale\b/.test(text)) return -80;
-  if (arch.defenseStyle === 'es' && /maximum life/.test(text)) return -80;
+  if (arch.defenseStyle === 'es' && /maximum life/.test(text) && !/maximum life becomes 1/.test(text)) return -80;
 
   // Defenses
   if (arch.defenseStyle === 'life' || arch.defenseStyle === 'hybrid') {
@@ -308,7 +308,7 @@ function scoreNode(id: number, node: TreeNode, arch: BuildArchetype): number {
     score += arch.options.economy === 'trade' ? 34 : 20;
   } else if (node.t === 'keystone') {
     if (!isKeystoneAllowed(node, arch)) return -9999;
-    score += node.n === 'Chaos Inoculation' && arch.defenseStyle === 'es' ? 52 : 22;
+    score += node.n === 'Chaos Inoculation' && arch.defenseStyle === 'es' ? 220 : 22;
   }
   // Small bonus for life/ES cluster travel nodes
   if (node.t === 'normal' && score <= 0) score = 0.5;

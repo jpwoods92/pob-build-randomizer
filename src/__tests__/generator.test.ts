@@ -236,3 +236,34 @@ test('synergy: no duplicate mastery effects, no conflicting weapon masteries unl
     assert.ok(!(supNames.has('Elemental Focus') && (supNames.has('Combustion') || supNames.has('Hypothermia') || supNames.has('Innervate'))));
   }
 });
+
+test('chaos inoculation builds skip chaos resistance on tree and gear', async () => {
+  let ciCount = 0;
+  for (let i = 0; i < 12; i++) {
+    const build = await generateBuild(
+      data,
+      baseOptions({
+        seed: `ci-check-${i}`,
+        classId: 3, // Witch
+        defenseStyle: 'es',
+        leagueMode: i % 2 === 0 ? 'hardcore' : 'softcore',
+      }),
+    );
+    if (!build.tree.summary.keystones.includes('Chaos Inoculation')) continue;
+    ciCount++;
+
+    for (const id of build.tree.nodes) {
+      const node = data.tree.nodes[id];
+      const txt = (node?.s ?? []).join(' ').toLowerCase();
+      assert.ok(!/chaos resistance/.test(txt), `CI tree should not allocate chaos res node: ${node?.n}`);
+    }
+    for (const item of build.gear.items) {
+      assert.notEqual(item.baseName, 'Amethyst Flask');
+      if (item.rarity !== 'UNIQUE') {
+        const modTxt = item.explicits.join(' ').toLowerCase();
+        assert.ok(!/chaos resistance/.test(modTxt), `CI rare/magic item ${item.name} should not roll chaos res`);
+      }
+    }
+  }
+  assert.ok(ciCount > 0, 'Expected at least one ES Witch build to allocate Chaos Inoculation');
+});
