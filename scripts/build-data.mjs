@@ -356,7 +356,16 @@ function buildPantheons() {
   const minor = [];
   for (const [id, p] of Object.entries(raw)) {
     const name = p.souls?.[1]?.name?.replace(/^Soul of (the )?/, '') ?? id;
-    (p.isMajorGod ? major : minor).push({ id, name });
+    const soulKeys = Object.keys(p.souls || {}).sort((a, b) => Number(a) - Number(b));
+    const mods = [];
+    for (const k of soulKeys) {
+      const s = p.souls[k];
+      for (const mk of Object.keys(s.mods || {}).sort((a, b) => Number(a) - Number(b))) {
+        const line = s.mods[mk]?.line;
+        if (line) mods.push(line);
+      }
+    }
+    (p.isMajorGod ? major : minor).push({ id, name, mods });
   }
   return { major, minor };
 }

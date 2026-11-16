@@ -372,10 +372,12 @@ async function main() {
               ${ascNotableNodes.map(({ id, node }) => `<span class="pill pill-hover pill-accent" tabindex="0" data-hover-node="${id}">${esc(node.n)}</span>`).join('')}
             </div>
           </div>
-          <div class="hero-metric">
-            <div>
-              <div class="kpi-label">Bandit &amp; Pantheon</div>
-              <div class="kpi-value" style="font-size:1rem;">${a.bandit === 'None' ? 'Kill All' : esc(a.bandit)} · ${esc(pantheonMaj)} / ${esc(pantheonMin)}</div>
+          <div class="hero-metric hero-metric-col">
+            <div class="kpi-label">Bandit &amp; Pantheon</div>
+            <div class="pill-list">
+              <span class="pill pill-hover" tabindex="0" data-hover-bandit="${esc(a.bandit)}">${a.bandit === 'None' ? 'Kill All (Eramir)' : `Help ${esc(a.bandit)}`}</span>
+              <span class="pill pill-hover pill-accent" tabindex="0" data-hover-pantheon="${esc(a.pantheonMajor)}">${esc(pantheonMaj)}</span>
+              <span class="pill pill-hover" tabindex="0" data-hover-pantheon="${esc(a.pantheonMinor)}">${esc(pantheonMin)}</span>
             </div>
           </div>
         </div>
@@ -734,20 +736,56 @@ async function main() {
     positionFloatingTip(el);
   };
 
+  const BANDIT_INFO: Record<string, { title: string; desc: string }> = {
+    None: { title: 'Kill All Bandits (Eramir)', desc: '+1 Passive Skill Point' },
+    Alira: { title: 'Help Alira', desc: '+15% to all Elemental Resistances' },
+    Oak: { title: 'Help Oak', desc: '+40 to maximum Life' },
+    Kraityn: { title: 'Help Kraityn', desc: '8% increased Movement Speed' },
+  };
+
+  const showBanditOrPantheonTip = (el: HTMLElement) => {
+    if (el.dataset.hoverBandit) {
+      const info = BANDIT_INFO[el.dataset.hoverBandit] ?? BANDIT_INFO.None;
+      gemTooltip.innerHTML = `
+        <div class="gt-head"><span>${esc(info.title)}</span><span class="gt-kind">Act 2 Bandit</span></div>
+        <div class="gt-desc">${esc(info.desc)}</div>
+      `;
+      positionFloatingTip(el);
+      return;
+    }
+    const gid = el.dataset.hoverPantheon;
+    if (gid) {
+      const maj = data.pantheons.major.find((p) => p.id === gid);
+      const min = data.pantheons.minor.find((p) => p.id === gid);
+      const god = maj ?? min;
+      if (!god) return;
+      const kind = maj ? 'Major God' : 'Minor God';
+      gemTooltip.innerHTML = `
+        <div class="gt-head"><span>Soul of ${esc(god.name)}</span><span class="gt-kind">${kind}</span></div>
+        <div class="gt-desc">${god.mods.map(esc).join('<br>')}</div>
+      `;
+      positionFloatingTip(el);
+    }
+  };
+
   const viewDashEl = document.getElementById('view-dashboard')!;
   viewDashEl.addEventListener('mouseover', (e) => {
+    const bpTarget = (e.target as HTMLElement).closest<HTMLElement>('[data-hover-bandit], [data-hover-pantheon]');
+    if (bpTarget) { showBanditOrPantheonTip(bpTarget); return; }
     const itemTarget = (e.target as HTMLElement).closest<HTMLElement>('[data-hover-item]');
     if (itemTarget) { showItemTooltipFor(itemTarget); return; }
     const target = (e.target as HTMLElement).closest<HTMLElement>('[data-hover-node], [data-hover-keystones]');
     if (target) showNodeTooltipFor(target);
   });
   viewDashEl.addEventListener('mouseout', (e) => {
-    const target = (e.target as HTMLElement).closest<HTMLElement>('[data-hover-node], [data-hover-keystones], [data-hover-item]');
+    const target = (e.target as HTMLElement).closest<HTMLElement>('[data-hover-node], [data-hover-keystones], [data-hover-item], [data-hover-bandit], [data-hover-pantheon]');
     if (!target) return;
     const related = e.relatedTarget as Node | null;
     if (!related || !target.contains(related)) gemTooltip.classList.add('hidden');
   });
   viewDashEl.addEventListener('focusin', (e) => {
+    const bpTarget = (e.target as HTMLElement).closest<HTMLElement>('[data-hover-bandit], [data-hover-pantheon]');
+    if (bpTarget) { showBanditOrPantheonTip(bpTarget); return; }
     const itemTarget = (e.target as HTMLElement).closest<HTMLElement>('[data-hover-item]');
     if (itemTarget) { showItemTooltipFor(itemTarget); return; }
     const target = (e.target as HTMLElement).closest<HTMLElement>('[data-hover-node], [data-hover-keystones]');

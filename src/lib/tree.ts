@@ -479,7 +479,7 @@ export function generatePassiveTree(
   const tree = data.tree;
   const { ascendancyNodes, ascPointsUsed, extraPassivePoints, extraStartClasses } = allocateAscendancy(tree, arch, rng.fork('asc'));
 
-  const banditPoints = arch.bandit === 'None' ? 24 : 22;
+  const banditPoints = arch.bandit === 'None' ? 24 : 23;
   const baseBudget = Math.min(tree.points.totalPoints, Math.max(1, arch.options.level - 1 + banditPoints));
   const pointsBudget = baseBudget + extraPassivePoints;
 

@@ -111,9 +111,15 @@ export interface UniqueData {
   league?: string;
 }
 
+export interface PantheonGod {
+  id: string;
+  name: string;
+  mods: string[];
+}
+
 export interface PantheonData {
-  major: { id: string; name: string }[];
-  minor: { id: string; name: string }[];
+  major: PantheonGod[];
+  minor: PantheonGod[];
 }
 
 export interface GameData {
