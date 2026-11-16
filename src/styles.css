@@ -1023,6 +1023,64 @@ input[type="range"] {
   white-space: nowrap;
 }
 
+.gem-row-hover {
+  cursor: help;
+  transition: border-color 0.14s, background 0.14s;
+}
+
+.gem-row-hover:hover,
+.gem-row-hover:focus-visible {
+  border-color: var(--border-strong);
+  background: var(--surface-hover);
+  outline: none;
+}
+
+.gem-tooltip {
+  position: fixed;
+  z-index: 50;
+  pointer-events: none;
+  max-width: 340px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  padding: 11px 13px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.24);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.gem-tooltip.hidden {
+  display: none;
+}
+
+.gt-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.gt-kind {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.gt-tags {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--lime-text);
+  margin-bottom: 6px;
+}
+
+.gt-desc {
+  color: var(--text-2);
+}
+
 .item-card {
   background: var(--surface);
   border: 1px solid var(--border);

@@ -80,7 +80,7 @@ async function main() {
           </button>
           <button type="button" class="nav-item" data-view="skills">
             <span class="nav-icon">✦</span>
-            <span class="nav-label">Skills &amp; Gems</span>
+            <span class="nav-label">Skill Gems</span>
             <span class="nav-pill" id="nav-links-pill">6L</span>
           </button>
           <button type="button" class="nav-item" data-view="gear">
@@ -243,6 +243,7 @@ async function main() {
 
   function switchView(view: NavView) {
     activeView = view;
+    gemTooltip.classList.add('hidden');
     document.querySelectorAll('#sidebar-nav .nav-item').forEach((b) => {
       b.classList.toggle('active', (b as HTMLElement).dataset.view === view);
     });
@@ -383,7 +384,7 @@ async function main() {
               <h3>Mana Reservation</h3>
               <p class="card-sub">Aura &amp; herald allocation budget</p>
             </div>
-            <button type="button" class="btn btn-sm" data-jump="skills">Skills →</button>
+            <button type="button" class="btn btn-sm" data-jump="skills">Skill Gems →</button>
           </div>
           <div class="gauge-wrap">
             <svg class="gauge-svg" viewBox="0 0 200 118">
@@ -482,10 +483,18 @@ async function main() {
     `;
   }
 
+  function formatGemTags(tags: string[]): string {
+    const skip = new Set(['grants_active_skill', 'strength', 'dexterity', 'intelligence', 'support', 'low_max_level', 'exceptional']);
+    return tags
+      .filter((t) => !skip.has(t))
+      .map((t) => t.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()))
+      .join(' · ');
+  }
+
   function renderSkills(b: GeneratedBuild) {
     document.getElementById('view-skills')!.innerHTML = `
       <div class="skills-grid">
-        ${b.skills.groups.map((grp) => `
+        ${b.skills.groups.map((grp, gIdx) => `
           <div class="bento-card">
             <div class="card-head">
               <div>
@@ -495,8 +504,8 @@ async function main() {
               <span class="badge">${grp.gems.length}L</span>
             </div>
             <div class="gem-list">
-              ${grp.gems.map((gi) => `
-                <div class="gem-row">
+              ${grp.gems.map((gi, idx) => `
+                <div class="gem-row gem-row-hover" tabindex="0" data-grp="${gIdx}" data-gem="${idx}">
                   <span style="display:flex;align-items:center;">
                     <i class="gem-dot gem-c${gi.gem.color}"></i>
                     ${esc(gi.gem.name)}
@@ -565,6 +574,57 @@ async function main() {
   }
 
   // Event wiring
+  const gemTooltip = document.createElement('div');
+  gemTooltip.className = 'gem-tooltip hidden';
+  document.body.appendChild(gemTooltip);
+
+  const showGemTooltipFor = (row: HTMLElement) => {
+    if (!currentBuild) return;
+    const gIdx = Number(row.dataset.grp);
+    const idx = Number(row.dataset.gem);
+    const gi = currentBuild.skills.groups[gIdx]?.gems[idx];
+    if (!gi) return;
+    const tagLine = formatGemTags(gi.gem.tags);
+    const kind = gi.gem.support ? 'Support' : 'Active';
+    gemTooltip.innerHTML = `
+      <div class="gt-head">
+        <span><i class="gem-dot gem-c${gi.gem.color}"></i>${esc(gi.gem.name)}</span>
+        <span class="gt-kind">${kind} · Lv ${gi.level}/${gi.quality}%</span>
+      </div>
+      ${tagLine ? `<div class="gt-tags">${esc(tagLine)}</div>` : ''}
+      ${gi.gem.description ? `<div class="gt-desc">${esc(gi.gem.description)}</div>` : ''}
+    `;
+    gemTooltip.classList.remove('hidden');
+    const r = row.getBoundingClientRect();
+    const tipRect = gemTooltip.getBoundingClientRect();
+    const left = Math.min(window.innerWidth - tipRect.width - 12, Math.max(12, r.left));
+    const spaceBelow = window.innerHeight - r.bottom;
+    const top = spaceBelow >= tipRect.height + 14
+      ? r.bottom + 8
+      : Math.max(12, r.top - tipRect.height - 8);
+    gemTooltip.style.left = `${left}px`;
+    gemTooltip.style.top = `${top}px`;
+  };
+
+  const viewSkillsEl = document.getElementById('view-skills')!;
+  viewSkillsEl.addEventListener('mouseover', (e) => {
+    const row = (e.target as HTMLElement).closest<HTMLElement>('.gem-row-hover');
+    if (row) showGemTooltipFor(row);
+  });
+  viewSkillsEl.addEventListener('mouseout', (e) => {
+    const row = (e.target as HTMLElement).closest<HTMLElement>('.gem-row-hover');
+    if (!row) return;
+    const related = e.relatedTarget as Node | null;
+    if (!related || !row.contains(related)) gemTooltip.classList.add('hidden');
+  });
+  viewSkillsEl.addEventListener('focusin', (e) => {
+    const row = (e.target as HTMLElement).closest<HTMLElement>('.gem-row-hover');
+    if (row) showGemTooltipFor(row);
+  });
+  viewSkillsEl.addEventListener('focusout', () => {
+    gemTooltip.classList.add('hidden');
+  });
+
   document.getElementById('tree-side')!.addEventListener('click', (e) => {
     const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-node-id]');
     if (!btn) return;

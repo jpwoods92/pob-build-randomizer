@@ -214,7 +214,7 @@ function buildGems() {
       levelReq: sk.levelReq,
       reservePct: sk.reservePct,
       reserveFlat: sk.reserveFlat,
-      description: sk.support ? undefined : sk.description,
+      description: sk.description,
     });
   }
   return gems;
