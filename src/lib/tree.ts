@@ -161,7 +161,7 @@ function scoreStatsText(stats: string[] | undefined, arch: BuildArchetype): numb
   if (/maximum (all )?(fire|cold|lightning|elemental) resistance/.test(text)) score += isHC ? 26 : 12;
   if (/maximum chaos resistance/.test(text)) score += arch.defenseStyle === 'es' ? -80 : (isHC ? 22 : 10);
   if (/to all elemental resistances|to (fire|cold|lightning) resistance/.test(text)) score += isHC ? 10 : 5;
-  if (/chaos resistance/.test(text)) score += arch.defenseStyle === 'es' ? -80 : (isHC ? 16 : 6);
+  if (/chaos resistance/.test(text)) score += arch.defenseStyle === 'es' ? -80 : (isHC ? 28 : 4);
   if (/armour/.test(text) && (arch.primaryAttr === 'str' || isHC)) score += isHC ? 10 : 4;
   if (/evasion/.test(text) && (arch.primaryAttr === 'dex' || isHC)) score += isHC ? 9 : 4;
   if (/chance to block/.test(text) && arch.weaponSetup.includes('shield')) score += isHC ? 15 : 7;

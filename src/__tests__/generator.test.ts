@@ -433,6 +433,17 @@ test('both hardcore and softcore builds always cap elemental resistances', async
       b.defenses.effEleRes >= b.defenses.maxEleRes,
       `${mode} effEleRes (${b.defenses.effEleRes}%) below maxEleRes (${b.defenses.maxEleRes}%) on ${b.archetype.title}`,
     );
+    if (mode === 'hardcore') {
+      const hasCI = b.tree.summary.keystones.includes('Chaos Inoculation');
+      assert.ok(
+        hasCI || b.gear.resists.chaos >= 75,
+        `HC Chaos res uncapped (${b.gear.resists.chaos}%) on ${b.archetype.title}`,
+      );
+      assert.ok(
+        b.defenses.effChaosRes >= 75,
+        `HC effChaosRes (${b.defenses.effChaosRes}%) below 75% on ${b.archetype.title}`,
+      );
+    }
   }
 });
 
