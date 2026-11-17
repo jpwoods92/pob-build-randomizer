@@ -319,9 +319,8 @@ async function main() {
     const pantheonMaj = data.pantheons.major.find((p) => p.id === a.pantheonMajor)?.name ?? a.pantheonMajor;
     const pantheonMin = data.pantheons.minor.find((p) => p.id === a.pantheonMinor)?.name ?? a.pantheonMinor;
 
+    const d = b.defenses;
     const reserved = Math.min(100, b.skills.manaReservedPct);
-    const arcLen = Math.PI * 76; // r=76 semi-circle
-    const dashOffset = arcLen * (1 - reserved / 100);
     const uniques = b.gear.items.filter((i) => i.rarity === 'UNIQUE');
     const ascNotableNodes = b.tree.ascendancyNodes
       .map((id) => ({ id, node: data.tree.nodes[id] }))
@@ -354,10 +353,18 @@ async function main() {
         </div>
 
         <div class="hero-metrics">
-          <div class="hero-metric">
-            <div>
-              <div class="kpi-label">Passive Tree Scaling</div>
-              <div class="kpi-value">${b.tree.summary.lifePct}% Life · ${b.tree.summary.esPct}% ES</div>
+          <div class="hero-metric hero-metric-col">
+            <div class="hero-metric-top">
+              <div class="kpi-label">Passives &amp; Scaling</div>
+              <span class="kpi-tag">${reserved}% Reserved</span>
+            </div>
+            <div class="kpi-value hero-scaling-val">${d.lifePct}% Life · ${d.esPct}% ES</div>
+            <div class="hero-res-row" title="Mana reservation: ${reserved}% reserved (${100 - reserved}% unreserved)">
+              <span class="hero-res-label">Mana Res</span>
+              <div class="meter-track hero-res-track">
+                <div class="meter-fill" style="width:${reserved}%;background:var(--lime);"></div>
+              </div>
+              <span class="hero-res-sub">${100 - reserved}% free</span>
             </div>
           </div>
           <div class="hero-metric hero-metric-col">
@@ -422,19 +429,37 @@ async function main() {
         <div class="bento-card">
           <div class="card-head">
             <div>
-              <h3>Mana Reservation</h3>
-              <p class="card-sub">Aura &amp; herald allocation budget</p>
+              <h3>Defenses &amp; Max Hits</h3>
+              <p class="card-sub">Projected pools &amp; hit mitigation</p>
             </div>
-            <button type="button" class="btn btn-sm" data-jump="skills">Skill Gems →</button>
+            <span class="badge">${(d.chaosMaxHit === null ? d.maxEs : d.maxLife + d.maxEs).toLocaleString()} Pool</span>
           </div>
-          <div class="gauge-wrap">
-            <svg class="gauge-svg" viewBox="0 0 200 118">
-              <path d="M 24 100 A 76 76 0 0 1 176 100" fill="none" stroke="var(--surface-subtle)" stroke-width="18" stroke-linecap="round"/>
-              <path d="M 24 100 A 76 76 0 0 1 176 100" fill="none" stroke="var(--lime)" stroke-width="18" stroke-linecap="round"
-                stroke-dasharray="${arcLen.toFixed(1)}" stroke-dashoffset="${dashOffset.toFixed(1)}"/>
-              <text x="100" y="84" text-anchor="middle" class="gauge-num">${reserved}%</text>
-              <text x="100" y="102" text-anchor="middle" class="gauge-sub">${100 - reserved}% unreserved</text>
-            </svg>
+          <div class="def-pool-grid">
+            <div class="def-stat-box">
+              <span class="def-stat-label">Max HP</span>
+              <span class="def-stat-val def-life">${d.maxLife.toLocaleString()}</span>
+            </div>
+            <div class="def-stat-box">
+              <span class="def-stat-label">Max ES</span>
+              <span class="def-stat-val def-es">${d.maxEs.toLocaleString()}</span>
+            </div>
+          </div>
+          <div class="def-hit-list">
+            <div class="def-hit-row">
+              <span class="def-hit-name">Phys Max Hit</span>
+              <span class="def-hit-meta">${d.armour.toLocaleString()} AR</span>
+              <span class="def-hit-val">${d.physMaxHit.toLocaleString()}</span>
+            </div>
+            <div class="def-hit-row">
+              <span class="def-hit-name">Ele Max Hit</span>
+              <span class="def-hit-meta">${d.effEleRes}% Res</span>
+              <span class="def-hit-val">${d.eleMaxHit.toLocaleString()}</span>
+            </div>
+            <div class="def-hit-row">
+              <span class="def-hit-name">Chaos Max Hit</span>
+              <span class="def-hit-meta">${d.chaosMaxHit === null ? 'CI' : `${d.effChaosRes}% Res`}</span>
+              <span class="def-hit-val ${d.chaosMaxHit === null ? 'def-immune' : ''}">${d.chaosMaxHit === null ? 'Immune' : d.chaosMaxHit.toLocaleString()}</span>
+            </div>
           </div>
         </div>
 

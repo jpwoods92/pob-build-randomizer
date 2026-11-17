@@ -4,6 +4,7 @@ import { pickArchetype, type BuildArchetype, type BuildOptions } from './archety
 import { generatePassiveTree, type GeneratedTree } from './tree.ts';
 import { generateSkills, type GeneratedSkills } from './skills.ts';
 import { generateGear, type GeneratedGear } from './items.ts';
+import { computeProjectedDefenses, type ProjectedDefenses } from './stats.ts';
 import { buildPobXml, encodePobCode } from './pob-export.ts';
 
 export interface GeneratedBuild {
@@ -11,6 +12,7 @@ export interface GeneratedBuild {
   tree: GeneratedTree;
   skills: GeneratedSkills;
   gear: GeneratedGear;
+  defenses: ProjectedDefenses;
   xml: string;
   pobCode: string;
 }
@@ -23,8 +25,9 @@ export async function generateBuild(data: GameData, options: BuildOptions): Prom
   const skills = generateSkills(data, archetype, rootRng.fork('skills'));
   const tree = generatePassiveTree(data, archetype, rootRng.fork('tree'), skills.maxReq);
   const gear = generateGear(data, archetype, tree, skills, rootRng.fork('gear'));
+  const defenses = computeProjectedDefenses(data, archetype, tree, skills, gear);
   const xml = buildPobXml({ archetype, tree, skills, gear, data });
   const pobCode = await encodePobCode(xml);
 
-  return { archetype, tree, skills, gear, xml, pobCode };
+  return { archetype, tree, skills, gear, defenses, xml, pobCode };
 }
