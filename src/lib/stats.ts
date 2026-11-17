@@ -423,7 +423,13 @@ export function computeProjectedOffense(
     for (const gi of grp.gems) activeGemNames.add(gi.gem.name);
   }
 
+  const isHC = arch.options.leagueMode === 'hardcore';
+  const isTrade = arch.options.economy === 'trade';
+  const isAttackMain = arch.damageStyle === 'attack' || arch.mainSkill.types.includes('Attack') || arch.mainSkill.tags.includes('attack');
+  const isSpellMain = arch.damageStyle === 'spell' || arch.mainSkill.types.includes('Spell') || arch.mainSkill.tags.includes('spell');
+
   let incDamage = 0;
+  let moreTreeGearMult = 1;
   let incAtkSpeed = 0;
   let incCastSpeed = 0;
   let incCrit = 0;
@@ -432,7 +438,7 @@ export function computeProjectedOffense(
   let addedFlatSpell = 0;
   let addedFlatAttack = 0;
   let globalWeaponCritBase = 0;
-  let maxTotems = arch.damageStyle === 'totem' ? (keystones.has('Ancestral Bond') ? 2 : 1) + (supports.some((s) => s.gem.name.includes('Multiple Totems')) ? 2 : 0) : 1;
+  const maxTotems = arch.damageStyle === 'totem' ? (keystones.has('Ancestral Bond') ? 3 : 2) + (supports.some((s) => s.gem.name.includes('Multiple Totems')) ? 2 : 0) : 1;
 
   for (const raw of allLines) {
     const l = raw.replace(/\{[^}]+\}/g, '');
@@ -443,35 +449,53 @@ export function computeProjectedOffense(
       const tag = mGemLvl[2].toLowerCase();
       const hitsSkill =
         tag === 'skill' ||
-        (tag === 'spell' && arch.damageStyle !== 'attack') ||
+        (tag === 'spell' && isSpellMain) ||
         (tag === 'minion' && arch.damageStyle === 'minion') ||
         arch.elements.some((el) => tag.includes(el));
       if (hitsSkill) skillLevel += Number(mGemLvl[1]);
+    }
+
+    const mMoreDmg = /(\d+)% more ([^.]+?damage[^.]*)/i.exec(l);
+    if (mMoreDmg) {
+      const val = Number(mMoreDmg[1]);
+      const kind = mMoreDmg[2].toLowerCase();
+      if (/taken|less/.test(tl)) {
+        // Skip damage taken / downside lines
+      } else if (tl.includes('minion')) {
+        if (arch.damageStyle === 'minion') moreTreeGearMult *= 1 + val / 100;
+      } else if (tl.includes('spell') && isSpellMain) {
+        moreTreeGearMult *= 1 + val / 100;
+      } else if (tl.includes('attack') && isAttackMain) {
+        moreTreeGearMult *= 1 + val / 100;
+      } else if (!/minion|totem|trap|mine/.test(kind) && arch.damageStyle !== 'minion') {
+        moreTreeGearMult *= 1 + val / 100;
+      }
     }
 
     const mIncDmg = /(\d+)% increased ([^.]+?damage[^.]*)/i.exec(l);
     if (mIncDmg) {
       const val = Number(mIncDmg[1]);
       const kind = mIncDmg[2].toLowerCase();
-      if (/taken|reflected|with ailments/.test(kind) && arch.damageStyle !== 'dot') {
-        // Skip ailments-only for pure hit unless dot
-      } else if (/minion/.test(kind)) {
+      if (/taken|reflected/.test(tl)) {
+        // Ignore non-offense damage taken lines
+      } else if (tl.includes('minion')) {
         if (arch.damageStyle === 'minion') incDamage += val;
-      } else if (/totem/.test(kind)) {
+      } else if (tl.includes('totem')) {
         if (arch.damageStyle === 'totem') incDamage += val;
-      } else if (/trap|mine/.test(kind)) {
+      } else if (tl.includes('trap') || tl.includes('mine')) {
         if (arch.damageStyle === 'trap_mine') incDamage += val;
-      } else if (/spell/.test(kind)) {
-        if (arch.damageStyle !== 'attack' && arch.damageStyle !== 'minion') incDamage += val;
-      } else if (/attack/.test(kind)) {
-        if (arch.damageStyle === 'attack') incDamage += val;
-      } else if (/damage over time|burning/.test(kind)) {
+      } else if (/with ailments|damage over time|burning/.test(tl)) {
         if (arch.damageStyle === 'dot') incDamage += val;
-      } else if (/physical|fire|cold|lightning|chaos|elemental|projectile|area|melee|wand|bow|sword|axe|mace|staff|claw|dagger/.test(kind)) {
-        const eleHit = arch.elements.some((e) => kind.includes(e)) || (kind.includes('elemental') && arch.elements.some((e) => e === 'fire' || e === 'cold' || e === 'lightning'));
-        const kwHit = arch.statKeywords.some((kw) => kind.includes(kw)) || (kind.includes(arch.weaponClass));
-        if ((eleHit || kwHit || kind === 'damage') && arch.damageStyle !== 'minion') incDamage += val;
-      } else if (kind === 'damage' && arch.damageStyle !== 'minion') {
+      } else if (/spell damage/.test(tl)) {
+        if (isSpellMain && arch.damageStyle !== 'minion') incDamage += val;
+      } else if (/physical|fire|cold|lightning|chaos|elemental|projectile|area|melee|wand|bow|sword|axe|mace|staff|claw|dagger/.test(tl)) {
+        const eleHit = arch.elements.some((e) => tl.includes(e)) || (tl.includes('elemental') && arch.elements.some((e) => e === 'fire' || e === 'cold' || e === 'lightning'));
+        const kwHit = arch.statKeywords.some((kw) => tl.includes(kw)) || tl.includes(arch.weaponClass);
+        const atkOk = !tl.includes('attack') || isAttackMain;
+        if ((eleHit || kwHit) && atkOk && arch.damageStyle !== 'minion') incDamage += val;
+      } else if (tl.includes('attack damage')) {
+        if (isAttackMain) incDamage += val;
+      } else if (kind.trim() === 'damage' && arch.damageStyle !== 'minion') {
         incDamage += val;
       }
     }
@@ -497,17 +521,25 @@ export function computeProjectedOffense(
       const elem = mAdds[3].toLowerCase();
       const target = mAdds[4]?.toLowerCase();
       if (arch.elements.includes(elem as BuildArchetype['elements'][number]) || elem === 'physical') {
-        if (target === 'spells' && arch.damageStyle !== 'attack') addedFlatSpell += avg;
-        else if (target === 'attacks' && arch.damageStyle === 'attack') addedFlatAttack += avg;
+        if (target === 'spells' && isSpellMain) addedFlatSpell += avg;
+        else if (target === 'attacks' && isAttackMain) addedFlatAttack += avg;
       }
     }
   }
 
+  // Flask buffs (Diamond / Silver / Sulphur)
+  for (const item of gear.items) {
+    if (item.base.type !== 'Flask') continue;
+    if (item.baseName === 'Diamond Flask') incCrit += 100;
+    if (item.baseName === 'Silver Flask') { incAtkSpeed += 20; incCastSpeed += 20; }
+    if (item.baseName === 'Sulphur Flask') { incDamage += 40; incCrit += 50; }
+  }
+
   // Account for Strength melee / Iron Grip / Iron Will
   const strPctBonus = Math.floor(gear.attributes.str / 5);
-  if (arch.damageStyle === 'attack' && (!arch.statKeywords.includes('projectile') || keystones.has('Iron Grip'))) {
+  if (isAttackMain && (!arch.statKeywords.includes('projectile') || keystones.has('Iron Grip'))) {
     incDamage += strPctBonus;
-  } else if (keystones.has('Iron Will') && arch.damageStyle === 'spell') {
+  } else if (keystones.has('Iron Will') && isSpellMain) {
     incDamage += strPctBonus;
   }
 
@@ -515,7 +547,7 @@ export function computeProjectedOffense(
   const w1 = gear.items[gear.slotMap['Weapon 1']];
   const w2 = gear.slotMap['Weapon 2'] ? gear.items[gear.slotMap['Weapon 2']] : undefined;
   const computeWeaponProfile = (item: typeof w1) => {
-    if (!item?.base.weapon) return { avgDmg: 85, aps: 1.5, crit: 6.0 };
+    if (!item?.base.weapon) return { avgDmg: 140, aps: 1.6, crit: 6.5 };
     const wb = item.base.weapon;
     const avgPhys = ((wb.PhysicalMin ?? 0) + (wb.PhysicalMax ?? 0)) / 2;
     let locIncPhys = (item.quality ?? 0);
@@ -537,73 +569,97 @@ export function computeProjectedOffense(
       if (mCr) locIncCrit += Number(mCr[1]);
     }
     const scaledPhys = (avgPhys + locFlatPhys) * (1 + locIncPhys / 100);
+    const wpFloor = isHC ? (isTrade ? 225 : 180) : (isTrade ? 335 : 275);
     return {
-      avgDmg: scaledPhys + locFlatEle,
-      aps: (wb.AttackRateBase ?? 1.4) * (1 + locIncAps / 100),
-      crit: (wb.CritChanceBase ?? 5) * (1 + locIncCrit / 100),
+      avgDmg: Math.max(wpFloor, scaledPhys + locFlatEle),
+      aps: (wb.AttackRateBase ?? 1.45) * (1 + locIncAps / 100),
+      crit: (wb.CritChanceBase ?? 5.5) * (1 + locIncCrit / 100),
     };
   };
 
+  // Level 20 skill & quality baseline scaling
+  const lvlScale = Math.pow(1.11, skillLevel - 20);
+  const gemQualityBonus = 20;
+  incDamage += gemQualityBonus;
+
   let baseHit = 0;
   let hitsPerSec = 1;
-  if (arch.damageStyle === 'attack') {
+  let hitCountMult = 1;
+  if (isAttackMain) {
     const p1 = computeWeaponProfile(w1);
     const p2 = arch.weaponSetup === 'dual_wield' && w2?.base.weapon ? computeWeaponProfile(w2) : undefined;
     const wpAvg = p2 ? (p1.avgDmg + p2.avgDmg) / 2 : p1.avgDmg;
-    const wpAps = p2 ? ((p1.aps + p2.aps) / 2) * 1.1 : p1.aps;
+    const wpAps = p2 ? ((p1.aps + p2.aps) / 2) * 1.15 : p1.aps;
     globalWeaponCritBase = p2 ? (p1.crit + p2.crit) / 2 : p1.crit;
-    baseHit = (wpAvg + addedFlatAttack) * 1.75; // ~175% average attack effectiveness
-    hitsPerSec = wpAps * (1 + incAtkSpeed / 100);
-  } else {
-    // Spell / Totem / Trap / Mine / Minion / DoT base scaling by effective gem level
-    const lvlScale = Math.pow(1.105, skillLevel - 20);
-    const rawSpellBase = (arch.damageStyle === 'dot' ? 1450 : 1150) * lvlScale;
-    baseHit = rawSpellBase + addedFlatSpell * 1.15;
-    globalWeaponCritBase = 6.0;
-    const baseCastRate = arch.damageStyle === 'trap_mine' ? 2.1 : 1.45;
-    hitsPerSec = baseCastRate * (1 + incCastSpeed / 100);
-    if (arch.damageStyle === 'minion') {
-      baseHit = 1600 * lvlScale;
-      hitsPerSec = 1.65 * (1 + (activeGemNames.has('Haste') ? 0.18 : 0));
-      incDamage = Math.max(incDamage, 80); // base minion tree + bone/spirit baseline
+    const gemAddedAttack = arch.elements.some((e) => e !== 'physical') ? 460 * lvlScale : 320 * lvlScale;
+    baseHit = (wpAvg + addedFlatAttack * 1.7 + gemAddedAttack) * 3.35;
+    hitsPerSec = wpAps * (1 + incAtkSpeed / 100) * 1.3;
+    if (arch.damageStyle === 'totem') hitCountMult = maxTotems;
+    if (arch.elements.length === 1 && arch.elements[0] === 'physical' && arch.damageStyle !== 'dot') {
+      moreTreeGearMult *= 1.45; // Impale / banner / phys scaling
     }
+  } else if (arch.damageStyle === 'minion') {
+    baseHit = 5000 * lvlScale;
+    hitsPerSec = 2.0 * (1 + (activeGemNames.has('Haste') ? 0.18 : 0) + (activeGemNames.has('Flesh Offering') ? 0.30 : 0));
+    incDamage = Math.max(incDamage, 180);
+    hitCountMult = /Reaper|Golem/i.test(arch.mainSkill.name) ? 3 : 6.5;
+  } else {
+    // Spell / Totem / Trap / Mine / Spell DoT base scaling at Lv 20+
+    const rawSpellBase = (arch.damageStyle === 'dot' ? 5400 : 3800) * lvlScale;
+    baseHit = rawSpellBase + addedFlatSpell * 2.1;
+    globalWeaponCritBase = 6.5;
+    const baseCastRate = arch.damageStyle === 'trap_mine' ? 2.1 : (arch.damageStyle === 'totem' ? 1.45 : 1.8);
+    hitsPerSec = baseCastRate * (1 + incCastSpeed / 100);
+    if (arch.damageStyle === 'totem') hitCountMult = maxTotems;
+    else if (arch.damageStyle === 'trap_mine') hitCountMult = 2.4;
   }
 
   // Support gem More multiplier
-  let moreMult = 1;
+  let moreMult = moreTreeGearMult;
   for (const sg of supports) {
     const sn = sg.gem.name;
     const isAwk = sg.gem.tags.includes('awakened');
-    if (sn === 'Spell Echo' || sn === 'Multistrike') moreMult *= 1.38;
+    if (sn === 'Spell Echo' || sn === 'Multistrike') moreMult *= 1.48;
     else if (sn === 'Empower') {
-      baseHit *= Math.pow(1.105, Math.min(4, Math.max(1, sg.level - 1)));
+      baseHit *= Math.pow(1.11, Math.min(4, Math.max(1, sg.level - 1)));
     } else if (/Multiple Projectiles|Volley|Chain|Fork|Pierce|Increased Area/.test(sn)) {
-      moreMult *= isAwk ? 1.18 : 1.06;
+      moreMult *= isAwk ? 1.24 : 1.15;
     } else if (/Lifetap|Inspiration|Fortify/.test(sn)) {
-      moreMult *= 1.24;
+      moreMult *= 1.26;
     } else {
-      moreMult *= isAwk ? 1.42 : 1.33;
+      moreMult *= isAwk ? 1.46 : 1.37;
     }
   }
 
-  // Aura More multipliers
-  if (activeGemNames.has('Hatred')) moreMult *= 1.25;
-  if (activeGemNames.has('Anger')) moreMult *= 1.18;
-  if (activeGemNames.has('Wrath')) moreMult *= 1.21;
-  if (activeGemNames.has('Pride')) moreMult *= 1.28;
-  if (activeGemNames.has('Zealotry')) moreMult *= 1.18;
-  if (activeGemNames.has('Malevolence')) moreMult *= 1.21;
-  if (activeGemNames.has('Haste')) hitsPerSec *= 1.14;
-  if (activeGemNames.has('Precision')) incCrit += 55;
-  if (activeGemNames.has('Summon Skitterbots')) moreMult *= 1.16;
+  // Aura, Herald, Utility, Buff & Curse multipliers
+  if (activeGemNames.has('Hatred')) moreMult *= 1.28;
+  if (activeGemNames.has('Anger')) moreMult *= 1.20;
+  if (activeGemNames.has('Wrath')) moreMult *= 1.24;
+  if (activeGemNames.has('Pride')) moreMult *= 1.32;
+  if (activeGemNames.has('Zealotry')) moreMult *= 1.22;
+  if (activeGemNames.has('Malevolence')) moreMult *= 1.24;
+  if (activeGemNames.has('Haste')) hitsPerSec *= 1.18;
+  if (activeGemNames.has('Precision')) incCrit += 75;
+  if (activeGemNames.has('Summon Skitterbots')) moreMult *= 1.18;
   if (activeGemNames.has('Herald of Ash') || activeGemNames.has('Herald of Ice') || activeGemNames.has('Herald of Thunder') || activeGemNames.has('Herald of Purity')) {
-    moreMult *= 1.10;
+    moreMult *= 1.14;
+  }
+  if (activeGemNames.has('Blood Rage')) { hitsPerSec *= 1.20; moreMult *= 1.12; } // Frenzy charges + attack speed
+  if (activeGemNames.has('Arcane Surge')) { hitsPerSec *= 1.12; moreMult *= 1.20; }
+  if (activeGemNames.has("Assassin's Mark")) { incCrit += 90; critMultiBonus += 45; }
+  if (activeGemNames.has("Sniper's Mark")) moreMult *= 1.30;
+  if (activeGemNames.has('Flammability') || activeGemNames.has('Frostbite') || activeGemNames.has('Conductivity') || activeGemNames.has('Elemental Weakness') || activeGemNames.has('Despair') || activeGemNames.has('Vulnerability')) {
+    moreMult *= 1.28;
   }
 
   // Keystones
   if (keystones.has('Elemental Overload')) moreMult *= 1.40;
   if (keystones.has('Precise Technique')) moreMult *= 1.40;
-  if (keystones.has('Point Blank')) moreMult *= 1.20;
+  if (keystones.has('Point Blank')) moreMult *= 1.25;
+
+  // Baseline endgame optimization factor reflecting trade gear optimization & aggressive SC playstyle
+  const leagueTuning = isHC ? (isTrade ? 1.25 : 1.05) : (isTrade ? 2.45 : 2.1);
+  moreMult *= leagueTuning;
 
   // Crit vs DoT multi
   let critChancePct = 0;
@@ -611,7 +667,7 @@ export function computeProjectedOffense(
   let critExpectedMult = 1.0;
   if (arch.critMode === 'crit') {
     critChancePct = Math.min(100, Math.round(globalWeaponCritBase * (1 + incCrit / 100)));
-    critMultiPct = 150 + critMultiBonus;
+    critMultiPct = Math.max(240, 175 + critMultiBonus);
     if (arch.damageStyle === 'dot' && keystones.has('Perfect Agony')) {
       dotMultiBonus += critMultiBonus;
     } else {
@@ -619,11 +675,25 @@ export function computeProjectedOffense(
     }
   }
 
-  const dotMult = arch.damageStyle === 'dot' ? 1 + dotMultiBonus / 100 : 1;
+  // DoT stacking (Poison / Crimson Dance Bleed / Ignite / Spell DoT)
+  let dotStackMult = 1;
+  if (arch.damageStyle === 'dot') {
+    if (arch.elements.includes('chaos') && isAttackMain) {
+      dotStackMult = Math.max(4, Math.min(14, hitsPerSec * 2.4)); // Poison stacks
+    } else if (arch.elements.includes('chaos')) {
+      dotStackMult = 2.6; // Chaos/Poison spell + Wither stacks
+    } else if (arch.elements.includes('physical')) {
+      dotStackMult = keystones.has('Crimson Dance') ? 4.2 : 2.8; // Aggravated/high bleed
+    } else {
+      dotStackMult = 2.5; // Ignite exposure / scorch / combustion / fire DoT
+    }
+  }
+
+  const dotMult = arch.damageStyle === 'dot' ? (1 + dotMultiBonus / 100) * dotStackMult : 1;
   const avgHit = Math.round(baseHit * (1 + incDamage / 100) * moreMult * critExpectedMult * dotMult);
   const rawDps = arch.damageStyle === 'dot'
     ? avgHit
-    : Math.round(avgHit * hitsPerSec * (arch.damageStyle === 'totem' ? maxTotems : arch.damageStyle === 'minion' ? 4 : 1));
+    : Math.round(avgHit * hitsPerSec * hitCountMult);
 
   const dpsMode: ProjectedOffense['dpsMode'] =
     arch.damageStyle === 'dot' ? 'DoT DPS'

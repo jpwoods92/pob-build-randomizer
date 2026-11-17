@@ -338,5 +338,26 @@ test('hardcore prioritizes max-hit conversion/max-res while softcore prioritizes
     economy: 'trade',
     damageStyle: 'attack',
   }));
-  assert.ok(sc.offense.totalDps > 10000, `Expected meaningful SC attack DPS, got ${sc.offense.totalDps}`);
+  assert.ok(sc.offense.totalDps >= 1_000_000, `Expected SC DPS >= 1,000,000, got ${sc.offense.totalDps}`);
+
+  for (let i = 0; i < 6; i++) {
+    const hc = await generateBuild(data, baseOptions({
+      seed: `dps-hc-floor-${i}`,
+      classId: (i % 7) as 0 | 1 | 2 | 3 | 4 | 5 | 6,
+      leagueMode: 'hardcore',
+      economy: i % 2 === 0 ? 'ssf' : 'trade',
+    }));
+    if (hc.offense.dpsMode !== 'Support') {
+      assert.ok(hc.offense.totalDps >= 100_000, `Expected HC DPS >= 100,000 for ${hc.archetype.title}, got ${hc.offense.totalDps}`);
+    }
+    const scSample = await generateBuild(data, baseOptions({
+      seed: `dps-sc-floor-${i}`,
+      classId: (i % 7) as 0 | 1 | 2 | 3 | 4 | 5 | 6,
+      leagueMode: 'softcore',
+      economy: i % 2 === 0 ? 'ssf' : 'trade',
+    }));
+    if (scSample.offense.dpsMode !== 'Support') {
+      assert.ok(scSample.offense.totalDps >= 1_000_000, `Expected SC DPS >= 1,000,000 for ${scSample.archetype.title}, got ${scSample.offense.totalDps}`);
+    }
+  }
 });

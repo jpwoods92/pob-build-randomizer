@@ -651,7 +651,7 @@ input[type="range"] {
 }
 
 .hero-dps-val {
-  font-size: 1.18rem;
+  font-size: 1.1rem;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
