@@ -853,3 +853,47 @@ test('rerollBuildItem rerolls individual equipment, flask, base jewel, and clust
   assert.ok(rerolledClusterItem.rawText.includes(`Cluster Jewel Skill: ${matchingCluster.skillId}`));
   assert.ok(afterCluster.xml.includes(`<Socket nodeId="${matchingCluster.socketNodeId}" itemId="${rerolledClusterItem.id}"/>`));
 });
+
+test('minion caster skills prioritize Convoking Wands and minion gear without Daggers or Added Damage to Spells', async () => {
+  let sawConvokingWand = false;
+  let sawMinionModOnWand = false;
+  let sawMinionArmorOrRingBase = false;
+  for (let i = 0; i < 20; i++) {
+    const b = await generateBuild(data, baseOptions({
+      seed: `minion-gear-${i}`,
+      level: 92,
+      damageStyle: 'minion',
+      economy: i % 2 === 0 ? 'trade' : 'ssf',
+    }));
+    const w1 = b.gear.items.find((it) => it.slot === 'Weapon 1');
+    assert.ok(w1, 'Expected Weapon 1 on minion build');
+    const isAttackMinion = b.archetype.mainSkill.types.includes('Attack');
+    if (!isAttackMinion) {
+      assert.notEqual(b.archetype.weaponClass, 'dagger', `Spell-summoner ${b.archetype.title} should not pick dagger`);
+      assert.notEqual(w1.base.type, 'Dagger');
+      if (w1.base.type === 'Wand' && w1.rarity === 'RARE') {
+        assert.ok(
+          ['Convoking Wand', 'Convening Wand', 'Calling Wand'].includes(w1.baseName),
+          `Expected minion wand base, got ${w1.baseName}`,
+        );
+        if (w1.baseName === 'Convoking Wand') sawConvokingWand = true;
+        const weaponLines = [...w1.implicits, ...w1.explicits].join(' | ');
+        assert.ok(
+          !/Adds \d+ to \d+ (?:Fire|Cold|Lightning|Chaos) Damage to Spells/i.test(weaponLines),
+          `Minion wand should not roll Added Damage to Spells: ${weaponLines}`,
+        );
+        if (/minion/i.test(weaponLines)) sawMinionModOnWand = true;
+      }
+    }
+    if (
+      b.gear.items.some((it) =>
+        ['Bone Helmet', 'Bone Ring', 'Fossilised Spirit Shield', 'Ivory Spirit Shield', 'Bone Spirit Shield'].includes(it.baseName),
+      )
+    ) {
+      sawMinionArmorOrRingBase = true;
+    }
+  }
+  assert.ok(sawConvokingWand, 'Expected minion builds at level 92 to pick Convoking Wand');
+  assert.ok(sawMinionModOnWand, 'Expected minion wands to roll minion stats');
+  assert.ok(sawMinionArmorOrRingBase, 'Expected minion builds to prioritize Bone Helmet / Bone Ring / Minion Spirit Shields');
+});

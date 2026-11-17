@@ -169,7 +169,7 @@ function isValidMainCandidate(gem: GemData, allowLink = false): boolean {
 
 function inferSkillStyle(gem: GemData, preferredStyle: DamageStyle | 'random'): DamageStyle {
   if (gem.tags.includes('link')) return 'link_support';
-  if (gem.tags.includes('minion')) return 'minion';
+  if (gem.tags.includes('minion') && gem.types.includes('CreatesMinion')) return 'minion';
   if (gem.tags.includes('totem')) return 'totem';
   if (gem.tags.includes('trap') || gem.tags.includes('mine')) return 'trap_mine';
   const canBeTotem = !gem.types.includes('InbuiltTrigger')
@@ -305,8 +305,41 @@ function chooseWeaponSetup(
     }
   }
 
-  // Spell / Minion / Totem / Trap / DoT / Link / Shield-attack caster weapons
-  if (style === 'minion' || style === 'spell' || style === 'totem' || style === 'trap_mine' || style === 'dot' || style === 'link_support' || rawWt.length === 0) {
+  // Minion caster/summoner skills (SRS, Zombies, Skeletons, Spectres, Absolution, Reaper, etc.)
+  // strongly prioritize Wands (Convoking/Convening/Calling) + Shield, never Daggers.
+  if (style === 'minion') {
+    const wantBlockTarget = (targets?.minAttackBlockPct ?? 0) > 0 || (targets?.minSpellBlockPct ?? 0) > 0;
+    const esBias = (defense === 'es' || defense === 'hybrid' ? 2.0 : 1.0) * (wantBlockTarget ? 4.0 : 1.0);
+    const hcBias = league === 'hardcore' ? 4.0 : 2.2;
+    const minionSetups: { setup: WeaponSetup; w: number; classes: { wc: WeaponClass; types: string[] }[] }[] = [
+      {
+        setup: 'wand_shield',
+        w: hcBias * esBias * 3.0,
+        classes: [{ wc: 'wand', types: ['Wand'] }],
+      },
+      {
+        setup: 'dual_wield',
+        w: league === 'hardcore' || wantBlockTarget ? 0.25 : 1.1,
+        classes: [{ wc: 'wand', types: ['Wand'] }],
+      },
+      {
+        setup: 'staff',
+        w: league === 'hardcore' || wantBlockTarget ? 0.3 : 0.7,
+        classes: [{ wc: 'staff', types: ['Staff'] }],
+      },
+    ];
+    const picked = rng.weighted(minionSetups, (o) => o.w)!;
+    const chosen = rng.weighted(picked.classes, (c) => classAttrWeight(c.wc))!;
+    return {
+      setup: picked.setup,
+      weaponClass: chosen.wc,
+      allowedWeaponTypes: chosen.types,
+      countsAsAllOneHandMelee: false,
+    };
+  }
+
+  // Spell / Totem / Trap / DoT / Link / Shield-attack caster weapons
+  if (style === 'spell' || style === 'totem' || style === 'trap_mine' || style === 'dot' || style === 'link_support' || rawWt.length === 0) {
     const wantBlockTarget = (targets?.minAttackBlockPct ?? 0) > 0 || (targets?.minSpellBlockPct ?? 0) > 0;
     const esBias = (defense === 'es' ? 2.0 : 1.0) * (wantBlockTarget ? 4.0 : 1.0);
     const hcBias = league === 'hardcore' ? 3.5 : 1.5;

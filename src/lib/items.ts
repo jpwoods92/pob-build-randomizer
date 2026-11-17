@@ -214,25 +214,55 @@ function scoreModForArchetype(
 
   // Weapon, jewel & jewelry offensive mods
   if (isWeapon) {
-    if (arch.damageStyle === 'attack') {
+    if (arch.damageStyle === 'minion') {
+      const isMinionAttackTrigger = arch.mainSkill.types.includes('Attack');
+      if (/to level of all minion skill gems/i.test(txt)) {
+        w *= 65 * dpsBoost;
+      } else if (/to level of all spell skill gems/i.test(txt)) {
+        w *= arch.mainSkill.types.includes('Spell') ? 38 * dpsBoost : 0.05;
+      } else if (/to level of all (fire|cold|lightning|chaos|physical) spell skill gems/i.test(txt)) {
+        const gemElMatch = /to level of all (fire|cold|lightning|chaos|physical) spell skill gems/i.exec(txt);
+        const gemEl = gemElMatch?.[1] as BuildArchetype['elements'][number] | undefined;
+        w *= gemEl && arch.elements.includes(gemEl) ? 38 * dpsBoost : 0.05;
+      } else if (/minion/.test(txt)) {
+        w *= 45 * dpsBoost;
+      } else if (/adds .* damage to spells|adds .* damage to attacks/.test(txt)) {
+        w *= isMinionAttackTrigger && /to attacks/.test(txt) ? 6 * dpsBoost : 0.005;
+      } else if (/adds \d+ to \d+ (fire|cold|lightning|chaos|physical) damage/.test(txt)) {
+        w *= isMinionAttackTrigger ? 6 * dpsBoost : 0.005;
+      } else if (/spell damage|(?:fire|cold|lightning|chaos|elemental) damage/.test(txt)) {
+        w *= 0.02;
+      } else if (/physical damage|attack speed|accuracy rating/.test(txt)) {
+        w *= isMinionAttackTrigger ? 6 * dpsBoost : 0.02;
+      } else if (/cast speed/.test(txt)) {
+        w *= 1.5;
+      }
+      if (arch.critMode === 'crit') {
+        if (/minion.*critical strike/.test(txt)) w *= 14 * dpsBoost;
+        else if (/critical strike/.test(txt)) w *= 0.05;
+      } else if (/critical strike/.test(txt)) {
+        w *= 0.05;
+      }
+    } else if (arch.damageStyle === 'attack') {
       if (arch.elements.includes('physical') && /physical damage|attack speed/.test(txt)) w *= 14 * dpsBoost;
       if (arch.elements.includes('fire') && /fire damage to attacks|elemental damage with attacks|attack speed/.test(txt)) w *= 12 * dpsBoost;
       if (arch.elements.includes('cold') && /cold damage to attacks|elemental damage with attacks|attack speed/.test(txt)) w *= 12 * dpsBoost;
       if (arch.elements.includes('lightning') && /lightning damage to attacks|elemental damage with attacks|attack speed/.test(txt)) w *= 12 * dpsBoost;
       if (arch.elements.includes('chaos') && /chaos damage|attack speed|damage over time/.test(txt)) w *= 10 * dpsBoost;
       if (/spell damage|to level of all .* spell/.test(txt)) w *= 0.01;
+      if (arch.critMode === 'crit' && /critical strike/.test(txt)) w *= 9 * dpsBoost;
+      if (arch.critMode !== 'crit' && /critical strike/.test(txt)) w *= 0.05;
     } else {
       if (/spell damage|cast speed|to level of all/.test(txt)) w *= 14 * dpsBoost;
-      if (arch.damageStyle === 'minion' && /minion/.test(txt)) w *= 22 * dpsBoost;
       if (arch.damageStyle === 'dot' && /damage over time multiplier/.test(txt)) w *= 18 * dpsBoost;
       if (arch.elements.includes('fire') && /fire damage|fire skill/.test(txt)) w *= 10 * dpsBoost;
       if (arch.elements.includes('cold') && /cold damage|cold skill/.test(txt)) w *= 10 * dpsBoost;
       if (arch.elements.includes('lightning') && /lightning damage|lightning skill/.test(txt)) w *= 10 * dpsBoost;
       if (arch.elements.includes('chaos') && /chaos damage|chaos skill/.test(txt)) w *= 10 * dpsBoost;
       if (/physical damage|adds .* to attacks/.test(txt) && !tags.has('caster')) w *= 0.01;
+      if (arch.critMode === 'crit' && /critical strike/.test(txt)) w *= 9 * dpsBoost;
+      if (arch.critMode !== 'crit' && /critical strike/.test(txt)) w *= 0.05;
     }
-    if (arch.critMode === 'crit' && /critical strike/.test(txt)) w *= 9 * dpsBoost;
-    if (arch.critMode !== 'crit' && /critical strike/.test(txt)) w *= 0.05;
   } else {
     // Reject off-weapon / off-setup jewel mods cleanly
     const weaponHits: [string, boolean][] = [
@@ -263,11 +293,20 @@ function scoreModForArchetype(
     if (/trap/.test(txt) && arch.trapOrMine !== 'trap') return 0;
     if (/mine/.test(txt) && arch.trapOrMine !== 'mine') return 0;
 
-    if (arch.damageStyle === 'attack' && /elemental damage with attacks|adds .* to attacks|attack speed/.test(txt)) w *= 6 * dpsBoost;
-    if (arch.damageStyle === 'spell' && /spell damage|cast speed|to level of all/.test(txt)) w *= 7 * dpsBoost;
-    if (arch.damageStyle === 'dot' && /damage over time multiplier/.test(txt)) w *= 12 * dpsBoost;
-    if (arch.critMode === 'crit' && /critical strike multiplier|critical strike chance/.test(txt)) w *= 7 * dpsBoost;
-    if (arch.critMode !== 'crit' && /critical strike/.test(txt)) w *= 0.05;
+    if (arch.damageStyle === 'minion') {
+      if (/to level of all minion skill gems/i.test(txt)) w *= 55 * dpsBoost;
+      else if (/to level of all skill gems/i.test(txt)) w *= 42 * dpsBoost;
+      else if (/minion/.test(txt)) w *= 28 * dpsBoost;
+      else if (/adds .* damage to spells|adds .* damage to attacks|spell damage/.test(txt)) w *= 0.02;
+      if (arch.critMode === 'crit' && /minion.*critical strike/.test(txt)) w *= 10 * dpsBoost;
+      else if (/critical strike/.test(txt) && !/minion/.test(txt)) w *= 0.05;
+    } else {
+      if (arch.damageStyle === 'attack' && /elemental damage with attacks|adds .* to attacks|attack speed/.test(txt)) w *= 6 * dpsBoost;
+      if (arch.damageStyle === 'spell' && /spell damage|cast speed|to level of all/.test(txt)) w *= 7 * dpsBoost;
+      if (arch.damageStyle === 'dot' && /damage over time multiplier/.test(txt)) w *= 12 * dpsBoost;
+      if (arch.critMode === 'crit' && /critical strike multiplier|critical strike chance/.test(txt)) w *= 7 * dpsBoost;
+      if (arch.critMode !== 'crit' && /critical strike/.test(txt)) w *= 0.05;
+    }
   }
 
   // Filter out junk mods like light radius / stun recovery / thorns
@@ -340,6 +379,9 @@ function resolveTargetArmourSubType(
   if (cls === 'Duelist' && (hasGrace || arch.primaryAttr === 'dex')) return 'Armour/Evasion';
   if (arch.primaryAttr === 'dex' && hasDet) return 'Armour/Evasion';
   if (arch.primaryAttr === 'dex' || (hasGrace && !hasDet)) return 'Evasion';
+  if (arch.damageStyle === 'minion' && arch.primaryAttr === 'int' && !wantArmTarget && !wantEvaTarget && !hasIR) {
+    return rng.chance(0.75) ? 'Armour/Energy Shield' : 'Armour';
+  }
   if (cls === 'Duelist' && !hasDet && !hasArmourMastery) {
     return rng.chance(0.5) ? 'Armour/Evasion' : 'Armour';
   }
@@ -359,7 +401,8 @@ function pickBestBase(
     if (opts.allowedTypes && !opts.allowedTypes.includes(b.type)) return false;
     if (!opts.allowedTypes && b.type !== slotType) return false;
     if (b.subType === 'Talisman') return false;
-    if (b.tags.includes('not_for_sale') && b.type !== 'Jewel' && b.type !== 'Flask') return false;
+    const allowAtlas = b.tags.includes('atlas_base_type') && (isTrade || arch.options.level >= 72);
+    if (b.tags.includes('not_for_sale') && b.type !== 'Jewel' && b.type !== 'Flask' && !allowAtlas) return false;
     // Skip ultra-restrictive ritual / heist / scourge oddities in SSF
     if (!isTrade && (b.tags.includes('ritual_base') || /Experimental|Astrolabe|Simplex|Focused|Cogwork|Geodesic|Helical|Kalandra/.test(name))) return false;
     const reqLvl = b.req.level ?? 1;
@@ -370,7 +413,13 @@ function pickBestBase(
   const strictArmourMatches = opts.preferSubType && ARMOUR_SLOTS.has(slotType)
     ? rawCandidates.filter(([, b]) => b.subType === opts.preferSubType)
     : [];
-  const candidates = strictArmourMatches.length > 0 ? strictArmourMatches : rawCandidates;
+  let candidates = strictArmourMatches.length > 0 ? strictArmourMatches : rawCandidates;
+
+  // Minion wands strongly lock onto Calling / Convening / Convoking Wands when available at level.
+  if (arch.damageStyle === 'minion' && (slotType === 'Wand' || opts.allowedTypes?.includes('Wand'))) {
+    const minionWands = candidates.filter(([, b]) => b.tags.includes('weapon_can_roll_minion_modifiers'));
+    if (minionWands.length > 0) candidates = minionWands;
+  }
 
   const picked = rng.weighted(candidates, ([name, b]) => {
     const reqLvl = b.req.level ?? 1;
@@ -401,6 +450,15 @@ function pickBestBase(
 
     if (b.type === 'Wand' && arch.damageStyle !== 'attack') {
       if (b.tags.includes('wand_can_roll_caster_modifiers')) w *= 6;
+    }
+    if (arch.damageStyle === 'minion') {
+      if (b.tags.includes('weapon_can_roll_minion_modifiers')) w = Math.max(w, 12) * 40;
+      if (b.tags.includes('focus_can_roll_minion_modifiers')) w = Math.max(w, 12) * 24;
+      if (b.tags.includes('ring_can_roll_minion_modifiers')) w = Math.max(w, 12) * 18;
+      if (name === 'Bone Helmet') w = Math.max(w, 12) * 24;
+      if (b.type === 'Ring' && !b.tags.includes('ring_can_roll_minion_modifiers') && /Steel|Opal|Iolite|Cerulean/.test(name)) {
+        w *= 0.25;
+      }
     }
     if (b.type === 'Belt' && name === 'Stygian Vise') w *= isTrade ? 5 : 2;
     if (b.type === 'Belt' && name === 'Leather Belt') w *= arch.defenseStyle === 'es' || hasCI ? 0.05 : (arch.defenseStyle === 'life' ? 3 : 1);
@@ -470,6 +528,9 @@ function isUniqueSuitable(
   if (arch.elements.includes('chaos') && /deal no chaos damage/.test(fullTxt)) return false;
   if (/cannot use|deal no .* damage/.test(fullTxt) && /deal no (non-)?chaos|deal no elemental/.test(fullTxt)) return false;
   if (/your auras do not affect/.test(fullTxt)) return false;
+  if (arch.damageStyle === 'minion' && !arch.mainSkill.types.includes('Attack') && base?.weapon && !/minion/i.test(fullTxt)) {
+    return false;
+  }
   return true;
 }
 
@@ -532,13 +593,15 @@ function scoreUniqueForArchetype(
 
   if (arch.damageStyle === 'attack' && /attack|weapon|physical/.test(txt)) s += 8 * offMult;
   if (arch.damageStyle === 'spell' && /spell|cast speed/.test(txt)) s += 8 * offMult;
-  if (arch.damageStyle === 'minion' && /minion/.test(txt)) s += 18 * offMult;
+  if (arch.damageStyle === 'minion' && /minion/.test(txt)) s += 32 * offMult;
   if (arch.damageStyle === 'totem' && /totem/.test(txt)) s += 15 * offMult;
   if (arch.damageStyle === 'trap_mine' && /trap|mine/.test(txt)) s += 15 * offMult;
   if (arch.damageStyle === 'dot' && /damage over time|ignite|poison|bleed/.test(txt)) s += 14 * offMult;
-  if (arch.critMode === 'crit' && /critical/.test(txt)) s += 8 * offMult;
-  for (const el of arch.elements) {
-    if (txt.includes(el)) s += 6 * offMult;
+  if (arch.critMode === 'crit' && /critical/.test(txt) && (arch.damageStyle !== 'minion' || /minion/.test(txt))) s += 8 * offMult;
+  if (arch.damageStyle !== 'minion') {
+    for (const el of arch.elements) {
+      if (txt.includes(el)) s += 6 * offMult;
+    }
   }
   if (/level of all .* gems|movement speed/.test(txt)) s += 9 * (isHC ? 1 : 1.4);
   return s;
@@ -699,6 +762,8 @@ function buildRareItem(
       const targetEl = capWord(bestEleTarget(maxRes));
       const pct = isTrade ? 8 : 6;
       craftedMod = `${pct}% of Physical Damage from Hits taken as ${targetEl} Damage`;
+    } else if (benchIsPrefix && isWeapon && arch.damageStyle === 'minion' && prefixes.length < maxAffix) {
+      craftedMod = isTrade ? 'Minions deal 32% increased Damage' : 'Minions deal 22% increased Damage';
     } else if (benchIsPrefix && prefixes.length < maxAffix && !usedGroups.has('IncreasedLife')) {
       if (['Body Armour', 'Helmet', 'Gloves', 'Boots', 'Shield', 'Ring', 'Amulet', 'Belt'].includes(base.type)) {
         const lifeVal = base.type === 'Body Armour' ? (isTrade ? 95 : 75) : (isTrade ? 70 : 55);
@@ -724,14 +789,18 @@ function buildRareItem(
         craftedMod = '+20% to Chaos Resistance';
       } else if (needs.suppress > 0 && (isHC || opts.isEvasionBuild) && (base.type === 'Boots' || base.type === 'Gloves' || base.type === 'Helmet') && !usedGroups.has('ChanceToSuppressSpells')) {
         craftedMod = '+10% chance to Suppress Spell Damage';
-      } else if (wantScDamageBench && arch.critMode === 'crit') {
+      } else if (wantScDamageBench && arch.critMode === 'crit' && arch.damageStyle !== 'minion') {
         craftedMod = isTrade ? '+25% to Global Critical Strike Multiplier' : '+18% to Global Critical Strike Multiplier';
       } else if (wantScDamageBench && arch.damageStyle === 'dot') {
         craftedMod = isTrade ? '+20% to Damage over Time Multiplier' : '+14% to Damage over Time Multiplier';
       } else if (isWeapon) {
-        craftedMod = arch.damageStyle === 'attack'
-          ? (isTrade ? '27% increased Attack Speed' : '18% increased Attack Speed')
-          : (isTrade ? '25% increased Cast Speed' : '17% increased Cast Speed');
+        if (arch.damageStyle === 'minion') {
+          craftedMod = isTrade ? 'Minions have 22% increased Attack and Cast Speed' : 'Minions have 16% increased Attack and Cast Speed';
+        } else {
+          craftedMod = arch.damageStyle === 'attack'
+            ? (isTrade ? '27% increased Attack Speed' : '18% increased Attack Speed')
+            : (isTrade ? '25% increased Cast Speed' : '17% increased Cast Speed');
+        }
       } else if (!isHC && (base.type === 'Amulet' || base.type === 'Ring' || base.type === 'Gloves')) {
         if (arch.damageStyle === 'minion') {
           craftedMod = isTrade ? 'Minions deal 32% increased Damage' : 'Minions deal 22% increased Damage';
