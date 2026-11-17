@@ -647,31 +647,6 @@ input[type="range"] {
   gap: 10px;
 }
 
-.hero-scaling-val {
-  font-size: 1.08rem;
-  margin-top: 0;
-  white-space: nowrap;
-}
-
-.hero-res-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.hero-res-label,
-.hero-res-sub {
-  font-size: 0.72rem;
-  font-weight: 600;
-  color: var(--muted);
-  white-space: nowrap;
-}
-
-.hero-res-track {
-  flex: 1;
-  height: 7px;
-}
-
 .def-pool-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -726,6 +701,27 @@ input[type="range"] {
 
 [data-theme="dark"] .def-mana {
   color: #60a5fa;
+}
+
+.def-mana-res {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 7px 10px;
+  margin-bottom: 8px;
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+}
+
+.def-mana-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.def-mana-track {
+  height: 6px;
 }
 
 .def-hit-list {

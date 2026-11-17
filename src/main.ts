@@ -321,6 +321,7 @@ async function main() {
 
     const d = b.defenses;
     const reserved = Math.min(100, b.skills.manaReservedPct);
+    const unreservedMana = d.maxMana === 0 ? 0 : Math.max(0, d.maxMana - Math.ceil((d.maxMana * reserved) / 100));
     const uniques = b.gear.items.filter((i) => i.rarity === 'UNIQUE');
     const ascNotableNodes = b.tree.ascendancyNodes
       .map((id) => ({ id, node: data.tree.nodes[id] }))
@@ -353,18 +354,10 @@ async function main() {
         </div>
 
         <div class="hero-metrics">
-          <div class="hero-metric hero-metric-col">
-            <div class="hero-metric-top">
+          <div class="hero-metric">
+            <div>
               <div class="kpi-label">Passives &amp; Scaling</div>
-              <span class="kpi-tag">${reserved}% Reserved</span>
-            </div>
-            <div class="kpi-value hero-scaling-val">${d.lifePct}% Life · ${d.esPct}% ES</div>
-            <div class="hero-res-row" title="Mana reservation: ${reserved}% reserved (${100 - reserved}% unreserved)">
-              <span class="hero-res-label">Mana Res</span>
-              <div class="meter-track hero-res-track">
-                <div class="meter-fill" style="width:${reserved}%;background:var(--lime);"></div>
-              </div>
-              <span class="hero-res-sub">${100 - reserved}% free</span>
+              <div class="kpi-value">${d.lifePct}% Life · ${d.esPct}% ES</div>
             </div>
           </div>
           <div class="hero-metric hero-metric-col">
@@ -432,7 +425,6 @@ async function main() {
               <h3>Defenses &amp; Max Hits</h3>
               <p class="card-sub">Projected pools &amp; hit mitigation</p>
             </div>
-            <span class="badge">${(d.chaosMaxHit === null ? d.maxEs : d.maxLife + d.maxEs).toLocaleString()} Pool</span>
           </div>
           <div class="def-pool-grid">
             <div class="def-stat-box">
@@ -446,6 +438,16 @@ async function main() {
             <div class="def-stat-box">
               <span class="def-stat-label">Max Mana</span>
               <span class="def-stat-val def-mana">${d.maxMana.toLocaleString()}</span>
+            </div>
+          </div>
+          <div class="def-mana-res" title="${reserved}% mana reserved — ${unreservedMana.toLocaleString()} of ${d.maxMana.toLocaleString()} mana available">
+            <div class="def-mana-top">
+              <span class="def-hit-name">Unreserved Mana</span>
+              <span class="def-hit-meta">${reserved}% res</span>
+              <span class="def-hit-val def-mana">${unreservedMana.toLocaleString()} mana</span>
+            </div>
+            <div class="meter-track def-mana-track">
+              <div class="meter-fill" style="width:${reserved}%;background:var(--lime);"></div>
             </div>
           </div>
           <div class="def-hit-list">
