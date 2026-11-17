@@ -183,11 +183,19 @@ function scoreModForArchetype(
     w *= needs.chaos > 0 ? (isHC ? 28 : 7) : 0.2;
   }
 
-  // Attributes weighted dynamically by gem/gear deficit
-  if (/to strength/.test(txt) && needs.str > 0) w *= 10;
-  if (/to dexterity/.test(txt) && needs.dex > 0) w *= 10;
-  if (/to intelligence/.test(txt) && needs.int > 0) w *= 10;
-  if (/to all attributes/.test(txt) && (needs.str > 0 || needs.dex > 0 || needs.int > 0)) w *= 11;
+  // Attributes weighted dynamically by gem/gear deficit (deprioritize once met)
+  if (/to strength/.test(txt) && !/all attributes/.test(txt)) {
+    w *= needs.str > 0 ? 28 + Math.min(40, needs.str * 0.5) : 0.4;
+  }
+  if (/to dexterity/.test(txt) && !/all attributes/.test(txt)) {
+    w *= needs.dex > 0 ? 28 + Math.min(40, needs.dex * 0.5) : 0.4;
+  }
+  if (/to intelligence/.test(txt) && !/all attributes/.test(txt)) {
+    w *= needs.int > 0 ? 28 + Math.min(40, needs.int * 0.5) : 0.4;
+  }
+  if (/to all attributes/.test(txt)) {
+    w *= (needs.str > 0 || needs.dex > 0 || needs.int > 0) ? 32 : 0.5;
+  }
 
   // Weapon, jewel & jewelry offensive mods
   if (isWeapon) {
@@ -261,7 +269,7 @@ function pickBestBase(
   arch: BuildArchetype,
   hasCI: boolean,
   rng: Rng,
-  opts: { allowedTypes?: string[]; preferSubType?: string; preferTags?: string[] } = {},
+  opts: { allowedTypes?: string[]; preferSubType?: string; preferTags?: string[]; needs?: { str: number; dex: number; int: number } } = {},
 ): [string, BaseData] {
   const isTrade = arch.options.economy === 'trade';
   const candidates = Object.entries(data.bases).filter(([name, b]) => {
@@ -309,6 +317,12 @@ function pickBestBase(
     if (b.type === 'Ring' && name === 'Amethyst Ring') w *= hasCI ? 0.05 : 3;
     if (b.type === 'Amulet' && name === 'Coral Amulet' && (arch.defenseStyle === 'es' || hasCI)) w *= 0.05;
     if (b.type === 'Amulet' && /Onyx|Agate|Turquoise|Citrine|Jade|Lapis|Amber/.test(name)) w *= 3;
+    if (opts.needs && (b.type === 'Amulet' || b.type === 'Belt') && b.implicit) {
+      const imp = b.implicit.toLowerCase();
+      if (opts.needs.str > 0 && /strength|all attributes/.test(imp)) w *= 7;
+      if (opts.needs.dex > 0 && /dexterity|all attributes/.test(imp)) w *= 7;
+      if (opts.needs.int > 0 && /intelligence|all attributes/.test(imp)) w *= 7;
+    }
     if (opts.preferSubType && b.subType === opts.preferSubType) w *= 8;
     if (opts.preferTags && opts.preferTags.some((t) => b.tags.includes(t))) w *= 5;
     return w;
@@ -576,6 +590,14 @@ function buildRareItem(
         craftedMod = isHC && !hasCI && needs.cold <= 20 ? '+18% to Cold and Chaos Resistances' : '+35% to Cold Resistance';
       } else if (needs.lightning > 0) {
         craftedMod = isHC && !hasCI && needs.lightning <= 20 ? '+18% to Lightning and Chaos Resistances' : '+35% to Lightning Resistance';
+      } else if ((needs.str > 0 || needs.dex > 0 || needs.int > 0) && ['Amulet', 'Ring', 'Belt', 'Helmet', 'Gloves', 'Boots'].includes(base.type)) {
+        const missing = (['str', 'dex', 'int'] as const).filter((k) => needs[k] > 0);
+        const labelMap = { str: 'Strength', dex: 'Dexterity', int: 'Intelligence' } as const;
+        if (missing.length >= 2) {
+          craftedMod = `+28 to ${labelMap[missing[0]]} and ${labelMap[missing[1]]}`;
+        } else {
+          craftedMod = `+50 to ${labelMap[missing[0]]}`;
+        }
       } else if (isHC && (base.type === 'Boots' || base.type === 'Gloves' || base.type === 'Helmet')) {
         craftedMod = '+10% chance to Suppress Spell Damage';
       } else if (wantScDamageBench && arch.critMode === 'crit') {
@@ -920,8 +942,9 @@ export function generateGear(
     }
 
     if (!item) {
-      const [baseName, base] = pickBestBase(data, def.types[0], arch, hasCI, rng, { allowedTypes: def.types });
-      item = buildRareItem(id, def.slot, baseName, base, sockets, data, arch, currentNeeds(), hasCI, maxRes, rng);
+      const needs = currentNeeds();
+      const [baseName, base] = pickBestBase(data, def.types[0], arch, hasCI, rng, { allowedTypes: def.types, needs });
+      item = buildRareItem(id, def.slot, baseName, base, sockets, data, arch, needs, hasCI, maxRes, rng);
     }
 
     tallyModsStats([...item.implicits, ...item.explicits], resists, attrs, maxRes);
@@ -1086,6 +1109,133 @@ export function generateGear(
       }
       if (!fixed) break;
     }
+  }
+
+  // Gear-first attribute requirement pass (without violating Hardcore elemental resistance caps)
+  const reqAttrs = { ...skills.maxReq };
+  for (const it of items) {
+    if (it.base.req.str) reqAttrs.str = Math.max(reqAttrs.str, it.base.req.str);
+    if (it.base.req.dex) reqAttrs.dex = Math.max(reqAttrs.dex, it.base.req.dex);
+    if (it.base.req.int) reqAttrs.int = Math.max(reqAttrs.int, it.base.req.int);
+  }
+  const attrList = ['str', 'dex', 'int'] as const;
+  const attrNameMap = { str: 'Strength', dex: 'Dexterity', int: 'Intelligence' } as const;
+
+  const rebuildRare = (it: GeneratedItem) => {
+    it.explicits = [
+      ...it.prefixes.flatMap((p) => p.resolvedLines),
+      ...it.suffixes.flatMap((s) => s.resolvedLines),
+      ...(it.craftedMod ? [`${it.craftedMod} (crafted)`] : []),
+    ];
+    const hasQuality = !it.jewelNodeId && !['Ring', 'Amulet', 'Belt', 'Quiver'].includes(it.base.type);
+    const rawLines: string[] = [
+      'Rarity: RARE',
+      it.name,
+      it.baseName,
+      'Crafted: true',
+      ...it.prefixes.map((p) => `Prefix: {range:${p.range.toFixed(3)}}${p.mod.id}`),
+      ...it.suffixes.map((s) => `Suffix: {range:${s.range.toFixed(3)}}${s.mod.id}`),
+      `Item Level: ${it.itemLevel}`,
+    ];
+    if (hasQuality) rawLines.push('Quality: 20');
+    if (it.sockets) rawLines.push(`Sockets: ${it.sockets}`);
+    rawLines.push(`Implicits: ${it.implicits.length}`);
+    if (it.base.implicit) rawLines.push(`{range:0.750}${it.base.implicit}`);
+    if (it.craftedMod) rawLines.push(`{crafted}${it.craftedMod}`);
+    it.rawText = rawLines.join('\n');
+  };
+
+  const canSafelyRemoveLines = (lines: string[]) => {
+    const delta = { fire: 0, cold: 0, lightning: 0, chaos: 0 };
+    const attrDelta = { str: 0, dex: 0, int: 0 };
+    tallyModsStats(lines, delta, attrDelta);
+    if (isHC) {
+      if (resists.fire - delta.fire < maxRes.fire) return false;
+      if (resists.cold - delta.cold < maxRes.cold) return false;
+      if (resists.lightning - delta.lightning < maxRes.lightning) return false;
+    }
+    return { delta, attrDelta };
+  };
+
+  for (let pass = 0; pass < 12; pass++) {
+    const deficits = attrList
+      .map((k) => ({ k, need: reqAttrs[k] - attrs[k] }))
+      .filter((x) => x.need > 0)
+      .sort((a, b) => b.need - a.need);
+    if (deficits.length === 0) break;
+
+    const topAttr = deficits[0].k;
+    const secondAttr = deficits[1]?.k;
+    const craftLine = secondAttr && deficits[0].need <= 28 && deficits[1].need <= 28
+      ? `+28 to ${attrNameMap[topAttr]} and ${attrNameMap[secondAttr]}`
+      : `+55 to ${attrNameMap[topAttr]}`;
+    let patched = false;
+
+    // 1. Try adding or swapping a non-essential bench craft on jewelry/armour rares
+    for (const it of items) {
+      if (it.rarity !== 'RARE' || it.jewelNodeId || it.base.type === 'Flask') continue;
+      if (it.suffixes.length >= 3) continue;
+      if (it.craftedMod) {
+        const cl = it.craftedMod.toLowerCase();
+        if (cl.includes(attrNameMap[topAttr].toLowerCase()) || cl.includes('all attributes')) continue;
+        const safe = canSafelyRemoveLines([it.craftedMod]);
+        if (!safe) continue;
+        if (attrs.str - safe.attrDelta.str < reqAttrs.str && topAttr !== 'str') continue;
+        if (attrs.dex - safe.attrDelta.dex < reqAttrs.dex && topAttr !== 'dex') continue;
+        if (attrs.int - safe.attrDelta.int < reqAttrs.int && topAttr !== 'int') continue;
+        resists.fire -= safe.delta.fire; resists.cold -= safe.delta.cold; resists.lightning -= safe.delta.lightning; resists.chaos -= safe.delta.chaos;
+        attrs.str -= safe.attrDelta.str; attrs.dex -= safe.attrDelta.dex; attrs.int -= safe.attrDelta.int;
+      }
+      it.craftedMod = craftLine;
+      tallyModsStats([craftLine], resists, attrs);
+      rebuildRare(it);
+      patched = true;
+      break;
+    }
+    if (patched) continue;
+
+    // 2. Replace a non-essential suffix on a rare item with a T1/T2 attribute suffix
+    const targetName = attrNameMap[topAttr];
+    for (const it of items) {
+      if (it.rarity !== 'RARE' || it.jewelNodeId || it.base.type === 'Flask') continue;
+      const itemTags = new Set(it.base.tags);
+      const attrMod = data.mods.item
+        .filter((m) =>
+          m.t === 'S'
+          && m.lvl <= it.itemLevel
+          && getModWeightForTags(m, itemTags) > 0
+          && !it.suffixes.some((s) => s.mod.group === m.group)
+          && new RegExp(`to (?:${targetName}|all Attributes)$`, 'i').test(m.lines.join(' ')),
+        )
+        .sort((a, b) => b.lvl - a.lvl)[0];
+      if (!attrMod) continue;
+
+      const replaceIdx = it.suffixes.findIndex((s) => {
+        const sl = s.resolvedLines.join(' ').toLowerCase();
+        if (sl.includes(targetName.toLowerCase()) || /all attributes|suppress|maximum .* resistance|physical damage reduction/.test(sl)) return false;
+        const safe = canSafelyRemoveLines(s.resolvedLines);
+        if (!safe) return false;
+        if (attrs.str - safe.attrDelta.str < reqAttrs.str && topAttr !== 'str') return false;
+        if (attrs.dex - safe.attrDelta.dex < reqAttrs.dex && topAttr !== 'dex') return false;
+        if (attrs.int - safe.attrDelta.int < reqAttrs.int && topAttr !== 'int') return false;
+        return true;
+      });
+      if (replaceIdx < 0) continue;
+
+      const removed = it.suffixes[replaceIdx];
+      const safe = canSafelyRemoveLines(removed.resolvedLines);
+      if (!safe) continue;
+      resists.fire -= safe.delta.fire; resists.cold -= safe.delta.cold; resists.lightning -= safe.delta.lightning; resists.chaos -= safe.delta.chaos;
+      attrs.str -= safe.attrDelta.str; attrs.dex -= safe.attrDelta.dex; attrs.int -= safe.attrDelta.int;
+      const r = 0.85;
+      const added: RolledAffix = { mod: attrMod, range: r, resolvedLines: attrMod.lines.map((l) => applyRange(l, r)) };
+      it.suffixes[replaceIdx] = added;
+      tallyModsStats(added.resolvedLines, resists, attrs);
+      rebuildRare(it);
+      patched = true;
+      break;
+    }
+    if (!patched) break;
   }
 
   return { items, slotMap, jewelMap, resists, attributes: attrs };

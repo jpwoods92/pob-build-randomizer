@@ -792,6 +792,145 @@ export function generatePassiveTree(
   };
 }
 
+function getNodeAttrDelta(n: TreeNode): { str: number; dex: number; int: number } {
+  let str = n.gs ?? 0;
+  let dex = n.gd ?? 0;
+  let int = n.gi ?? 0;
+  for (const s of n.s ?? []) {
+    const ms = /\+(\d+) to Strength(?: and (\w+))?/i.exec(s);
+    if (ms) {
+      const v = Number(ms[1]);
+      str += v;
+      if (ms[2]?.toLowerCase() === 'dexterity') dex += v;
+      if (ms[2]?.toLowerCase() === 'intelligence') int += v;
+    }
+    const md = /\+(\d+) to Dexterity(?: and (\w+))?/i.exec(s);
+    if (md) {
+      const v = Number(md[1]);
+      dex += v;
+      if (md[2]?.toLowerCase() === 'intelligence') int += v;
+    }
+    const mi = /\+(\d+) to Intelligence/i.exec(s);
+    if (mi) int += Number(mi[1]);
+    const mall = /\+(\d+) to all Attributes/i.exec(s);
+    if (mall) {
+      const v = Number(mall[1]);
+      str += v; dex += v; int += v;
+    }
+  }
+  return { str, dex, int };
+}
+
+/**
+ * Fallback after gear-first attribute satisfaction: swaps low-priority leaf normal nodes
+ * for adjacent/reachable attribute nodes if any gem/equipment requirement is still short.
+ */
+export function patchTreeAttributes(
+  data: GameData,
+  arch: BuildArchetype,
+  genTree: GeneratedTree,
+  required: { str: number; dex: number; int: number },
+  gearAttrs: { str: number; dex: number; int: number },
+): { str: number; dex: number; int: number } {
+  const added = { str: 0, dex: 0, int: 0 };
+  if (gearAttrs.str >= required.str && gearAttrs.dex >= required.dex && gearAttrs.int >= required.int) {
+    return added;
+  }
+  const tree = data.tree;
+  const isHC = arch.options.leagueMode === 'hardcore';
+  const mainSet = new Set<number>([arch.classData.start]);
+  for (const id of genTree.nodes) {
+    const n = tree.nodes[id];
+    if (n && !n.a) mainSet.add(id);
+  }
+  const ascSet = new Set(genTree.ascendancyNodes);
+
+  for (let step = 0; step < 12; step++) {
+    const cur = {
+      str: gearAttrs.str + added.str,
+      dex: gearAttrs.dex + added.dex,
+      int: gearAttrs.int + added.int,
+    };
+    const needKey = (['str', 'dex', 'int'] as const)
+      .map((k) => ({ k, miss: required[k] - cur[k] }))
+      .filter((x) => x.miss > 0)
+      .sort((a, b) => b.miss - a.miss)[0]?.k;
+    if (!needKey) break;
+
+    // Pick best adjacent unallocated non-keystone, non-mastery node providing the missing attribute
+    let bestAddId: number | null = null;
+    let bestAddScore = -1;
+    for (const a of mainSet) {
+      const an = tree.nodes[a];
+      if (!an || an.t === 'mastery') continue;
+      for (const nid of an.adj) {
+        if (mainSet.has(nid)) continue;
+        const nn = tree.nodes[nid];
+        if (!nn || nn.a || nn.t === 'start' || nn.t === 'mastery' || nn.t === 'keystone') continue;
+        const delta = getNodeAttrDelta(nn);
+        if (delta[needKey] <= 0) continue;
+        const sc = delta[needKey] * 2 + (nn.t === 'notable' ? 10 : 0);
+        if (sc > bestAddScore) {
+          bestAddScore = sc;
+          bestAddId = nid;
+        }
+      }
+    }
+    if (bestAddId === null) break;
+
+    // Find a safe normal leaf node (degree 1 in mainSet, no HC res, doesn't lose needed attr) to swap out
+    let dropId: number | null = null;
+    for (const id of mainSet) {
+      if (id === arch.classData.start || ascSet.has(id)) continue;
+      const n = tree.nodes[id];
+      if (!n || n.t !== 'normal') continue;
+      const deg = n.adj.filter((adjId) => mainSet.has(adjId)).length;
+      if (deg !== 1) continue;
+      if (n.adj.includes(bestAddId)) continue; // Don't sever the bridge to the new node
+      const txt = (n.s ?? []).join(' ').toLowerCase();
+      if (isHC && /resistance/.test(txt)) continue;
+      const ld = getNodeAttrDelta(n);
+      if (ld[needKey] > 0) continue;
+      if (cur.str - ld.str < required.str && needKey !== 'str') continue;
+      if (cur.dex - ld.dex < required.dex && needKey !== 'dex') continue;
+      if (cur.int - ld.int < required.int && needKey !== 'int') continue;
+      dropId = id;
+      break;
+    }
+    if (dropId === null) break;
+
+    const dropDelta = getNodeAttrDelta(tree.nodes[dropId]);
+    const addDelta = getNodeAttrDelta(tree.nodes[bestAddId]);
+    mainSet.delete(dropId);
+    mainSet.add(bestAddId);
+    added.str += addDelta.str - dropDelta.str;
+    added.dex += addDelta.dex - dropDelta.dex;
+    added.int += addDelta.int - dropDelta.int;
+  }
+
+  if (added.str !== 0 || added.dex !== 0 || added.int !== 0) {
+    const mainNodes = [...mainSet].filter((id) => id !== arch.classData.start);
+    const allNodes = [...new Set([...mainNodes, ...genTree.ascendancyNodes])].sort((a, b) => a - b);
+    genTree.nodes = allNodes;
+    genTree.attributes.str += added.str;
+    genTree.attributes.dex += added.dex;
+    genTree.attributes.int += added.int;
+    genTree.summary.notables = allNodes
+      .map((id) => tree.nodes[id])
+      .filter((n) => n && n.t === 'notable' && !n.a)
+      .map((n) => n.n);
+    genTree.url = encodeTreeUrl(
+      tree.urlVersion,
+      arch.classData.id,
+      arch.ascendancy.id,
+      allNodes,
+      genTree.masteryEffects,
+      tree,
+    );
+  }
+  return added;
+}
+
 export function encodeTreeUrl(
   urlVersion: string,
   classId: number,

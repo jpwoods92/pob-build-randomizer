@@ -760,7 +760,7 @@ export function computeProjectedOffense(
   }
 
   // Baseline endgame optimization factor reflecting trade gear optimization & aggressive SC playstyle
-  const leagueTuning = isHC ? (isTrade ? 3.35 : 3.15) : (isTrade ? 5.0 : 4.55);
+  const leagueTuning = isHC ? (isTrade ? 3.35 : 3.15) : (isTrade ? 5.05 : 4.70);
   moreMult *= leagueTuning;
 
   // Crit vs DoT multi

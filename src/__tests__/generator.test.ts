@@ -433,3 +433,20 @@ test('hardcore builds are always resistance-capped at or above their max ele res
     );
   }
 });
+
+test('attribute requirements are satisfied across classes and modes', async () => {
+  for (let i = 0; i < 30; i++) {
+    const b = await generateBuild(data, baseOptions({
+      seed: `attr-req-${i}`,
+      classId: (i % 7) as 0 | 1 | 2 | 3 | 4 | 5 | 6,
+      leagueMode: i % 2 === 0 ? 'hardcore' : 'softcore',
+      economy: i % 3 === 0 ? 'ssf' : 'trade',
+      level: i % 4 === 0 ? 75 : 92,
+    }));
+    const req = b.skills.maxReq;
+    const at = b.gear.attributes;
+    assert.ok(at.str >= req.str, `Str deficit ${at.str}/${req.str} on ${b.archetype.title}`);
+    assert.ok(at.dex >= req.dex, `Dex deficit ${at.dex}/${req.dex} on ${b.archetype.title}`);
+    assert.ok(at.int >= req.int, `Int deficit ${at.int}/${req.int} on ${b.archetype.title}`);
+  }
+});

@@ -1,7 +1,7 @@
 import type { GameData } from './types.ts';
 import { Rng } from './rng.ts';
 import { pickArchetype, type BuildArchetype, type BuildOptions } from './archetype.ts';
-import { generatePassiveTree, type GeneratedTree } from './tree.ts';
+import { generatePassiveTree, patchTreeAttributes, type GeneratedTree } from './tree.ts';
 import { generateSkills, type GeneratedSkills } from './skills.ts';
 import { generateGear, type GeneratedGear } from './items.ts';
 import { computeProjectedDefenses, computeProjectedOffense, type ProjectedDefenses, type ProjectedOffense } from './stats.ts';
@@ -26,6 +26,16 @@ export async function generateBuild(data: GameData, options: BuildOptions): Prom
   const skills = generateSkills(data, archetype, rootRng.fork('skills'));
   const tree = generatePassiveTree(data, archetype, rootRng.fork('tree'), skills.maxReq, skills.manaReservedPct);
   const gear = generateGear(data, archetype, tree, skills, rootRng.fork('gear'));
+  const reqAttrs = { ...skills.maxReq };
+  for (const it of gear.items) {
+    if (it.base.req.str) reqAttrs.str = Math.max(reqAttrs.str, it.base.req.str);
+    if (it.base.req.dex) reqAttrs.dex = Math.max(reqAttrs.dex, it.base.req.dex);
+    if (it.base.req.int) reqAttrs.int = Math.max(reqAttrs.int, it.base.req.int);
+  }
+  const addedTreeAttrs = patchTreeAttributes(data, archetype, tree, reqAttrs, gear.attributes);
+  gear.attributes.str += addedTreeAttrs.str;
+  gear.attributes.dex += addedTreeAttrs.dex;
+  gear.attributes.int += addedTreeAttrs.int;
   const defenses = computeProjectedDefenses(data, archetype, tree, skills, gear);
   const offense = computeProjectedOffense(data, archetype, tree, skills, gear);
   const xml = buildPobXml({ archetype, tree, skills, gear, data });
