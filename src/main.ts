@@ -272,6 +272,7 @@ async function main() {
   let activeTargetKeys: TargetStatKey[] = [];
   const seedInput = document.getElementById('seed-input') as HTMLInputElement;
   const knobSummaryEl = document.getElementById('sidebar-knob-summary')!;
+  const promoCardEl = knobSummaryEl.closest('.promo-card')!;
   const officialTreeLink = document.getElementById('official-tree-link') as HTMLAnchorElement;
   const saveBuildBtn = document.getElementById('save-build-btn') as HTMLButtonElement;
   const navSavedPill = document.getElementById('nav-saved-pill')!;
@@ -396,7 +397,7 @@ async function main() {
     const inp = targetRowsEl.querySelector<HTMLInputElement>(`input[data-target-key="${key}"]`);
     inp?.focus();
     inp?.select();
-    void regenerate();
+    updateKnobSummary();
   }
 
   function removeTargetStat(key: TargetStatKey) {
@@ -407,7 +408,7 @@ async function main() {
       options.targets = hasActiveTargets(next) ? next : undefined;
     }
     renderTargetRows();
-    void regenerate();
+    updateKnobSummary();
   }
 
   function commitTargetInput(key: TargetStatKey, raw: string) {
@@ -423,11 +424,28 @@ async function main() {
     options.targets = hasActiveTargets(next) ? next : undefined;
   }
 
-  function updateSidebarMeta(b: GeneratedBuild) {
+  function commitAllTargetInputs() {
+    targetRowsEl.querySelectorAll<HTMLInputElement>('input[data-target-key]').forEach((inp) => {
+      commitTargetInput(inp.dataset.targetKey as TargetStatKey, inp.value);
+    });
+  }
+
+  function hasPendingSidebarChanges(): boolean {
+    if (!currentBuild) return false;
+    return buildOptionsSignature(options) !== buildOptionsSignature(currentBuild.archetype.options);
+  }
+
+  function updateKnobSummary() {
     const modeLabel = options.leagueMode === 'hardcore' ? 'Hardcore' : 'Softcore';
     const ecoLabel = options.economy === 'ssf' ? 'SSF' : 'Trade';
     const targetTag = hasActiveTargets(options.targets) ? ' · Targeted' : '';
-    knobSummaryEl.textContent = `${modeLabel} · ${ecoLabel} · Level ${options.level}${targetTag}`;
+    const dirty = hasPendingSidebarChanges();
+    knobSummaryEl.textContent = `${modeLabel} · ${ecoLabel} · Level ${options.level}${targetTag}${dirty ? ' · Pending' : ''}`;
+    promoCardEl.classList.toggle('has-pending', dirty);
+  }
+
+  function updateSidebarMeta(b: GeneratedBuild) {
+    updateKnobSummary();
     document.getElementById('nav-pts-pill')!.textContent = String(b.tree.pointsUsed);
     const mainLinks = b.skills.groups[0]?.gems.length ?? 6;
     document.getElementById('nav-links-pill')!.textContent = `${mainLinks}L`;
@@ -458,7 +476,7 @@ async function main() {
 
   function updateSavedUiState() {
     navSavedPill.textContent = String(savedBuilds.length);
-    const sig = buildOptionsSignature(options);
+    const sig = buildOptionsSignature(currentBuild?.archetype.options ?? options);
     const isSaved = savedBuilds.some((e) => e.id === sig);
     saveBuildBtn.textContent = isSaved ? 'Saved ✓' : 'Save Build';
     saveBuildBtn.classList.toggle('is-saved', isSaved);
@@ -466,7 +484,11 @@ async function main() {
 
   async function regenerate() {
     seedInput.value = options.seed;
-    const build = await generateBuild(data, options);
+    const snapshot: BuildOptions = {
+      ...options,
+      targets: options.targets ? { ...options.targets } : undefined,
+    };
+    const build = await generateBuild(data, snapshot);
     currentBuild = build;
     updateSidebarMeta(build);
     updateSavedUiState();
@@ -1341,7 +1363,7 @@ async function main() {
     if (!btn) return;
     options.leagueMode = btn.dataset.mode as LeagueMode;
     document.querySelectorAll('#league-seg button').forEach((b) => b.classList.toggle('active', b === btn));
-    void regenerate();
+    updateKnobSummary();
   });
 
   document.getElementById('eco-seg')!.addEventListener('click', (e) => {
@@ -1349,36 +1371,36 @@ async function main() {
     if (!btn) return;
     options.economy = btn.dataset.eco as EconomyMode;
     document.querySelectorAll('#eco-seg button').forEach((b) => b.classList.toggle('active', b === btn));
-    void regenerate();
+    updateKnobSummary();
   });
 
   classSel.addEventListener('change', () => {
     options.classId = classSel.value === 'random' ? 'random' : Number(classSel.value);
     options.ascendancyIndex = 'random';
     syncAscDropdown();
-    void regenerate();
+    updateKnobSummary();
   });
 
   ascSel.addEventListener('change', () => {
     options.ascendancyIndex = ascSel.value === 'random' ? 'random' : Number(ascSel.value);
-    void regenerate();
+    updateKnobSummary();
   });
 
   styleSel.addEventListener('change', () => {
     options.damageStyle = styleSel.value as DamageStyle | 'random';
-    void regenerate();
+    updateKnobSummary();
   });
 
   defSel.addEventListener('change', () => {
     options.defenseStyle = defSel.value as DefenseStyle | 'random';
-    void regenerate();
+    updateKnobSummary();
   });
 
   levelRange.addEventListener('input', () => {
     levelVal.textContent = levelRange.value;
     options.level = Number(levelRange.value);
+    updateKnobSummary();
   });
-  levelRange.addEventListener('change', () => void regenerate());
 
   addTargetBtn.addEventListener('click', () => {
     renderTargetPickerOptions();
@@ -1396,19 +1418,18 @@ async function main() {
     if (key) addTargetStat(key);
   });
 
+  targetRowsEl.addEventListener('input', (e) => {
+    const inp = (e.target as HTMLElement).closest<HTMLInputElement>('input[data-target-key]');
+    if (!inp) return;
+    commitTargetInput(inp.dataset.targetKey as TargetStatKey, inp.value);
+    updateKnobSummary();
+  });
+
   targetRowsEl.addEventListener('change', (e) => {
     const inp = (e.target as HTMLElement).closest<HTMLInputElement>('input[data-target-key]');
     if (!inp) return;
     commitTargetInput(inp.dataset.targetKey as TargetStatKey, inp.value);
-    void regenerate();
-  });
-
-  targetRowsEl.addEventListener('keydown', (e) => {
-    if (e.key !== 'Enter') return;
-    const inp = (e.target as HTMLElement).closest<HTMLInputElement>('input[data-target-key]');
-    if (!inp) return;
-    commitTargetInput(inp.dataset.targetKey as TargetStatKey, inp.value);
-    void regenerate();
+    updateKnobSummary();
   });
 
   targetRowsEl.addEventListener('click', (e) => {
@@ -1422,22 +1443,25 @@ async function main() {
     options.targets = undefined;
     targetPickerRow.hidden = true;
     renderTargetRows();
-    void regenerate();
+    updateKnobSummary();
   });
 
   document.getElementById('apply-seed-btn')!.addEventListener('click', () => {
+    commitAllTargetInputs();
     options.seed = seedInput.value.trim() || randomSeed();
     void regenerate();
   });
 
   seedInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
+      commitAllTargetInputs();
       options.seed = seedInput.value.trim() || randomSeed();
       void regenerate();
     }
   });
 
   document.getElementById('reroll-btn')!.addEventListener('click', () => {
+    commitAllTargetInputs();
     options.seed = randomSeed();
     void regenerate();
   });

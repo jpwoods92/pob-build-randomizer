@@ -390,6 +390,12 @@ input[type="range"] {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.promo-card.has-pending {
+  border-color: var(--lime);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--lime) 24%, transparent);
 }
 
 .promo-card h3 {
