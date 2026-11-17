@@ -267,6 +267,68 @@ function scoreModForArchetype(
   return w;
 }
 
+const ARMOUR_SLOTS = new Set(['Body Armour', 'Helmet', 'Gloves', 'Boots', 'Shield']);
+type ArmourSubType =
+  | 'Armour'
+  | 'Evasion'
+  | 'Energy Shield'
+  | 'Armour/Evasion'
+  | 'Armour/Energy Shield'
+  | 'Evasion/Energy Shield';
+
+function resolveTargetArmourSubType(
+  arch: BuildArchetype,
+  tree: GeneratedTree,
+  skills: GeneratedSkills,
+  rng: Rng,
+): ArmourSubType {
+  const activeGems = new Set<string>();
+  for (const grp of skills.groups) {
+    for (const gi of grp.gems) activeGems.add(gi.gem.name);
+  }
+  const keystones = new Set(tree.summary.keystones);
+  const hasGrace = activeGems.has('Grace');
+  const hasDet = activeGems.has('Determination');
+  const hasIR = keystones.has('Iron Reflexes');
+  const hasGhostDance = keystones.has('Ghost Dance');
+  const hasDivineShield = keystones.has('Divine Shield');
+  const masteryTexts = tree.summary.masteries.map((m) => m.text.toLowerCase());
+  const hasArmourMastery = masteryTexts.some((t) => t.includes('all have armour'));
+  const hasEvaSuppressMastery = masteryTexts.some((t) => t.includes('all have evasion rating'));
+  const cls = arch.classData.name;
+
+  if (arch.defenseStyle === 'hybrid') {
+    if (hasGhostDance || (hasGrace && !hasDet) || cls === 'Ranger' || cls === 'Shadow') {
+      return 'Evasion/Energy Shield';
+    }
+    return 'Armour/Energy Shield';
+  }
+
+  if (arch.defenseStyle === 'es') {
+    if (hasIR || hasDivineShield || hasArmourMastery || (hasDet && !hasGrace) || cls === 'Marauder' || cls === 'Duelist') {
+      return 'Armour/Energy Shield';
+    }
+    if (hasGhostDance || hasEvaSuppressMastery || (hasGrace && !hasDet) || cls === 'Ranger') {
+      return 'Evasion/Energy Shield';
+    }
+    if (cls === 'Shadow') return rng.chance(0.55) ? 'Evasion/Energy Shield' : 'Energy Shield';
+    if (cls === 'Templar') return rng.chance(0.55) ? 'Armour/Energy Shield' : 'Energy Shield';
+    return 'Energy Shield';
+  }
+
+  // Life builds: align HP + Evasion -> Armour/Evasion, otherwise pick one consistent pure profile
+  if (hasIR) return 'Armour';
+  if (hasArmourMastery && hasEvaSuppressMastery) return 'Armour/Evasion';
+  if (hasGrace && hasDet) return 'Armour/Evasion';
+  if (cls === 'Duelist' && (hasGrace || arch.primaryAttr === 'dex')) return 'Armour/Evasion';
+  if (arch.primaryAttr === 'dex' && hasDet) return 'Armour/Evasion';
+  if (arch.primaryAttr === 'dex' || (hasGrace && !hasDet)) return 'Evasion';
+  if (cls === 'Duelist' && !hasDet && !hasArmourMastery) {
+    return rng.chance(0.5) ? 'Armour/Evasion' : 'Armour';
+  }
+  return 'Armour';
+}
+
 function pickBestBase(
   data: GameData,
   slotType: string,
@@ -276,7 +338,7 @@ function pickBestBase(
   opts: { allowedTypes?: string[]; preferSubType?: string; preferTags?: string[]; needs?: { str: number; dex: number; int: number; suppress?: number }; isEvasionBuild?: boolean } = {},
 ): [string, BaseData] {
   const isTrade = arch.options.economy === 'trade';
-  const candidates = Object.entries(data.bases).filter(([name, b]) => {
+  const rawCandidates = Object.entries(data.bases).filter(([name, b]) => {
     if (opts.allowedTypes && !opts.allowedTypes.includes(b.type)) return false;
     if (!opts.allowedTypes && b.type !== slotType) return false;
     if (b.subType === 'Talisman') return false;
@@ -287,6 +349,11 @@ function pickBestBase(
     if (reqLvl > arch.options.level) return false;
     return true;
   });
+
+  const strictArmourMatches = opts.preferSubType && ARMOUR_SLOTS.has(slotType)
+    ? rawCandidates.filter(([, b]) => b.subType === opts.preferSubType)
+    : [];
+  const candidates = strictArmourMatches.length > 0 ? strictArmourMatches : rawCandidates;
 
   const picked = rng.weighted(candidates, ([name, b]) => {
     const reqLvl = b.req.level ?? 1;
@@ -345,8 +412,15 @@ function pickBestBase(
   return picked;
 }
 
-function isUniqueSuitable(u: UniqueData, arch: BuildArchetype, slotTypes: string[], base?: BaseData): boolean {
+function isUniqueSuitable(
+  u: UniqueData,
+  arch: BuildArchetype,
+  slotTypes: string[],
+  base?: BaseData,
+  targetArmourSubType?: ArmourSubType,
+): boolean {
   if (!slotTypes.includes(u.type)) return false;
+  if (targetArmourSubType && ARMOUR_SLOTS.has(u.type) && base?.subType !== targetArmourSubType) return false;
   if (u.levelReq && u.levelReq > arch.options.level) return false;
   if (base && arch.defenseStyle !== 'es') {
     if (arch.primaryAttr !== 'str' && (base.req.str ?? 0) > 180) return false;
@@ -878,8 +952,8 @@ export function generateGear(
   const attrs = { ...tree.attributes };
   const maxRes = { fire: 75, cold: 75, lightning: 75, chaos: hasCI ? 100 : 75 };
   const dummyAttrs = { str: 0, dex: 0, int: 0 };
-  const hasGrace = skills.groups.some((grp) => grp.gems.some((gi) => gi.gem.name === 'Grace'));
-  const isEvasionBuild = (arch.primaryAttr === 'dex' || hasGrace) && arch.defenseStyle !== 'es';
+  const targetArmourSubType = resolveTargetArmourSubType(arch, tree, skills, rng);
+  const isEvasionBuild = targetArmourSubType.includes('Evasion') && arch.defenseStyle !== 'es';
   const hasAcrobatics = tree.summary.keystones.includes('Acrobatics');
   const hasMagebane = tree.summary.keystones.includes('Magebane');
 
@@ -1016,7 +1090,7 @@ export function generateGear(
 
     if (!item && uniqueSlots.has(def.slot)) {
       const pool = data.uniques
-        .filter((u) => !usedUniqueNames.has(u.name) && isUniqueSuitable(u, arch, def.types, data.bases[u.base]))
+        .filter((u) => !usedUniqueNames.has(u.name) && isUniqueSuitable(u, arch, def.types, data.bases[u.base], targetArmourSubType))
         .map((u) => ({ u, score: scoreUniqueForArchetype(u, arch, data.bases[u.base], hasCI, maxRes) }))
         .sort((a, b) => b.score - a.score)
         .slice(0, isHC ? 8 : 12);
@@ -1031,7 +1105,12 @@ export function generateGear(
 
     if (!item) {
       const needs = currentNeeds();
-      const [baseName, base] = pickBestBase(data, def.types[0], arch, hasCI, rng, { allowedTypes: def.types, needs, isEvasionBuild });
+      const [baseName, base] = pickBestBase(data, def.types[0], arch, hasCI, rng, {
+        allowedTypes: def.types,
+        preferSubType: ARMOUR_SLOTS.has(def.types[0]) ? targetArmourSubType : undefined,
+        needs,
+        isEvasionBuild,
+      });
       item = buildRareItem(id, def.slot, baseName, base, sockets, data, arch, needs, hasCI, maxRes, rng, { isEvasionBuild });
     }
 

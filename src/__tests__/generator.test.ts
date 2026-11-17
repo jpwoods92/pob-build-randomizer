@@ -589,3 +589,33 @@ test('raised max resistances from tree, auras, and gear are tracked per element 
   }
   assert.ok(sawRaisedMaxRes, 'Expected Marauder/Templar HC sample to roll raised max resistances > 75%');
 });
+
+test('armour and shield bases share one consistent defensive profile aligned with the build', async () => {
+  const styles = ['life', 'es', 'hybrid'] as const;
+  for (let i = 0; i < 42; i++) {
+    const def = styles[i % styles.length];
+    const b = await generateBuild(data, baseOptions({
+      seed: `armour-align-${i}`,
+      classId: (i % 7) as 0 | 1 | 2 | 3 | 4 | 5 | 6,
+      defenseStyle: def,
+      leagueMode: i % 2 === 0 ? 'hardcore' : 'softcore',
+      economy: i % 3 === 0 ? 'ssf' : 'trade',
+    }));
+    const armourPieces = b.gear.items.filter(
+      (it) => ['Helmet', 'Body Armour', 'Gloves', 'Boots'].includes(it.slot) || (it.slot === 'Weapon 2' && it.base.type === 'Shield'),
+    );
+    const subTypes = new Set(armourPieces.map((it) => it.base.subType));
+    assert.equal(
+      subTypes.size,
+      1,
+      `Mixed armour subTypes on ${b.archetype.title} (${def}): ${[...subTypes].join(', ')}`,
+    );
+    const [subType] = [...subTypes];
+    if (def === 'hybrid') {
+      assert.ok(
+        subType === 'Armour/Energy Shield' || subType === 'Evasion/Energy Shield',
+        `Hybrid build should use Armour/ES or Evasion/ES, got ${subType} on ${b.archetype.title}`,
+      );
+    }
+  }
+});
