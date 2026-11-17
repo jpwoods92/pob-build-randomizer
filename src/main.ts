@@ -363,14 +363,15 @@ async function main() {
               </div>
               <span class="kpi-tag">Lv ${o.skillLevel}</span>
             </div>
-            <div class="hero-dps-meta">
+            <div class="hero-dps-stats">
               ${o.dpsMode === 'Support'
-                ? 'Buffs linked ally'
-                : `${o.hitDmg.toLocaleString()} avg dmg · ${esc(o.rateLabel)}${o.critChancePct > 0 ? ` · ${o.critChancePct}% crit (${o.critMultiPct}%)` : ''}`}
-            </div>
-            <div class="hero-scaling-foot">
-              <span class="kpi-label">Passives &amp; Scaling</span>
-              <span class="hero-scaling-nums">${d.lifePct}% Life · ${d.esPct}% ES</span>
+                ? '<div class="hero-dps-stat"><span>Role</span><strong>Allied Link Buff</strong></div>'
+                : `
+                  <div class="hero-dps-stat"><span>Avg Damage</span><strong>${o.hitDmg.toLocaleString()}</strong></div>
+                  <div class="hero-dps-stat"><span>${o.dpsMode === 'DoT DPS' ? 'DoT Multi' : 'Rate'}</span><strong>${esc(o.rateLabel)}</strong></div>
+                  <div class="hero-dps-stat"><span>Inc Damage</span><strong>+${o.incDamagePct}%</strong></div>
+                  <div class="hero-dps-stat"><span>Crit</span><strong>${o.critChancePct > 0 ? `${o.critChancePct}% / ${o.critMultiPct}%` : 'Non-Crit'}</strong></div>
+                `}
             </div>
           </div>
           <div class="hero-metric hero-metric-col">
@@ -441,15 +442,23 @@ async function main() {
           </div>
           <div class="def-pool-grid">
             <div class="def-stat-box">
-              <span class="def-stat-label">Max HP</span>
+              <div class="def-stat-top">
+                <span class="def-stat-label">Max HP</span>
+                <span class="def-pct-badge" title="${d.lifePct}% increased maximum Life">${d.lifePct}%</span>
+              </div>
               <span class="def-stat-val def-life">${d.maxLife.toLocaleString()}</span>
             </div>
             <div class="def-stat-box">
-              <span class="def-stat-label">Max ES</span>
+              <div class="def-stat-top">
+                <span class="def-stat-label">Max ES</span>
+                <span class="def-pct-badge" title="${d.esPct}% increased maximum Energy Shield">${d.esPct}%</span>
+              </div>
               <span class="def-stat-val def-es">${d.maxEs.toLocaleString()}</span>
             </div>
             <div class="def-stat-box">
-              <span class="def-stat-label">Max Mana</span>
+              <div class="def-stat-top">
+                <span class="def-stat-label">Max Mana</span>
+              </div>
               <span class="def-stat-val def-mana">${d.maxMana.toLocaleString()}</span>
             </div>
           </div>
