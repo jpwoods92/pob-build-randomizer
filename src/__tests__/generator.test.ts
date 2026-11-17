@@ -340,7 +340,7 @@ test('hardcore prioritizes max-hit conversion/max-res while softcore prioritizes
   }));
   assert.ok(sc.offense.totalDps >= 1_000_000, `Expected SC DPS >= 1,000,000, got ${sc.offense.totalDps}`);
 
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < 10; i++) {
     const hc = await generateBuild(data, baseOptions({
       seed: `dps-hc-floor-${i}`,
       classId: (i % 7) as 0 | 1 | 2 | 3 | 4 | 5 | 6,
@@ -348,7 +348,7 @@ test('hardcore prioritizes max-hit conversion/max-res while softcore prioritizes
       economy: i % 2 === 0 ? 'ssf' : 'trade',
     }));
     if (hc.offense.dpsMode !== 'Support') {
-      assert.ok(hc.offense.totalDps >= 100_000, `Expected HC DPS >= 100,000 for ${hc.archetype.title}, got ${hc.offense.totalDps}`);
+      assert.ok(hc.offense.totalDps >= 500_000, `Expected HC DPS >= 500,000 for ${hc.archetype.title}, got ${hc.offense.totalDps}`);
     }
     const scSample = await generateBuild(data, baseOptions({
       seed: `dps-sc-floor-${i}`,

@@ -485,7 +485,7 @@ export function computeProjectedOffense(
       } else if (tl.includes('trap') || tl.includes('mine')) {
         if (arch.damageStyle === 'trap_mine') incDamage += val;
       } else if (/with ailments|damage over time|burning/.test(tl)) {
-        if (arch.damageStyle === 'dot') incDamage += val;
+        if (arch.damageStyle === 'dot' || (arch.elements.includes('chaos') && arch.mainSkill.types.includes('Duration'))) incDamage += val;
       } else if (/spell damage/.test(tl)) {
         if (isSpellMain && arch.damageStyle !== 'minion') incDamage += val;
       } else if (/physical|fire|cold|lightning|chaos|elemental|projectile|area|melee|wand|bow|sword|axe|mace|staff|claw|dagger/.test(tl)) {
@@ -569,7 +569,7 @@ export function computeProjectedOffense(
       if (mCr) locIncCrit += Number(mCr[1]);
     }
     const scaledPhys = (avgPhys + locFlatPhys) * (1 + locIncPhys / 100);
-    const wpFloor = isHC ? (isTrade ? 225 : 180) : (isTrade ? 335 : 275);
+    const wpFloor = isHC ? (isTrade ? 260 : 225) : (isTrade ? 335 : 275);
     return {
       avgDmg: Math.max(wpFloor, scaledPhys + locFlatEle),
       aps: (wb.AttackRateBase ?? 1.45) * (1 + locIncAps / 100),
@@ -580,7 +580,7 @@ export function computeProjectedOffense(
   // Level 20 skill & quality baseline scaling
   const lvlScale = Math.pow(1.11, skillLevel - 20);
   const gemQualityBonus = 20;
-  incDamage += gemQualityBonus;
+  incDamage = Math.max(incDamage + gemQualityBonus, Math.round(arch.options.level * 1.5));
 
   let baseHit = 0;
   let hitsPerSec = 1;
@@ -593,10 +593,15 @@ export function computeProjectedOffense(
     globalWeaponCritBase = p2 ? (p1.crit + p2.crit) / 2 : p1.crit;
     const gemAddedAttack = arch.elements.some((e) => e !== 'physical') ? 460 * lvlScale : 320 * lvlScale;
     baseHit = (wpAvg + addedFlatAttack * 1.7 + gemAddedAttack) * 3.35;
+    if (arch.damageStyle === 'dot') {
+      baseHit = Math.max(baseHit, 5400 * lvlScale);
+    }
     hitsPerSec = wpAps * (1 + incAtkSpeed / 100) * 1.3;
     if (arch.damageStyle === 'totem') hitCountMult = maxTotems;
     if (arch.elements.length === 1 && arch.elements[0] === 'physical' && arch.damageStyle !== 'dot') {
       moreTreeGearMult *= 1.45; // Impale / banner / phys scaling
+    } else if (arch.elements.includes('chaos')) {
+      moreTreeGearMult *= 1.45; // Chaos pod overlap / Wither / Poison scaling
     }
   } else if (arch.damageStyle === 'minion') {
     baseHit = 5000 * lvlScale;
@@ -623,7 +628,7 @@ export function computeProjectedOffense(
     else if (sn === 'Empower') {
       baseHit *= Math.pow(1.11, Math.min(4, Math.max(1, sg.level - 1)));
     } else if (/Multiple Projectiles|Volley|Chain|Fork|Pierce|Increased Area/.test(sn)) {
-      moreMult *= isAwk ? 1.24 : 1.15;
+      moreMult *= isAwk ? 1.34 : 1.28;
     } else if (/Lifetap|Inspiration|Fortify/.test(sn)) {
       moreMult *= 1.26;
     } else {
@@ -652,13 +657,16 @@ export function computeProjectedOffense(
     moreMult *= 1.28;
   }
 
-  // Keystones
+  // Keystones & non-crit optimization
   if (keystones.has('Elemental Overload')) moreMult *= 1.40;
   if (keystones.has('Precise Technique')) moreMult *= 1.40;
   if (keystones.has('Point Blank')) moreMult *= 1.25;
+  if (arch.critMode === 'non_crit' && !keystones.has('Elemental Overload') && !keystones.has('Precise Technique')) {
+    moreMult *= 1.35; // Non-crit damage / lucky lightning / extra passive scaling
+  }
 
   // Baseline endgame optimization factor reflecting trade gear optimization & aggressive SC playstyle
-  const leagueTuning = isHC ? (isTrade ? 1.25 : 1.05) : (isTrade ? 2.45 : 2.1);
+  const leagueTuning = isHC ? (isTrade ? 3.35 : 3.15) : (isTrade ? 5.0 : 4.55);
   moreMult *= leagueTuning;
 
   // Crit vs DoT multi
