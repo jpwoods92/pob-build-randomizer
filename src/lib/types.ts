@@ -122,6 +122,39 @@ export interface PantheonData {
   minor: PantheonGod[];
 }
 
+export interface MinionEntry {
+  id: string;
+  name: string;
+  damage: number;
+  attackTime: number;
+  limitKey?: string;
+  skillMult: number;
+  isSpell?: boolean;
+  castTime?: number;
+  moreDamage: number;
+  moreSpeed: number;
+  incDamage: number;
+  incSpeed: number;
+  addedFlat?: number;
+}
+
+export interface GemMinionMeta {
+  minionList: string[];
+  limit: number;
+  limitType: string;
+  actorLevel20: number;
+  gemMoreDamage: number;
+  gemMoreSpeed: number;
+  addedPhysAvg: number;
+  virulenceScale?: boolean;
+}
+
+export interface MinionsData {
+  allyDamageTable: number[];
+  minions: Record<string, MinionEntry>;
+  gemMinions: Record<string, GemMinionMeta>;
+}
+
 export interface GameData {
   tree: TreeData;
   gems: GemData[];
@@ -129,4 +162,5 @@ export interface GameData {
   mods: { item: ModData[]; flask: ModData[]; jewel: ModData[] };
   uniques: UniqueData[];
   pantheons: PantheonData;
+  minions: MinionsData;
 }

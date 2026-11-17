@@ -432,6 +432,15 @@ export function computeProjectedOffense(
   let moreTreeGearMult = 1;
   let incAtkSpeed = 0;
   let incCastSpeed = 0;
+  let minionIncSpeed = 0;
+  let minionCritInc = 0;
+  let minionCritMulti = 0;
+  let addedFlatMinion = 0;
+  let extraZombies = 0;
+  let extraSkeletons = 0;
+  let extraSpectres = 0;
+  let extraGolems = 0;
+  let hasUnholyMightMinions = false;
   let incCrit = 0;
   let critMultiBonus = 0;
   let dotMultiBonus = 0;
@@ -503,8 +512,32 @@ export function computeProjectedOffense(
     const mAtkSpd = /(\d+)% increased attack speed/i.exec(l);
     if (mAtkSpd && !/minion/.test(tl)) incAtkSpeed += Number(mAtkSpd[1]);
 
+    const mMinionSpd = /minions have (\d+)% increased (?:attack(?: and cast)?|cast) speed/i.exec(l);
+    if (mMinionSpd) minionIncSpeed += Number(mMinionSpd[1]);
+
+    const mMinionFlat = /minions deal (\d+) to (\d+) additional .* damage/i.exec(l);
+    if (mMinionFlat) addedFlatMinion += (Number(mMinionFlat[1]) + Number(mMinionFlat[2])) / 2;
+
+    const mMinionCrit = /minions have (\d+)% increased critical strike chance/i.exec(l);
+    if (mMinionCrit) minionCritInc += Number(mMinionCrit[1]);
+
+    const mMinionMulti = /minions have \+(\d+)% to critical strike multiplier/i.exec(l);
+    if (mMinionMulti) minionCritMulti += Number(mMinionMulti[1]);
+
+    if (/minions have unholy might/i.test(l)) hasUnholyMightMinions = true;
+
+    const mMaxMinion = /\+(\d+) to maximum number of (?:raised )?(zombies|skeletons|spectres|summoned golems|golems)/i.exec(l);
+    if (mMaxMinion) {
+      const n = Number(mMaxMinion[1]);
+      const kind = mMaxMinion[2].toLowerCase();
+      if (kind.includes('zombie')) extraZombies += n;
+      else if (kind.includes('skeleton')) extraSkeletons += n;
+      else if (kind.includes('spectre')) extraSpectres += n;
+      else if (kind.includes('golem')) extraGolems += n;
+    }
+
     const mCastSpd = /(\d+)% increased cast speed/i.exec(l);
-    if (mCastSpd) incCastSpeed += Number(mCastSpd[1]);
+    if (mCastSpd && !/minion/.test(tl)) incCastSpeed += Number(mCastSpd[1]);
 
     const mCrit = /(\d+)% increased (?:global )?critical strike chance/i.exec(l);
     if (mCrit && !/minion/.test(tl)) incCrit += Number(mCrit[1]);
@@ -585,7 +618,73 @@ export function computeProjectedOffense(
   let baseHit = 0;
   let hitsPerSec = 1;
   let hitCountMult = 1;
-  if (isAttackMain) {
+  const minionMeta = arch.damageStyle === 'minion' && mainGem ? data.minions.gemMinions[mainGem.gem.skillId] : undefined;
+  const minionEntry = minionMeta ? data.minions.minions[minionMeta.minionList[0]] : undefined;
+
+  if (minionMeta && minionEntry) {
+    const actorLvl = Math.min(100, Math.max(1, minionMeta.actorLevel20 + (skillLevel - 20) * 2));
+    const allyDmg = data.minions.allyDamageTable[actorLvl - 1] ?? 332;
+
+    let rawMinionBase: number;
+    if (minionEntry.id.startsWith('ArrowClone')) {
+      rawMinionBase = computeWeaponProfile(w1).avgDmg * 1.9;
+    } else if (minionEntry.id === 'HolyStrikeMinion') {
+      rawMinionBase = (computeWeaponProfile(w1).avgDmg + allyDmg * 0.9) * 1.45;
+    } else if (minionEntry.damage === 0) {
+      rawMinionBase = (allyDmg * 1.15 + minionMeta.addedPhysAvg + 170) * minionEntry.skillMult;
+    } else if (minionEntry.isSpell) {
+      rawMinionBase = allyDmg * minionEntry.damage * Math.max(1.2, minionEntry.skillMult * 1.65);
+    } else {
+      rawMinionBase = (allyDmg * minionEntry.damage + (minionEntry.addedFlat ?? 0) + minionMeta.addedPhysAvg) * minionEntry.skillMult;
+    }
+
+    baseHit = (rawMinionBase + addedFlatMinion * 1.8) * 3.15;
+    incDamage += minionEntry.incDamage;
+    moreTreeGearMult *= minionEntry.moreDamage * minionMeta.gemMoreDamage;
+    if (hasUnholyMightMinions) moreTreeGearMult *= 1.30;
+    if (minionMeta.virulenceScale) {
+      incDamage += 225;
+      minionIncSpeed += 100;
+    }
+    if (minionEntry.id === 'SummonedCarrionGolem') moreTreeGearMult *= 1.50;
+    if (minionEntry.id === 'SummonedReaper') moreTreeGearMult *= 4.8; // Single-minion Consume + Ultimate combo + Bleed
+    if (minionEntry.id === 'HolyLivingRelic') moreTreeGearMult *= 1.35;
+    if (mainGem?.gem.skillId === 'RaiseZombieAltY') moreTreeGearMult *= 2.6; // Falling zombie meteor impact
+
+    const isFallingZombie = mainGem?.gem.skillId === 'RaiseZombieAltY';
+    const basePeriod = minionEntry.isSpell ? (minionEntry.castTime ?? 0.9) : Math.max(0.3, minionEntry.attackTime);
+    const totalMinionSpdInc = minionIncSpeed + minionEntry.incSpeed + (activeGemNames.has('Flesh Offering') ? 30 : 0);
+    hitsPerSec = isFallingZombie
+      ? 1.65 * (1 + incCastSpeed / 100)
+      : (1 / basePeriod) * minionEntry.moreSpeed * minionMeta.gemMoreSpeed * (1 + totalMinionSpdInc / 100);
+
+    if (arch.critMode === 'crit' && minionCritInc > 0) {
+      incCrit += minionCritInc;
+      critMultiBonus += minionCritMulti;
+    }
+    if (mainGem?.gem.skillId === 'SummonRagingSpiritAltX') {
+      incCrit += 400; // Always crits / high crit scaling
+      critMultiBonus += 80;
+    }
+    globalWeaponCritBase = 5;
+
+    const limitBonus = minionMeta.limitType === 'zombies' ? extraZombies
+      : minionMeta.limitType === 'skeletons' ? extraSkeletons
+        : minionMeta.limitType === 'spectres' ? extraSpectres
+          : minionMeta.limitType === 'golems' ? extraGolems
+            : 0;
+    const maxMinions = isFallingZombie ? 1 : minionMeta.limit + limitBonus;
+    if (minionMeta.limitType === 'srs') hitCountMult = Math.min(maxMinions, 14);
+    else if (minionMeta.limitType === 'weapons') hitCountMult = Math.min(maxMinions, 10);
+    else if (minionMeta.limitType === 'sentinels') hitCountMult = Math.max(3, Math.round(maxMinions * 0.8));
+    else if (minionMeta.limitType === 'golems') hitCountMult = Math.max(maxMinions, arch.classData.name === 'Witch' ? 3 : 2);
+    else if (minionMeta.limitType === 'relics') hitCountMult = mainGem?.gem.skillId === 'SummonHolyRelicAltX' ? 2 : maxMinions;
+    else if (minionEntry.id === 'HolyStrikeMinion') hitCountMult = 3;
+    else if (minionMeta.limitType === 'reapers') hitCountMult = maxMinions;
+    else hitCountMult = Math.max(1, maxMinions);
+
+    incDamage = Math.max(incDamage, 160);
+  } else if (isAttackMain) {
     const p1 = computeWeaponProfile(w1);
     const p2 = arch.weaponSetup === 'dual_wield' && w2?.base.weapon ? computeWeaponProfile(w2) : undefined;
     const wpAvg = p2 ? (p1.avgDmg + p2.avgDmg) / 2 : p1.avgDmg;
@@ -603,11 +702,6 @@ export function computeProjectedOffense(
     } else if (arch.elements.includes('chaos')) {
       moreTreeGearMult *= 1.45; // Chaos pod overlap / Wither / Poison scaling
     }
-  } else if (arch.damageStyle === 'minion') {
-    baseHit = 5000 * lvlScale;
-    hitsPerSec = 2.0 * (1 + (activeGemNames.has('Haste') ? 0.18 : 0) + (activeGemNames.has('Flesh Offering') ? 0.30 : 0));
-    incDamage = Math.max(incDamage, 180);
-    hitCountMult = /Reaper|Golem/i.test(arch.mainSkill.name) ? 3 : 6.5;
   } else {
     // Spell / Totem / Trap / Mine / Spell DoT base scaling at Lv 20+
     const rawSpellBase = (arch.damageStyle === 'dot' ? 5400 : 3800) * lvlScale;
@@ -714,7 +808,9 @@ export function computeProjectedOffense(
     ? `+${dotMultiBonus}% DoT Multi`
     : arch.damageStyle === 'totem'
       ? `${maxTotems} Totems · ${hitsPerSec.toFixed(2)}/s`
-      : `${hitsPerSec.toFixed(2)}/s`;
+      : arch.damageStyle === 'minion'
+        ? `${hitCountMult} × ${hitsPerSec.toFixed(2)}/s`
+        : `${hitsPerSec.toFixed(2)}/s`;
 
   return {
     totalDps: rawDps,

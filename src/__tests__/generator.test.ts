@@ -21,6 +21,7 @@ const data: GameData = {
   mods: loadJson('mods.json'),
   uniques: loadJson('uniques.json'),
   pantheons: loadJson('pantheons.json'),
+  minions: loadJson('minions.json'),
 };
 
 function baseOptions(overrides: Partial<BuildOptions> = {}): BuildOptions {
@@ -359,5 +360,23 @@ test('hardcore prioritizes max-hit conversion/max-res while softcore prioritizes
     if (scSample.offense.dpsMode !== 'Support') {
       assert.ok(scSample.offense.totalDps >= 1_000_000, `Expected SC DPS >= 1,000,000 for ${scSample.archetype.title}, got ${scSample.offense.totalDps}`);
     }
+  }
+});
+
+test('minion calculations read from extracted PoB minion and monster tables', async () => {
+  assert.equal(data.minions.allyDamageTable.length, 100);
+  assert.ok(data.minions.gemMinions.SummonRagingSpirit);
+  assert.equal(data.minions.gemMinions.RaiseZombieAltY.limit, 1);
+  assert.ok(data.minions.minions.SummonedRagingSpirit.moreSpeed > 1.3);
+
+  for (let i = 0; i < 6; i++) {
+    const b = await generateBuild(data, baseOptions({
+      seed: `minion-table-${i}`,
+      classId: 3, // Witch
+      damageStyle: 'minion',
+      leagueMode: i % 2 === 0 ? 'hardcore' : 'softcore',
+    }));
+    assert.ok(b.offense.totalDps > 200_000, `Expected realistic minion DPS, got ${b.offense.totalDps}`);
+    assert.ok(!/^200 ×/.test(b.offense.rateLabel), 'Raise Zombie of Falling must not scale by dummy cap 200');
   }
 });

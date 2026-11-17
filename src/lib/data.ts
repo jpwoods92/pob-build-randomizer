@@ -12,13 +12,15 @@ export function loadGameData(): Promise<GameData> {
       import('../data/mods.json'),
       import('../data/uniques.json'),
       import('../data/pantheons.json'),
-    ]).then(([tree, gems, bases, mods, uniques, pantheons]) => ({
+      import('../data/minions.json'),
+    ]).then(([tree, gems, bases, mods, uniques, pantheons, minions]) => ({
       tree: tree.default,
       gems: gems.default,
       bases: bases.default,
       mods: mods.default,
       uniques: uniques.default,
       pantheons: pantheons.default,
+      minions: minions.default,
     }) as unknown as GameData);
   }
   return cache;

@@ -371,9 +371,230 @@ function buildPantheons() {
 }
 
 // ---------------------------------------------------------------------------
+// Minions + Monster scaling tables
+// ---------------------------------------------------------------------------
+function extractLuaBlocks(src, prefixRe) {
+  const blocks = {};
+  const starts = [];
+  let m;
+  while ((m = prefixRe.exec(src))) starts.push({ id: m[1], eqPos: m.index + m[0].length });
+  for (const s of starts) {
+    try {
+      const { value } = parseLuaValue(src, s.eqPos);
+      blocks[s.id] = value;
+    } catch {
+      // Skip non-literal entries cleanly
+    }
+  }
+  return blocks;
+}
+
+function parseMinionMods(modList) {
+  let moreDamage = 1;
+  let moreSpeed = 1;
+  let incDamage = 0;
+  let incSpeed = 0;
+  let physMin = 0;
+  let physMax = 0;
+  for (const entry of modList || []) {
+    if (!entry || entry.call !== 'mod' || !Array.isArray(entry.args)) continue;
+    const [stat, type, val] = entry.args;
+    if (typeof val !== 'number') continue;
+    if (stat === 'Damage') {
+      if (type === 'MORE') moreDamage *= 1 + val / 100;
+      else if (type === 'INC') incDamage += val;
+    } else if (stat === 'Speed') {
+      if (type === 'MORE') moreSpeed *= 1 + val / 100;
+      else if (type === 'INC') incSpeed += val;
+    } else if (stat === 'PhysicalMin' && type === 'BASE') {
+      physMin += val;
+    } else if (stat === 'PhysicalMax' && type === 'BASE') {
+      physMax += val;
+    }
+  }
+  return {
+    moreDamage: Number(moreDamage.toFixed(3)),
+    moreSpeed: Number(moreSpeed.toFixed(3)),
+    incDamage,
+    incSpeed,
+    addedFlat: physMin + physMax > 0 ? Number(((physMin + physMax) / 2).toFixed(1)) : undefined,
+  };
+}
+
+function resolveLimitInfo(skillId, statsObj) {
+  const checks = [
+    ['base_number_of_zombies_allowed', 'zombies'],
+    ['base_number_of_skeletons_allowed', 'skeletons'],
+    ['base_number_of_spectres_allowed', 'spectres'],
+    ['base_number_of_golems_allowed', 'golems'],
+    ['base_number_of_raging_spirits_allowed', 'srs'],
+    ['base_number_of_animated_weapons_allowed', 'weapons'],
+    ['base_number_of_reapers_allowed', 'reapers'],
+    ['base_number_of_relics_allowed', 'relics'],
+    ['base_max_number_of_absolution_sentinels', 'sentinels'],
+    ['base_number_of_champions_of_light_allowed', 'sentinels'],
+    ['base_max_number_of_dominated_normal_monsters', 'sentinels'],
+    ['base_number_of_blink_mirror_arrow_rain_of_arrows_clones', 'clones'],
+    ['base_number_of_herald_scorpions_allowed', 'other'],
+  ];
+  for (const [key, limitType] of checks) {
+    if (typeof statsObj[key] === 'number' && statsObj[key] > 0) {
+      return { limit: statsObj[key], limitType };
+    }
+  }
+  if (/BlinkArrow|MirrorArrow/.test(skillId)) return { limit: 3, limitType: 'clones' };
+  if (/Golem/.test(skillId)) return { limit: 1, limitType: 'golems' };
+  return { limit: 1, limitType: 'other' };
+}
+
+function buildMinions(gems) {
+  const miscSrc = read(join(pobData, 'Misc.lua'));
+  const tdMarker = 'data.monsterAllyDamageTable = ';
+  const tdIdx = miscSrc.indexOf(tdMarker);
+  const { value: allyDamageRaw } = parseLuaValue(miscSrc, tdIdx + tdMarker.length);
+  const allyDamageTable = allyDamageRaw.map((v) => Number(Number(v).toFixed(2)));
+
+  // Parse minion skills (for baseMultiplier / spell castTime / combo bonuses)
+  const minionSkillBlocks = extractLuaBlocks(read(join(pobData, 'Skills/minion.lua')), /^skills\["([^"]+)"\] = /gm);
+  const minionSkills = {};
+  for (const [sid, s] of Object.entries(minionSkillBlocks)) {
+    const l1 = s.levels?.[1];
+    const cs = Object.fromEntries((s.constantStats || []).map((x) => [x[0], x[1]]));
+    const l1Arr = l1?.__array || [];
+    const avgRatio = l1Arr.length >= 2 && typeof l1Arr[0] === 'number' && typeof l1Arr[1] === 'number'
+      ? (l1Arr[0] + l1Arr[1]) / 2
+      : 1;
+    let skillMoreDmg = 1;
+    let skillMoreSpd = 1;
+    if (cs['bone_golem_damage_+%_final_after_third_combo_index']) {
+      skillMoreDmg *= 1 + cs['bone_golem_damage_+%_final_after_third_combo_index'] / 150;
+    }
+    if (cs['bone_golem_attack_speed_+%_final_after_third_combo_index']) {
+      skillMoreSpd *= 1 + cs['bone_golem_attack_speed_+%_final_after_third_combo_index'] / 150;
+    }
+    if (cs['active_skill_attack_speed_+%_final']) {
+      skillMoreSpd *= Math.max(0.5, 1 + cs['active_skill_attack_speed_+%_final'] / 100);
+    }
+    minionSkills[sid] = {
+      isSpell: Boolean(s.baseFlags?.spell),
+      baseMultiplier: typeof l1?.baseMultiplier === 'number' ? l1.baseMultiplier : 1,
+      castTime: typeof s.castTime === 'number' ? s.castTime : 1,
+      cooldown: typeof l1?.cooldown === 'number' ? l1.cooldown : undefined,
+      baseEff: typeof s.baseEffectiveness === 'number' ? s.baseEffectiveness : 1,
+      avgRatio,
+      moreDmg: Number(skillMoreDmg.toFixed(3)),
+      moreSpd: Number(skillMoreSpd.toFixed(3)),
+    };
+  }
+
+  // Parse all player active skill files to connect minion gems -> minionList, limits, actorLevel
+  const playerSkillBlocks = {};
+  for (const file of readdirSync(join(pobData, 'Skills'))) {
+    if (!file.endsWith('.lua') || file === 'minion.lua' || file.startsWith('sup_')) continue;
+    Object.assign(playerSkillBlocks, extractLuaBlocks(read(join(pobData, 'Skills', file)), /^skills\["([^"]+)"\] = /gm));
+  }
+
+  const gemMinions = {};
+  const neededMinions = new Set();
+  for (const g of gems) {
+    if (g.support || (!g.types.includes('CreatesMinion') && !g.tags.includes('minion'))) continue;
+    const sk = playerSkillBlocks[g.skillId];
+    if (!sk) continue;
+    const minionList = Array.isArray(sk.minionList) ? sk.minionList.filter((x) => typeof x === 'string') : [];
+    const isSpectre = g.skillId.startsWith('RaiseSpectre');
+    if (!minionList.length && !isSpectre) continue;
+
+    const statMap = Object.fromEntries((sk.constantStats || []).map((x) => [x[0], x[1]]));
+    const stNames = sk.stats || [];
+    const l20 = sk.levels?.[20] || sk.levels?.[1];
+    if (l20?.__array) {
+      stNames.forEach((name, idx) => {
+        if (typeof l20.__array[idx] === 'number') statMap[name] = l20.__array[idx];
+      });
+    }
+    const { limit: rawLimit, limitType } = resolveLimitInfo(g.skillId, statMap);
+    // Raise Zombie of Falling has dummy cap 200 because zombies immediately expire on impact
+    const limit = g.skillId === 'RaiseZombieAltY' ? 1 : rawLimit;
+    const actorLevel20 = statMap.base_display_minion_actor_level ?? statMap.raised_spectre_level ?? 70;
+    const moreDmgPct = statMap['active_skill_minion_damage_+%_final'] ?? statMap['active_skill_minion_physical_damage_+%_final'] ?? 0;
+    const moreSpdPct = statMap['active_skill_minion_attack_speed_+%_final'] ?? 0;
+    const minAdd = statMap.attack_minimum_added_physical_damage ?? 0;
+    const maxAdd = statMap.attack_maximum_added_physical_damage ?? 0;
+
+    const finalList = isSpectre ? ['DefaultSpectre'] : minionList;
+    for (const mid of finalList) neededMinions.add(mid);
+    gemMinions[g.skillId] = {
+      minionList: finalList,
+      limit,
+      limitType,
+      actorLevel20,
+      gemMoreDamage: Number((1 + moreDmgPct / 100).toFixed(3)),
+      gemMoreSpeed: Number((1 + moreSpdPct / 100).toFixed(3)),
+      addedPhysAvg: Math.round((minAdd + maxAdd) / 2),
+      ...(g.skillId === 'HeraldOfAgony' ? { virulenceScale: true } : {}),
+    };
+  }
+
+  // Parse Minions.lua + Frost Auto-Scout fallback Spectre from Spectres.lua
+  const rawMinions = extractLuaBlocks(read(join(pobData, 'Minions.lua')), /^minions\["([^"]+)"\] = /gm);
+  const spectreSrc = read(join(pobData, 'Spectres.lua'));
+  const spectreBlocks = extractLuaBlocks(spectreSrc, /^minions\["([^"]+)"\] = /gm);
+  if (spectreBlocks['Metadata/Monsters/LeagueHeist/Robot/RobotClockworkGolemColdSpectre']) {
+    rawMinions.DefaultSpectre = spectreBlocks['Metadata/Monsters/LeagueHeist/Robot/RobotClockworkGolemColdSpectre'];
+  }
+
+  const minions = {};
+  for (const id of neededMinions) {
+    const m = rawMinions[id];
+    if (!m) continue;
+    const mods = parseMinionMods(m.modList);
+    // Pick primary offensive skill from m.skillList (skip Teleport/Consume/QuickDodge/Empowered/high-cooldown skills)
+    let bestSk = null;
+    for (const sid of m.skillList || []) {
+      if (/Teleport|Consume|Dodge|Curse|Taunt|Empowered/i.test(sid)) continue;
+      const sk = minionSkills[sid];
+      if (!sk) continue;
+      if (sk.cooldown && sk.cooldown >= 2) continue;
+      if (!bestSk || (sk.isSpell ? sk.baseEff : sk.baseMultiplier * sk.moreDmg) > (bestSk.isSpell ? bestSk.baseEff : bestSk.baseMultiplier * bestSk.moreDmg)) {
+        bestSk = sk;
+      }
+    }
+    if (!bestSk) {
+      for (const sid of m.skillList || []) {
+        if (/Teleport|Consume|Dodge|Curse|Taunt/i.test(sid)) continue;
+        const sk = minionSkills[sid];
+        if (!sk) continue;
+        bestSk = sk;
+        break;
+      }
+    }
+    const isSpell = Boolean(bestSk?.isSpell);
+    minions[id] = {
+      id,
+      name: m.name || id,
+      damage: typeof m.damage === 'number' ? m.damage : 1,
+      attackTime: typeof m.attackTime === 'number' && m.attackTime > 0 ? m.attackTime : 1,
+      ...(m.limit ? { limitKey: m.limit } : {}),
+      skillMult: isSpell
+        ? Number(((bestSk.baseEff || 1) * (bestSk.avgRatio || 1)).toFixed(3))
+        : Number((((bestSk?.baseMultiplier || 1) * (bestSk?.moreDmg || 1))).toFixed(3)),
+      ...(isSpell ? { isSpell: true, castTime: bestSk.cooldown || bestSk.castTime || 1 } : {}),
+      moreDamage: Number((mods.moreDamage * (bestSk?.moreDmg && isSpell ? bestSk.moreDmg : 1)).toFixed(3)),
+      moreSpeed: Number((mods.moreSpeed * (bestSk?.moreSpd || 1)).toFixed(3)),
+      incDamage: mods.incDamage,
+      incSpeed: mods.incSpeed,
+      ...(mods.addedFlat ? { addedFlat: mods.addedFlat } : {}),
+    };
+  }
+
+  return { allyDamageTable, minions, gemMinions };
+}
+
+// ---------------------------------------------------------------------------
 const tree = buildTree();
 write('tree.json', tree);
-write('gems.json', buildGems());
+const gems = buildGems();
+write('gems.json', gems);
 const bases = buildBases();
 write('bases.json', bases);
 write('mods.json', {
@@ -383,3 +604,4 @@ write('mods.json', {
 });
 write('uniques.json', buildUniques(bases));
 write('pantheons.json', buildPantheons());
+write('minions.json', buildMinions(gems));
