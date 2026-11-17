@@ -19,6 +19,10 @@ export interface ProjectedDefenses {
   isSuppressLucky: boolean;
   attackDodgePct: number;
   spellDodgePct: number;
+  maxFireRes: number;
+  maxColdRes: number;
+  maxLightRes: number;
+  maxChaosRes: number;
   maxEleRes: number;
   effEleRes: number;
   effChaosRes: number;
@@ -85,10 +89,15 @@ export function computeProjectedDefenses(
   let isSuppressLucky = false;
   let rawAttackDodge = 0;
   let rawSpellDodge = 0;
+  let maxAllEleBonus = 0;
+  let maxAllResBonus = 0;
   let maxFireBonus = 0;
   let maxColdBonus = 0;
   let maxLightBonus = 0;
   let maxChaosBonus = 0;
+  let hasValako = false;
+  let hasMelding = false;
+  let lockedMaxRes: number | null = null;
   let flatPdr = arch.pantheonMajor === 'Solaris' ? 6 : 0;
   let noStrLife = false;
   let physToFire = 0;
@@ -150,19 +159,39 @@ export function computeProjectedDefenses(
         }
       }
 
-      const mAllMax = /\+(\d+)% to all maximum Elemental Resistances/i.exec(l);
-      if (mAllMax) {
-        const v = Number(mAllMax[1]);
-        maxFireBonus += v; maxColdBonus += v; maxLightBonus += v;
+      if (/Modifiers to Maximum Fire Resistance also apply to Maximum Cold and Lightning Resistances/i.test(l)) {
+        hasValako = true;
       }
-      const mMaxFire = /\+(\d+)% to maximum Fire Resistance/i.exec(l);
-      if (mMaxFire) maxFireBonus += Number(mMaxFire[1]);
-      const mMaxCold = /\+(\d+)% to maximum Cold Resistance/i.exec(l);
-      if (mMaxCold) maxColdBonus += Number(mMaxCold[1]);
-      const mMaxLight = /\+(\d+)% to maximum Lightning Resistance/i.exec(l);
-      if (mMaxLight) maxLightBonus += Number(mMaxLight[1]);
-      const mMaxChaos = /\+(\d+)% to maximum Chaos Resistance/i.exec(l);
-      if (mMaxChaos) maxChaosBonus += Number(mMaxChaos[1]);
+      if (/Elemental Resistances are capped by your highest Maximum Elemental Resistance instead/i.test(l)) {
+        hasMelding = true;
+      }
+      const mLockMax = /Your Maximum Resistances are (\d+)%/i.exec(l);
+      if (mLockMax) lockedMaxRes = Number(mLockMax[1]);
+
+      if (!/minions|during effect/i.test(l)) {
+        if (/if Equipped Helmet, Body Armour, Gloves, and Boots all have Armour/i.test(l)) {
+          const allArmour = ['Helmet', 'Body Armour', 'Gloves', 'Boots'].every((slot) => {
+            const id = gear.slotMap[slot];
+            const it = id ? gear.items.find((x) => x.id === id) : undefined;
+            return (it?.base.armour?.ArmourBaseMax ?? 0) > 0;
+          });
+          const mArmMastery = /([+-]\d+)% to all maximum Elemental Resistances/i.exec(l);
+          if (allArmour && mArmMastery) maxAllEleBonus += Number(mArmMastery[1]);
+        } else if (!/if you have Reserved Life and Mana/i.test(l)) {
+          const mAllEleMax = /([+-]\d+)% to all maximum Elemental Resistances/i.exec(l);
+          if (mAllEleMax) maxAllEleBonus += Number(mAllEleMax[1]);
+          const mAllMax = /([+-]\d+)% to all maximum Resistances/i.exec(l);
+          if (mAllMax) maxAllResBonus += Number(mAllMax[1]);
+          const mMaxFire = /([+-]\d+)% to maximum Fire Resistance/i.exec(l);
+          if (mMaxFire) maxFireBonus += Number(mMaxFire[1]);
+          const mMaxCold = /([+-]\d+)% to maximum Cold Resistance/i.exec(l);
+          if (mMaxCold) maxColdBonus += Number(mMaxCold[1]);
+          const mMaxLight = /([+-]\d+)% to maximum Lightning Resistance/i.exec(l);
+          if (mMaxLight) maxLightBonus += Number(mMaxLight[1]);
+          const mMaxChaos = /([+-]\d+)% to maximum Chaos Resistance/i.exec(l);
+          if (mMaxChaos) maxChaosBonus += Number(mMaxChaos[1]);
+        }
+      }
 
       const mPdr = /(\d+)% additional Physical Damage Reduction/i.exec(l);
       if (mPdr) flatPdr += Number(mPdr[1]);
@@ -369,10 +398,17 @@ export function computeProjectedDefenses(
   const spellSuppressPreventPct = Math.min(75, 50 + preventBonus);
 
   // 6. Effective Resistances & Max Hits
-  const capFire = Math.min(90, 75 + maxFireBonus);
-  const capCold = Math.min(90, 75 + maxColdBonus);
-  const capLight = Math.min(90, 75 + maxLightBonus);
-  const capChaos = Math.min(90, 75 + maxChaosBonus);
+  const sharedEleBonus = maxAllEleBonus + maxAllResBonus;
+  let capFire = lockedMaxRes ?? Math.min(90, 75 + sharedEleBonus + maxFireBonus);
+  let capCold = lockedMaxRes ?? Math.min(90, 75 + sharedEleBonus + maxColdBonus + (hasValako ? maxFireBonus : 0));
+  let capLight = lockedMaxRes ?? Math.min(90, 75 + sharedEleBonus + maxLightBonus + (hasValako ? maxFireBonus : 0));
+  const capChaos = lockedMaxRes ?? Math.min(90, 75 + maxAllResBonus + maxChaosBonus);
+  if (hasMelding && lockedMaxRes === null) {
+    const highest = Math.max(capFire, capCold, capLight);
+    capFire = highest;
+    capCold = highest;
+    capLight = highest;
+  }
 
   const effFire = Math.min(capFire, gear.resists.fire);
   const effCold = Math.min(capCold, gear.resists.cold);
@@ -456,6 +492,10 @@ export function computeProjectedDefenses(
     isSuppressLucky,
     attackDodgePct,
     spellDodgePct,
+    maxFireRes: capFire,
+    maxColdRes: capCold,
+    maxLightRes: capLight,
+    maxChaosRes: capChaos,
     maxEleRes,
     effEleRes,
     effChaosRes,

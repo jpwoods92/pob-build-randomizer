@@ -560,3 +560,32 @@ test('localStorage build persistence saves, renames, reloads identically, and de
   saveBuildToStorage(orig, data.tree.version, 'Temp', mockStorage);
   assert.equal(clearSavedBuilds(mockStorage).length, 0);
 });
+
+test('raised max resistances from tree, auras, and gear are tracked per element and capped accurately', async () => {
+  let sawRaisedMaxRes = false;
+  for (let i = 0; i < 25; i++) {
+    const b = await generateBuild(data, baseOptions({
+      seed: `max-res-${i}`,
+      classId: i % 2 === 0 ? 1 : 5, // Marauder (Chieftain Valako / Prismatic Skin) or Templar
+      leagueMode: 'hardcore',
+      economy: 'trade',
+    }));
+    const d = b.defenses;
+    const r = b.gear.resists;
+    assert.ok(d.maxFireRes >= 75 && d.maxFireRes <= 90);
+    assert.ok(d.maxColdRes >= 75 && d.maxColdRes <= 90);
+    assert.ok(d.maxLightRes >= 75 && d.maxLightRes <= 90);
+    assert.ok(d.maxChaosRes >= 75 && d.maxChaosRes <= 90);
+    assert.ok(r.fire >= d.maxFireRes, `Fire ${r.fire} below raised cap ${d.maxFireRes}`);
+    assert.ok(r.cold >= d.maxColdRes, `Cold ${r.cold} below raised cap ${d.maxColdRes}`);
+    assert.ok(r.lightning >= d.maxLightRes, `Light ${r.lightning} below raised cap ${d.maxLightRes}`);
+    assert.ok(
+      b.tree.summary.keystones.includes('Chaos Inoculation') || r.chaos >= d.maxChaosRes,
+      `Chaos ${r.chaos} below raised cap ${d.maxChaosRes}`,
+    );
+    if (d.maxFireRes > 75 || d.maxColdRes > 75 || d.maxLightRes > 75 || d.maxChaosRes > 75) {
+      sawRaisedMaxRes = true;
+    }
+  }
+  assert.ok(sawRaisedMaxRes, 'Expected Marauder/Templar HC sample to roll raised max resistances > 75%');
+});

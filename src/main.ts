@@ -383,7 +383,13 @@ async function main() {
       .filter((x) => x.node && x.node.t === 'notable' && !x.node.a)
       .slice(0, 8);
 
-    const eleCapped = r.fire >= 75 && r.cold >= 75 && r.lightning >= 75;
+    const eleCapped = r.fire >= d.maxFireRes && r.cold >= d.maxColdRes && r.lightning >= d.maxLightRes;
+    const hasCustomCaps = d.maxFireRes !== 75 || d.maxColdRes !== 75 || d.maxLightRes !== 75 || d.maxChaosRes !== 75;
+    const resCapSummary = !hasCustomCaps
+      ? '75% default cap'
+      : d.maxFireRes === d.maxColdRes && d.maxColdRes === d.maxLightRes && d.maxChaosRes === 75
+        ? `${d.maxFireRes}% raised ele cap`
+        : `${d.maxFireRes}/${d.maxColdRes}/${d.maxLightRes}% ele · ${d.maxChaosRes}% chaos cap`;
 
     document.getElementById('view-dashboard')!.innerHTML = `
       <div class="bento-card">
@@ -450,17 +456,17 @@ async function main() {
           <div class="card-head">
             <div>
               <h3>Resistances</h3>
-              <p class="card-sub">Post-Kitava (-60%) vs 75% default cap</p>
+              <p class="card-sub">Post-Kitava (-60%) vs ${esc(resCapSummary)}</p>
             </div>
             <span class="badge">${eleCapped ? 'Ele Capped' : 'Uncapped'}</span>
           </div>
           <div class="meter-stack">
-            ${meterHtml('Fire Resistance', `${Math.min(75, r.fire)}% / 75% (${r.fire}%)`, (Math.max(0, r.fire) / 75) * 100, '#ef4444')}
-            ${meterHtml('Cold Resistance', `${Math.min(75, r.cold)}% / 75% (${r.cold}%)`, (Math.max(0, r.cold) / 75) * 100, '#3b82f6')}
-            ${meterHtml('Lightning Resistance', `${Math.min(75, r.lightning)}% / 75% (${r.lightning}%)`, (Math.max(0, r.lightning) / 75) * 100, '#eab308')}
+            ${meterHtml('Fire Resistance', `${Math.min(d.maxFireRes, r.fire)}% / ${d.maxFireRes}% (${r.fire}%)`, (Math.max(0, r.fire) / d.maxFireRes) * 100, '#ef4444')}
+            ${meterHtml('Cold Resistance', `${Math.min(d.maxColdRes, r.cold)}% / ${d.maxColdRes}% (${r.cold}%)`, (Math.max(0, r.cold) / d.maxColdRes) * 100, '#3b82f6')}
+            ${meterHtml('Lightning Resistance', `${Math.min(d.maxLightRes, r.lightning)}% / ${d.maxLightRes}% (${r.lightning}%)`, (Math.max(0, r.lightning) / d.maxLightRes) * 100, '#eab308')}
             ${b.tree.summary.keystones.includes('Chaos Inoculation')
               ? meterHtml('Chaos Resistance (CI)', 'Immune (CI)', 100, '#8b5cf6')
-              : meterHtml('Chaos Resistance', `${Math.min(75, r.chaos)}% / 75% (${r.chaos}%)`, (Math.max(0, r.chaos) / 75) * 100, '#8b5cf6')}
+              : meterHtml('Chaos Resistance', `${Math.min(d.maxChaosRes, r.chaos)}% / ${d.maxChaosRes}% (${r.chaos}%)`, (Math.max(0, r.chaos) / d.maxChaosRes) * 100, '#8b5cf6')}
           </div>
         </div>
 

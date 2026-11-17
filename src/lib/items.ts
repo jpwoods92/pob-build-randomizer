@@ -362,7 +362,12 @@ function isUniqueSuitable(u: UniqueData, arch: BuildArchetype, slotTypes: string
   if (arch.options.leagueMode === 'hardcore') {
     if (HC_RISKY_UNIQUE.test(u.name)) return false;
     const rawTxt = [...u.implicits, ...u.explicits].join(' ').toLowerCase();
-    if (/damage(?: from hits)? taken as physical/.test(rawTxt) || /-\d+% to maximum .* resistance/.test(rawTxt)) return false;
+    if (
+      /damage(?: from hits)? taken as physical/.test(rawTxt)
+      || /-\(?[\d-]+% to (?:all )?maximum .* resistanc/.test(rawTxt)
+      || /your maximum resistances are \(?(?:[0-6]\d|7[0-4])/.test(rawTxt)
+      || /elemental resistances are zero/.test(rawTxt)
+    ) return false;
   }
   if (u.extra?.some((e) => /Limited to:/i.test(e))) return false;
   const fullTxt = [...u.implicits, ...u.explicits].join(' ').toLowerCase();
@@ -769,22 +774,35 @@ function tallyModsStats(
 ) {
   for (const rawLine of lines) {
     const l = rawLine.replace(/\{[^}]+\}/g, '');
-    if (maxRes) {
-      const mAllMax = /\+(\d+)% to all maximum Elemental Resistances/i.exec(l);
+    if (maxRes && !/minions|during effect|if equipped|if you have reserved/i.test(l)) {
+      const mAllEleMax = /([+-]\d+)% to all maximum Elemental Resistances/i.exec(l);
+      if (mAllEleMax) {
+        const v = Number(mAllEleMax[1]);
+        maxRes.fire = Math.min(90, maxRes.fire + v);
+        maxRes.cold = Math.min(90, maxRes.cold + v);
+        maxRes.lightning = Math.min(90, maxRes.lightning + v);
+      }
+      const mAllMax = /([+-]\d+)% to all maximum Resistances/i.exec(l);
       if (mAllMax) {
         const v = Number(mAllMax[1]);
         maxRes.fire = Math.min(90, maxRes.fire + v);
         maxRes.cold = Math.min(90, maxRes.cold + v);
         maxRes.lightning = Math.min(90, maxRes.lightning + v);
+        maxRes.chaos = Math.min(90, maxRes.chaos + v);
       }
-      const mMaxF = /\+(\d+)% to maximum Fire Resistance/i.exec(l);
+      const mMaxF = /([+-]\d+)% to maximum Fire Resistance/i.exec(l);
       if (mMaxF) maxRes.fire = Math.min(90, maxRes.fire + Number(mMaxF[1]));
-      const mMaxC = /\+(\d+)% to maximum Cold Resistance/i.exec(l);
+      const mMaxC = /([+-]\d+)% to maximum Cold Resistance/i.exec(l);
       if (mMaxC) maxRes.cold = Math.min(90, maxRes.cold + Number(mMaxC[1]));
-      const mMaxL = /\+(\d+)% to maximum Lightning Resistance/i.exec(l);
+      const mMaxL = /([+-]\d+)% to maximum Lightning Resistance/i.exec(l);
       if (mMaxL) maxRes.lightning = Math.min(90, maxRes.lightning + Number(mMaxL[1]));
-      const mMaxCh = /\+(\d+)% to maximum Chaos Resistance/i.exec(l);
+      const mMaxCh = /([+-]\d+)% to maximum Chaos Resistance/i.exec(l);
       if (mMaxCh) maxRes.chaos = Math.min(90, maxRes.chaos + Number(mMaxCh[1]));
+      const mLock = /Your Maximum Resistances are (\d+)%/i.exec(l);
+      if (mLock) {
+        const cap = Number(mLock[1]);
+        maxRes.fire = cap; maxRes.cold = cap; maxRes.lightning = cap; maxRes.chaos = cap;
+      }
     }
     const mAllRes = /\+(-?\d+)% to all Elemental Resistances/i.exec(l);
     if (mAllRes) {
@@ -875,11 +893,16 @@ export function generateGear(
   };
 
   let currentSuppress = hasMagebane ? Math.floor(attrs.dex / 15) : 0;
+  let hasValako = false;
+  let hasArmourMaxResMastery = false;
   for (const id of tree.nodes) {
     const n = data.tree.nodes[id];
     if (n?.s) {
       tallyModsStats(n.s, resists, dummyAttrs, maxRes);
       currentSuppress += countSuppressLines(n.s);
+      if (n.s.some((s) => /Modifiers to Maximum Fire Resistance also apply to Maximum Cold and Lightning Resistances/i.test(s))) {
+        hasValako = true;
+      }
     }
     if (n?.t === 'mastery' && tree.masteryEffects[id]) {
       const eff = n.me?.find((m) => m.e === tree.masteryEffects[id]);
@@ -888,6 +911,9 @@ export function generateGear(
         currentSuppress += countSuppressLines(eff.s);
         if (isEvasionBuild && eff.s.some((s) => /if Equipped Helmet, Body Armour, Gloves, and Boots all have Evasion Rating/i.test(s))) {
           currentSuppress += 15;
+        }
+        if (eff.s.some((s) => /if Equipped Helmet, Body Armour, Gloves, and Boots all have Armour/i.test(s))) {
+          hasArmourMaxResMastery = true;
         }
       }
     }
@@ -1072,7 +1098,7 @@ export function generateGear(
         rng,
         { isJewel: true, jewelNodeId: nodeId },
       );
-      tallyModsStats([...jewel.implicits, ...jewel.explicits], resists, attrs);
+      tallyModsStats([...jewel.implicits, ...jewel.explicits], resists, attrs, maxRes);
       items.push(jewel);
       jewelMap[nodeId] = id;
     }
@@ -1113,6 +1139,23 @@ export function generateGear(
     items
       .filter((it) => it.rarity === 'RARE' && !it.jewelNodeId && it.base.type !== 'Flask')
       .sort((a, b) => patchSlotPriority(a) - patchSlotPriority(b));
+
+  if (hasArmourMaxResMastery) {
+    const allHaveArmour = ['Helmet', 'Body Armour', 'Gloves', 'Boots'].every((slot) => {
+      const id = slotMap[slot];
+      const it = id ? items.find((x) => x.id === id) : undefined;
+      return (it?.base.armour?.ArmourBaseMax ?? 0) > 0;
+    });
+    if (allHaveArmour) {
+      maxRes.fire = Math.min(90, maxRes.fire + 1);
+      maxRes.cold = Math.min(90, maxRes.cold + 1);
+      maxRes.lightning = Math.min(90, maxRes.lightning + 1);
+    }
+  }
+  if (hasValako) {
+    maxRes.cold = Math.min(90, Math.max(maxRes.cold, maxRes.fire));
+    maxRes.lightning = Math.min(90, Math.max(maxRes.lightning, maxRes.fire));
+  }
 
   // Global guarantee: cap Fire, Cold, Lightning everywhere, AND cap Chaos in Hardcore (unless CI)
   const canSafelyRemoveLines = (lines: string[]) => {
