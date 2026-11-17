@@ -5,6 +5,7 @@ import { readFileSync, writeFileSync, readdirSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseLuaReturn, parseLuaValue } from './lua-parse.mjs';
+import { parseGameVersionsLua } from './pob-version.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const pobData = join(root, '.cache/pob/src/Data');
@@ -32,15 +33,9 @@ function orbitAngles(count) {
 
 function detectTreeVersion() {
   try {
-    const src = read(join(root, '.cache/pob/src/GameVersions.lua'));
-    const latestMatch = src.match(/latestTreeVersion\s*=\s*"(\d+_\d+)"/);
-    const entries = [...src.matchAll(/\["(\d+_\d+)"\]\s*=\s*\{[^}]*url\s*=\s*"https:\/\/www\.pathofexile\.com\/passive-skill-tree\/([^"/]+)\/"/gs)];
-    const version = latestMatch?.[1] ?? entries.at(-1)?.[1] ?? '3_30';
-    const matched = entries.find((e) => e[1] === version);
-    const urlVersion = matched?.[2] ?? `${version.replace(/_/g, '.')}.0`;
-    return { version, urlVersion };
+    return parseGameVersionsLua(read(join(root, '.cache/pob/src/GameVersions.lua')));
   } catch {
-    return { version: '3_30', urlVersion: '3.30.0' };
+    return { version: '3_30', display: '3.30', urlVersion: '3.30.0' };
   }
 }
 

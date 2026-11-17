@@ -9,6 +9,7 @@ import type { GameData } from '../lib/types.ts';
 import { generateBuild } from '../lib/generator.ts';
 import { canSupportSkill } from '../lib/skills.ts';
 import type { BuildOptions } from '../lib/archetype.ts';
+import { parseGameVersionsLua } from '../../scripts/pob-version.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '../..');
 const loadJson = <T>(name: string): T =>
@@ -489,4 +490,17 @@ test('defenses report evasion, dodge, spell suppression and prioritize suppress 
   }
   assert.ok(hcSuppSum / hcN >= 60, `Expected HC evasion avg suppression >= 60%, got ${(hcSuppSum / hcN).toFixed(1)}%`);
   assert.ok(hcCappedCount >= 4, `Expected multiple HC evasion builds at 100% suppress, got ${hcCappedCount}/${hcN}`);
+});
+
+test('parseGameVersionsLua detects future PoE/PoB versions dynamically', () => {
+  const sample = `
+    latestTreeVersion = "3_31"
+    treeVersions = {
+      ["3_30"] = { display = "3.30", num = 3.30, url = "https://www.pathofexile.com/passive-skill-tree/3.30.0/" },
+      ["3_31_ruthless"] = { display = "3.31 (ruthless)", num = 3.31, url = "https://www.pathofexile.com/passive-skill-tree/ruthless/" },
+      ["3_31"] = { display = "3.31", num = 3.31, url = "https://www.pathofexile.com/passive-skill-tree/3.31.0/" },
+    }
+  `;
+  const parsed = parseGameVersionsLua(sample);
+  assert.deepEqual(parsed, { version: '3_31', display: '3.31', urlVersion: '3.31.0' });
 });

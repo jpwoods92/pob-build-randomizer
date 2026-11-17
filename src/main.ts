@@ -64,7 +64,19 @@ async function main() {
           <div class="brand-mark">PoB</div>
           <div class="brand-text">
             <h1>PoB Forge</h1>
-            <p>PoE 1 (${esc(data.tree.version.replace('_', '.'))}) Randomizer</p>
+            <div class="brand-meta">
+              <p>PoE 1 (${esc(data.tree.version.replace('_', '.'))})</p>
+              <button
+                type="button"
+                class="sync-pill"
+                id="pob-sync-btn"
+                title="Check Path of Building updates and sync data"
+              >
+                <span class="sync-dot" aria-hidden="true"></span>
+                <span id="pob-sync-label">Sync PoB</span>
+              </button>
+            </div>
+            <div class="sync-note" id="pob-sync-note" hidden></div>
           </div>
         </div>
 
@@ -241,6 +253,133 @@ async function main() {
     if (themePref === 'system') applyTheme('system');
   });
   applyTheme(themePref);
+
+  interface PobStatusRes {
+    ok: boolean;
+    canSync?: boolean;
+    offline?: boolean;
+    localVersion: string;
+    localDisplay: string;
+    upstreamVersion?: string | null;
+    upstreamDisplay?: string | null;
+    versionChanged?: boolean;
+    commitsChanged?: boolean;
+    updateAvailable?: boolean;
+  }
+
+  interface PobSyncRes {
+    ok: boolean;
+    offlineError?: boolean;
+    error?: string;
+    changed?: boolean;
+    after?: { version: string; display: string; nodes: number; gems: number; uniques: number };
+  }
+
+  const syncBtn = document.getElementById('pob-sync-btn') as HTMLButtonElement;
+  const syncLabel = document.getElementById('pob-sync-label')!;
+  const syncNote = document.getElementById('pob-sync-note')!;
+  let syncApiAvailable = true;
+
+  function setSyncPill(state: 'idle' | 'ok' | 'update' | 'busy', text: string, title: string) {
+    syncBtn.classList.remove('sync-pill-ok', 'sync-pill-update', 'sync-pill-busy');
+    if (state !== 'idle') syncBtn.classList.add(`sync-pill-${state}`);
+    syncLabel.textContent = text;
+    syncBtn.title = title;
+  }
+
+  async function detectPobStatus() {
+    setSyncPill('idle', 'Checking…', 'Checking upstream Path of Building version...');
+    try {
+      const res = await fetch('/api/pob-status', { cache: 'no-store' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const st = (await res.json()) as PobStatusRes;
+      syncApiAvailable = Boolean(st.canSync);
+      if (st.versionChanged && st.upstreamDisplay) {
+        setSyncPill('update', `Update ${st.upstreamDisplay}`, `New PoB version ${st.upstreamDisplay} detected (local ${st.localDisplay}) — click to sync`);
+      } else if (st.commitsChanged) {
+        setSyncPill('update', 'Update PoB', 'Upstream Path of Building data has new commits — click to sync');
+      } else if (st.offline) {
+        setSyncPill('idle', 'Sync PoB', `PoB ${st.localDisplay} (offline check) — click to sync or rebuild`);
+      } else {
+        setSyncPill('ok', 'Synced', `PoB ${st.localDisplay} is up to date — click to resync`);
+      }
+      return;
+    } catch {
+      syncApiAvailable = false;
+    }
+
+    // Static hosting fallback: detect upstream version directly from PoB GameVersions.lua
+    try {
+      const res = await fetch(
+        'https://raw.githubusercontent.com/PathOfBuildingCommunity/PathOfBuilding/master/src/GameVersions.lua',
+        { cache: 'no-store' },
+      );
+      if (!res.ok) throw new Error('upstream fetch failed');
+      const lua = await res.text();
+      const latest = lua.match(/latestTreeVersion\s*=\s*"(\d+_\d+)"/)?.[1];
+      const localDisplay = data.tree.version.replace('_', '.');
+      if (latest && latest !== data.tree.version) {
+        const upDisplay = latest.replace('_', '.');
+        setSyncPill('update', `Update ${upDisplay}`, `New PoB version ${upDisplay} available — run npm run sync-pob locally`);
+      } else {
+        setSyncPill('ok', 'Synced', `PoB ${localDisplay} matches upstream latestTreeVersion`);
+      }
+    } catch {
+      setSyncPill('idle', 'Sync PoB', 'Run npm run sync-pob to update from Path of Building');
+    }
+  }
+
+  async function runPobSync(offlineMode = false) {
+    if (!syncApiAvailable) {
+      syncNote.hidden = false;
+      syncNote.textContent = 'Static build — run `npm run sync-pob` in the repo to pull & rebuild.';
+      return;
+    }
+    syncBtn.disabled = true;
+    syncNote.hidden = true;
+    setSyncPill('busy', offlineMode ? 'Rebuilding…' : 'Syncing…', 'Syncing Path of Building data...');
+    try {
+      const res = await fetch('/api/pob-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ offline: offlineMode }),
+      });
+      const out = (await res.json()) as PobSyncRes;
+      if (!res.ok || !out.ok) {
+        syncBtn.disabled = false;
+        setSyncPill('idle', 'Sync PoB', out.error ?? 'Sync failed');
+        syncNote.hidden = false;
+        syncNote.innerHTML = out.offlineError
+          ? `Offline (GitHub unreachable). <button type="button" class="sync-note-link" id="rebuild-cache-btn">Rebuild cache</button>`
+          : esc(out.error ?? 'Sync failed.');
+        document.getElementById('rebuild-cache-btn')?.addEventListener('click', () => {
+          void runPobSync(true);
+        });
+        return;
+      }
+
+      setSyncPill('ok', 'Synced', `PoB ${out.after?.display ?? ''} ready`);
+      syncNote.hidden = false;
+      if (out.changed || offlineMode) {
+        syncNote.textContent = `Synced ${out.after?.display ?? ''} (${out.after?.gems ?? 0} gems) — reloading…`;
+        setTimeout(() => window.location.reload(), 650);
+      } else {
+        syncBtn.disabled = false;
+        syncNote.textContent = `Already up to date (${out.after?.display ?? ''}).`;
+        setTimeout(() => { syncNote.hidden = true; }, 3500);
+      }
+    } catch (err) {
+      syncBtn.disabled = false;
+      setSyncPill('idle', 'Sync PoB', 'Sync request failed');
+      syncNote.hidden = false;
+      syncNote.textContent = err instanceof Error ? err.message : 'Sync request failed.';
+    }
+  }
+
+  syncBtn.addEventListener('click', () => {
+    void runPobSync(false);
+  });
+  void detectPobStatus();
 
   function switchView(view: NavView) {
     activeView = view;
