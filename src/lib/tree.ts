@@ -234,79 +234,110 @@ function scoreStatsText(stats: string[] | undefined, arch: BuildArchetype): numb
   return score;
 }
 
-function isKeystoneAllowed(node: TreeNode, arch: BuildArchetype): boolean {
+function isKeystoneAllowed(
+  node: TreeNode,
+  arch: BuildArchetype,
+  manaReservedPct = 80,
+  allocatedKeystones?: Set<string>,
+): boolean {
   const name = node.n;
   const isHC = arch.options.leagueMode === 'hardcore';
+  const isSpellSkill = arch.damageStyle === 'spell' || (arch.damageStyle === 'totem' && arch.mainSkill.types.includes('Spell'));
+  const isAttackSkill = arch.damageStyle === 'attack' || arch.mainSkill.types.includes('Attack');
+  const isStrBuild = arch.primaryAttr === 'str' || arch.statStack === 'str';
+  const isArmourClass = isStrBuild || arch.classData.name === 'Templar' || arch.classData.name === 'Marauder' || arch.classData.name === 'Duelist';
+
   switch (name) {
     case 'Chaos Inoculation':
       return arch.defenseStyle === 'es';
-    case 'Blood Magic':
-      return false; // We use mana reservation auras
     case 'Ancestral Bond':
       return arch.damageStyle === 'totem';
-    case 'Minion Instability':
-    case 'Necromantic Aegis':
-      return arch.damageStyle === 'minion';
-    case 'Resolute Technique':
-      return arch.damageStyle === 'attack' && arch.critMode === 'non_crit';
-    case 'Elemental Overload':
-      return arch.critMode === 'non_crit' && arch.elements.some((e) => e === 'fire' || e === 'cold' || e === 'lightning');
-    case 'Avatar of Fire':
-      return arch.elements.length === 1 && arch.elements[0] === 'fire';
-    case 'Pain Attunement':
-      return arch.defenseStyle === 'es' && !isHC;
-    case 'Eldritch Battery':
-      return arch.defenseStyle === 'life';
-    case 'Mind Over Matter':
-      return arch.defenseStyle === 'life' || arch.defenseStyle === 'hybrid';
-    case 'Acrobatics':
-      return arch.primaryAttr === 'dex' && arch.defenseStyle === 'life';
-    case 'Iron Reflexes':
-      return arch.defenseStyle === 'life' && isHC;
-    case 'Magebane':
-      return arch.defenseStyle === 'life' && isHC;
-    case 'Ghost Dance':
-    case 'Ghost Reaver':
-    case 'Wicked Ward':
-    case 'Zealot\'s Oath':
-    case 'Divine Shield':
-      return arch.defenseStyle === 'es' || arch.defenseStyle === 'hybrid';
-    case 'The Agnostic':
-      return arch.defenseStyle === 'life';
-    case 'Point Blank':
-      return arch.statKeywords.includes('projectile') && arch.damageStyle === 'attack';
     case 'Runebinder':
       return arch.statKeywords.includes('brand');
+    case 'Minion Instability':
+      return arch.damageStyle === 'minion' && /Raging Spirit|Skeleton/i.test(arch.mainSkill.name);
+    case 'Necromantic Aegis':
+      return !isHC && arch.damageStyle === 'minion' && arch.weaponSetup.includes('shield');
+    case 'Resolute Technique':
+      return arch.damageStyle === 'attack' && arch.critMode === 'non_crit' && arch.primaryAttr !== 'dex' && !allocatedKeystones?.has('Precise Technique');
+    case 'Precise Technique':
+      return arch.damageStyle === 'attack' && arch.critMode === 'non_crit' && arch.primaryAttr === 'dex' && !allocatedKeystones?.has('Resolute Technique');
+    case 'Elemental Overload':
+      return arch.critMode === 'non_crit' && arch.damageStyle !== 'minion' && arch.damageStyle !== 'link_support' && arch.elements.some((e) => e === 'fire' || e === 'cold' || e === 'lightning');
+    case 'Avatar of Fire':
+      return arch.elements.length === 1 && arch.elements[0] === 'fire' && arch.damageStyle !== 'minion' && arch.damageStyle !== 'link_support';
+    case 'Pain Attunement':
+      // CI is always Full Life (1/1), and our builds reserve Mana rather than Life.
+      return false;
+    case 'Eldritch Battery':
+      return arch.defenseStyle === 'life' && manaReservedPct >= 65 && (arch.primaryAttr === 'int' || arch.classData.name === 'Witch' || arch.classData.name === 'Shadow' || arch.classData.name === 'Templar');
+    case 'Mind Over Matter':
+      return (arch.defenseStyle === 'life' || arch.defenseStyle === 'hybrid') && manaReservedPct <= 50;
+    case 'The Agnostic':
+      return arch.defenseStyle === 'life' && manaReservedPct <= 45 && !allocatedKeystones?.has('Eternal Youth');
+    case 'Eternal Youth':
+      return false;
+    case 'Acrobatics':
+      return arch.defenseStyle === 'life' && arch.primaryAttr === 'dex' && !isHC;
+    case 'Iron Reflexes':
+      return arch.defenseStyle === 'life' && isHC && (arch.primaryAttr === 'str' || arch.classData.name === 'Duelist');
+    case 'Magebane':
+      return arch.defenseStyle === 'life' && isHC && arch.primaryAttr === 'dex';
+    case 'Ghost Dance':
+      return (arch.defenseStyle === 'es' || arch.defenseStyle === 'hybrid') && arch.primaryAttr !== 'str';
+    case 'Ghost Reaver':
+      return (arch.defenseStyle === 'es' || arch.defenseStyle === 'hybrid') && (arch.damageStyle === 'attack' || arch.damageStyle === 'spell') && !arch.mainSkill.types.includes('DamageOverTime') && !allocatedKeystones?.has('Wicked Ward');
+    case 'Wicked Ward':
+      return (arch.defenseStyle === 'es' || arch.defenseStyle === 'hybrid') && !allocatedKeystones?.has('Ghost Reaver');
+    case 'Zealot\'s Oath':
+      return arch.defenseStyle === 'es';
+    case 'Divine Shield':
+      return (arch.defenseStyle === 'es' || arch.defenseStyle === 'hybrid') && isArmourClass;
+    case 'Point Blank':
+      return arch.damageStyle === 'attack' && arch.statKeywords.includes('projectile');
     case 'Perfect Agony':
       return arch.damageStyle === 'dot' && arch.critMode === 'crit';
-    case 'Precise Technique':
-      return arch.damageStyle === 'attack' && arch.critMode === 'non_crit';
     case 'Crimson Dance':
-      return arch.damageStyle === 'dot' && arch.elements.includes('physical');
-    case 'Lone Messenger':
-    case 'Supreme Ego':
-    case 'Veil of the Night':
-    case 'Hollow Palm Technique':
-      return false; // Restricts gear/auras in ways that conflict with randomized gear/auras
+      return arch.damageStyle === 'dot' && arch.elements.includes('physical') && isAttackSkill;
+    case 'Iron Grip':
+      return arch.damageStyle === 'attack' && arch.statKeywords.includes('projectile') && isStrBuild;
+    case 'Iron Will':
+      return isSpellSkill && isStrBuild;
+    case 'The Impaler':
+      return arch.damageStyle === 'attack' && arch.elements.length === 1 && arch.elements[0] === 'physical' && arch.critMode === 'non_crit' && arch.statKeywords.includes('slam');
     case 'Glancing Blows':
-      return arch.weaponSetup.includes('shield');
-    case 'Call to Arms':
-      return false;
+      return arch.weaponSetup.includes('shield') && (arch.ascendancy.internal === 'Necromancer' || arch.ascendancy.internal === 'Guardian');
+    case 'Versatile Combatant':
+      return arch.weaponSetup.includes('shield') && arch.ascendancy.internal === 'Gladiator';
     case 'Solipsism':
+      return arch.statStack === 'int' && arch.defenseStyle === 'life';
     case 'Voracious Flame':
+      return arch.damageStyle === 'dot' && arch.elements.length === 1 && arch.elements[0] === 'fire';
     case 'Bitter Frost':
-    case 'Bloodsoaked Blade':
-    case 'Disciple of Kitava':
-    case 'Arsenal of Vengeance':
+      return !isHC && arch.elements.length === 1 && arch.elements[0] === 'cold' && arch.damageStyle !== 'minion';
     case 'Roiling Tempest':
-    case 'Pitfighter':
-    case 'Kineticism':
-    case 'Veteran\'s Awareness':
-      return !isHC;
+      return !isHC && arch.elements.length === 1 && arch.elements[0] === 'lightning' && arch.damageStyle !== 'minion';
     default:
-      return true;
+      return false;
   }
 }
+
+const KEYSTONE_WEIGHT: Record<string, number> = {
+  'Chaos Inoculation': 220,
+  'Ancestral Bond': 120,
+  Runebinder: 80,
+  'Elemental Overload': 36,
+  'Resolute Technique': 36,
+  'Precise Technique': 36,
+  'Perfect Agony': 36,
+  'Point Blank': 24,
+  'Avatar of Fire': 24,
+  'Crimson Dance': 24,
+  'Zealot\'s Oath': 20,
+  'Wicked Ward': 20,
+  'Ghost Reaver': 20,
+  'Ghost Dance': 20,
+};
 
 function pureAttrKind(node: TreeNode): 'str' | 'dex' | 'int' | null {
   if (node.t !== 'notable' || !node.s || node.s.length === 0) return null;
@@ -320,7 +351,7 @@ function pureAttrKind(node: TreeNode): 'str' | 'dex' | 'int' | null {
   return 'str';
 }
 
-function scoreNode(id: number, node: TreeNode, arch: BuildArchetype): number {
+function scoreNode(id: number, node: TreeNode, arch: BuildArchetype, manaReservedPct = 80): number {
   if (node.t === 'start' || node.t === 'ascStart' || node.t === 'mastery') return 0;
   const pureKind = pureAttrKind(node);
   if (pureKind) {
@@ -331,8 +362,8 @@ function scoreNode(id: number, node: TreeNode, arch: BuildArchetype): number {
   else if (node.t === 'jewel') {
     score += arch.options.economy === 'trade' ? 34 : 20;
   } else if (node.t === 'keystone') {
-    if (!isKeystoneAllowed(node, arch)) return -9999;
-    score += node.n === 'Chaos Inoculation' && arch.defenseStyle === 'es' ? 220 : 22;
+    if (!isKeystoneAllowed(node, arch, manaReservedPct)) return -9999;
+    score += KEYSTONE_WEIGHT[node.n] ?? 12;
   }
   // Small bonus for life/ES cluster travel nodes
   if (node.t === 'normal' && score <= 0) score = 0.5;
@@ -475,6 +506,7 @@ export function generatePassiveTree(
   arch: BuildArchetype,
   rng: Rng,
   attrReqs: { str: number; dex: number; int: number } = { str: 0, dex: 0, int: 0 },
+  manaReservedPct = 80,
 ): GeneratedTree {
   const tree = data.tree;
   const { ascendancyNodes, ascPointsUsed, extraPassivePoints, extraStartClasses } = allocateAscendancy(tree, arch, rng.fork('asc'));
@@ -484,6 +516,7 @@ export function generatePassiveTree(
   const pointsBudget = baseBudget + extraPassivePoints;
 
   const allocated = new Set<number>([arch.classData.start]);
+  const allocatedKeystones = new Set<string>();
   const masteryEffects: Record<number, number> = {};
   const usedMasteryEffects = new Set<number>();
   let pointsUsed = 0;
@@ -533,7 +566,7 @@ export function generatePassiveTree(
   for (const [idStr, node] of Object.entries(tree.nodes)) {
     if (node.a || node.t === 'start' || node.t === 'ascStart' || node.t === 'mastery') continue;
     const id = Number(idStr);
-    nodeScore.set(id, scoreNode(id, node, arch));
+    nodeScore.set(id, scoreNode(id, node, arch, manaReservedPct));
   }
 
   // Helper: allocate a node and optionally pick a high-value adjacent mastery
@@ -595,7 +628,7 @@ export function generatePassiveTree(
       for (const nxt of cnode.adj) {
         const nn = tree.nodes[nxt];
         if (!nn || nn.a || nn.t === 'start' || nn.t === 'mastery') continue;
-        if (nn.t === 'keystone' && !isKeystoneAllowed(nn, arch)) continue;
+        if (nn.t === 'keystone' && !isKeystoneAllowed(nn, arch, manaReservedPct, allocatedKeystones)) continue;
         if (!dist.has(nxt)) {
           dist.set(nxt, d + 1);
           prev.set(nxt, cur);
@@ -650,10 +683,12 @@ export function generatePassiveTree(
     for (const pid of path) {
       if (pointsUsed >= pointsBudget) break;
       if (!allocated.has(pid)) {
+        const pn = tree.nodes[pid];
+        if (pn?.t === 'keystone') allocatedKeystones.add(pn.n);
         allocated.add(pid);
         addNodeAttrs(pid);
         pointsUsed++;
-        if (tree.nodes[pid]?.t === 'notable') {
+        if (pn?.t === 'notable') {
           tryPickMasteryForNotable(pid);
         }
       }
@@ -669,7 +704,7 @@ export function generatePassiveTree(
       for (const nid of an.adj) {
         const nn = tree.nodes[nid];
         if (!nn || nn.a || nn.t === 'start' || nn.t === 'mastery' || allocated.has(nid)) continue;
-        if (nn.t === 'keystone' && !isKeystoneAllowed(nn, arch)) continue;
+        if (nn.t === 'keystone' && !isKeystoneAllowed(nn, arch, manaReservedPct, allocatedKeystones)) continue;
         frontier.push(nid);
       }
     }
@@ -679,6 +714,8 @@ export function generatePassiveTree(
       if (sc < 0) return 0.05;
       return Math.max(1, sc + 5);
     })!;
+    const pickNode = tree.nodes[pick];
+    if (pickNode?.t === 'keystone') allocatedKeystones.add(pickNode.n);
     allocated.add(pick);
     addNodeAttrs(pick);
     pointsUsed++;

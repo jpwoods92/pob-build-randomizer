@@ -285,3 +285,27 @@ test('projected defenses produce valid life, ES, and max hit figures', async () 
   assert.ok(build.defenses.eleMaxHit > build.defenses.maxLife, 'Ele max hit should exceed maxLife with positive ele res');
   assert.ok(build.defenses.chaosMaxHit !== null && build.defenses.chaosMaxHit > 0);
 });
+
+test('keystones are only allocated when directly beneficial to the build', async () => {
+  for (let i = 0; i < 20; i++) {
+    const build = await generateBuild(data, baseOptions({ seed: `ks-synergy-${i}`, classId: (i % 7) as 0 | 1 | 2 | 3 | 4 | 5 | 6 }));
+    const ks = new Set(build.tree.summary.keystones);
+    assert.ok(!ks.has('Eternal Youth'), 'Should not pick Eternal Youth without dedicated ES recharge scaling');
+    if (build.skills.manaReservedPct > 45) {
+      assert.ok(!ks.has('The Agnostic'), 'Should not pick The Agnostic on mana-reserving aura builds');
+    }
+    if (ks.has('Chaos Inoculation')) {
+      assert.ok(!ks.has('Pain Attunement'), 'CI builds are always Full Life and cannot use Pain Attunement');
+    }
+    if (ks.has('Ghost Reaver')) {
+      assert.ok(!ks.has('Wicked Ward'), 'Ghost Reaver and Wicked Ward should be mutually exclusive');
+    }
+    if (ks.has('Iron Will')) {
+      assert.ok(
+        build.archetype.damageStyle === 'spell' ||
+        (build.archetype.damageStyle === 'totem' && build.archetype.mainSkill.types.includes('Spell')),
+        'Iron Will should only be picked on spell builds',
+      );
+    }
+  }
+});

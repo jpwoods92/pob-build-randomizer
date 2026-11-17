@@ -23,7 +23,7 @@ export async function generateBuild(data: GameData, options: BuildOptions): Prom
   );
   const archetype = pickArchetype(data, options, rootRng.fork('arch'));
   const skills = generateSkills(data, archetype, rootRng.fork('skills'));
-  const tree = generatePassiveTree(data, archetype, rootRng.fork('tree'), skills.maxReq);
+  const tree = generatePassiveTree(data, archetype, rootRng.fork('tree'), skills.maxReq, skills.manaReservedPct);
   const gear = generateGear(data, archetype, tree, skills, rootRng.fork('gear'));
   const defenses = computeProjectedDefenses(data, archetype, tree, skills, gear);
   const xml = buildPobXml({ archetype, tree, skills, gear, data });
