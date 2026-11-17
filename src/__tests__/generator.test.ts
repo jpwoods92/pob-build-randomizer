@@ -413,3 +413,23 @@ test('support gems strictly align with skill element and damage style', async ()
     }
   }
 });
+
+test('hardcore builds are always resistance-capped at or above their max ele res', async () => {
+  for (let i = 0; i < 40; i++) {
+    const b = await generateBuild(data, baseOptions({
+      seed: `hc-res-cap-${i}`,
+      classId: (i % 7) as 0 | 1 | 2 | 3 | 4 | 5 | 6,
+      leagueMode: 'hardcore',
+      economy: i % 2 === 0 ? 'ssf' : 'trade',
+      level: i % 3 === 0 ? 75 : 92,
+    }));
+    const r = b.gear.resists;
+    assert.ok(r.fire >= 75, `HC Fire res uncapped (${r.fire}%) on ${b.archetype.title}`);
+    assert.ok(r.cold >= 75, `HC Cold res uncapped (${r.cold}%) on ${b.archetype.title}`);
+    assert.ok(r.lightning >= 75, `HC Lightning res uncapped (${r.lightning}%) on ${b.archetype.title}`);
+    assert.ok(
+      b.defenses.effEleRes >= b.defenses.maxEleRes,
+      `HC effEleRes (${b.defenses.effEleRes}%) below maxEleRes (${b.defenses.maxEleRes}%) on ${b.archetype.title}`,
+    );
+  }
+});

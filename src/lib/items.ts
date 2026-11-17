@@ -165,12 +165,23 @@ function scoreModForArchetype(
   }
   if (/movement speed/.test(txt)) w *= 24;
 
-  // Resistances weighted dynamically by current deficit
-  if (/fire resistance/.test(txt) && needs.fire > 0) w *= (isHC ? 28 : 20) + needs.fire * 0.25;
-  if (/cold resistance/.test(txt) && needs.cold > 0) w *= (isHC ? 28 : 20) + needs.cold * 0.25;
-  if (/lightning resistance/.test(txt) && needs.lightning > 0) w *= (isHC ? 28 : 20) + needs.lightning * 0.25;
-  if (/all elemental resistances/.test(txt) && (needs.fire > 0 || needs.cold > 0 || needs.lightning > 0)) w *= isHC ? 32 : 22;
-  if (/chaos resistance/.test(txt) && needs.chaos > 0) w *= isHC ? 26 : 7;
+  // Resistances weighted dynamically by current deficit (deprioritize already-capped elements)
+  if (/fire resistance/.test(txt) && !/all elemental/.test(txt)) {
+    w *= needs.fire > 0 ? (isHC ? 36 : 20) + needs.fire * 0.6 : 0.2;
+  }
+  if (/cold resistance/.test(txt) && !/all elemental/.test(txt)) {
+    w *= needs.cold > 0 ? (isHC ? 36 : 20) + needs.cold * 0.6 : 0.2;
+  }
+  if (/lightning resistance/.test(txt) && !/all elemental/.test(txt)) {
+    w *= needs.lightning > 0 ? (isHC ? 36 : 20) + needs.lightning * 0.6 : 0.2;
+  }
+  if (/all elemental resistances/.test(txt)) {
+    const anyEleNeed = needs.fire > 0 || needs.cold > 0 || needs.lightning > 0;
+    w *= anyEleNeed ? (isHC ? 38 : 22) : 0.3;
+  }
+  if (/chaos resistance/.test(txt)) {
+    w *= needs.chaos > 0 ? (isHC ? 28 : 7) : 0.2;
+  }
 
   // Attributes weighted dynamically by gem/gear deficit
   if (/to strength/.test(txt) && needs.str > 0) w *= 10;
@@ -530,10 +541,11 @@ function buildRareItem(
   // Reserve 1 slot for a deterministic crafting bench mod when non-jewel so life/max-hit/DPS/res is reliable
   const useBenchCraft = !opts.isJewel;
   const maxEleNeed = Math.max(needs.fire, needs.cold, needs.lightning);
-  const wantLifeBench = maxEleNeed <= 30
+  const hcNeedsResBench = isHC && maxEleNeed > 20;
+  const wantLifeBench = !hcNeedsResBench && maxEleNeed <= 30
     && (arch.defenseStyle === 'life' || arch.defenseStyle === 'hybrid')
     && !prefixes.some((p) => p.mod.group === 'IncreasedLife');
-  const wantHcConversionBench = isHC && (base.type === 'Helmet' || base.type === 'Body Armour')
+  const wantHcConversionBench = isHC && !hcNeedsResBench && (base.type === 'Helmet' || base.type === 'Body Armour')
     && (hasCI || !wantLifeBench);
   const wantScDamageBench = !isHC && (isWeapon || base.type === 'Amulet' || base.type === 'Gloves' || base.type === 'Ring');
   const benchIsPrefix = wantLifeBench || wantHcConversionBench || (!isHC && maxEleNeed <= 25 && isWeapon);
@@ -559,11 +571,11 @@ function buildRareItem(
     }
     if (!craftedMod && suffixes.length < maxAffix) {
       if (needs.fire >= needs.cold && needs.fire >= needs.lightning && needs.fire > 0) {
-        craftedMod = isHC && !hasCI ? '+18% to Fire and Chaos Resistances' : '+32% to Fire Resistance';
+        craftedMod = isHC && !hasCI && needs.fire <= 20 ? '+18% to Fire and Chaos Resistances' : '+35% to Fire Resistance';
       } else if (needs.cold >= needs.lightning && needs.cold > 0) {
-        craftedMod = isHC && !hasCI ? '+18% to Cold and Chaos Resistances' : '+32% to Cold Resistance';
+        craftedMod = isHC && !hasCI && needs.cold <= 20 ? '+18% to Cold and Chaos Resistances' : '+35% to Cold Resistance';
       } else if (needs.lightning > 0) {
-        craftedMod = isHC && !hasCI ? '+18% to Lightning and Chaos Resistances' : '+32% to Lightning Resistance';
+        craftedMod = isHC && !hasCI && needs.lightning <= 20 ? '+18% to Lightning and Chaos Resistances' : '+35% to Lightning Resistance';
       } else if (isHC && (base.type === 'Boots' || base.type === 'Gloves' || base.type === 'Helmet')) {
         craftedMod = '+10% chance to Suppress Spell Damage';
       } else if (wantScDamageBench && arch.critMode === 'crit') {
@@ -787,25 +799,31 @@ export function generateGear(
   const isTrade = arch.options.economy === 'trade';
   const isHC = arch.options.leagueMode === 'hardcore';
   const hasCI = tree.summary.keystones.includes('Chaos Inoculation');
-  const targetEleRes = isHC ? 165 : 135; // Accounts for -60% Kitava penalty (135 - 60 = 75%)
-  const targetChaosRes = hasCI ? -999 : (isHC ? 95 : 40);
+  const targetChaosRes = hasCI ? -999 : (isHC ? 75 : 30);
 
-  // Baseline resistances & attributes from tree + Kitava (-60%) + max res from tree & purity auras
-  const resists = { fire: -60, cold: -60, lightning: -60, chaos: -60 };
+  // Baseline resistances & attributes from tree + Alira + Purity of Elements + Kitava (-60%)
+  const resists = {
+    fire: -60 + (arch.bandit === 'Alira' ? 15 : 0),
+    cold: -60 + (arch.bandit === 'Alira' ? 15 : 0),
+    lightning: -60 + (arch.bandit === 'Alira' ? 15 : 0),
+    chaos: -60,
+  };
   const attrs = { ...tree.attributes };
   const maxRes = { fire: 75, cold: 75, lightning: 75, chaos: hasCI ? 100 : 75 };
-  const dummyRes = { fire: 0, cold: 0, lightning: 0, chaos: 0 };
   const dummyAttrs = { str: 0, dex: 0, int: 0 };
   for (const id of tree.nodes) {
     const n = data.tree.nodes[id];
-    if (n?.s) tallyModsStats(n.s, dummyRes, dummyAttrs, maxRes);
+    if (n?.s) tallyModsStats(n.s, resists, dummyAttrs, maxRes);
     if (n?.t === 'mastery' && tree.masteryEffects[id]) {
       const eff = n.me?.find((m) => m.e === tree.masteryEffects[id]);
-      if (eff) tallyModsStats(eff.s, dummyRes, dummyAttrs, maxRes);
+      if (eff) tallyModsStats(eff.s, resists, dummyAttrs, maxRes);
     }
   }
   for (const grp of skills.groups) {
     for (const gi of grp.gems) {
+      if (gi.gem.name === 'Purity of Elements') {
+        resists.fire += 34; resists.cold += 34; resists.lightning += 34;
+      }
       if (gi.gem.name === 'Purity of Fire') maxRes.fire = Math.min(90, maxRes.fire + 4);
       if (gi.gem.name === 'Purity of Ice') maxRes.cold = Math.min(90, maxRes.cold + 4);
       if (gi.gem.name === 'Purity of Lightning') maxRes.lightning = Math.min(90, maxRes.lightning + 4);
@@ -816,10 +834,11 @@ export function generateGear(
   const jewelMap: Record<number, number> = {};
   let nextId = 1;
 
+  const overcapMargin = isHC ? 20 : 5;
   const currentNeeds = () => ({
-    fire: Math.max(0, targetEleRes - resists.fire),
-    cold: Math.max(0, targetEleRes - resists.cold),
-    lightning: Math.max(0, targetEleRes - resists.lightning),
+    fire: Math.max(0, maxRes.fire + overcapMargin - resists.fire),
+    cold: Math.max(0, maxRes.cold + overcapMargin - resists.cold),
+    lightning: Math.max(0, maxRes.lightning + overcapMargin - resists.lightning),
     chaos: Math.max(0, targetChaosRes - resists.chaos),
     str: Math.max(0, skills.maxReq.str - attrs.str),
     dex: Math.max(0, skills.maxReq.dex - attrs.dex),
@@ -967,6 +986,105 @@ export function generateGear(
       tallyModsStats([...jewel.implicits, ...jewel.explicits], resists, attrs);
       items.push(jewel);
       jewelMap[nodeId] = id;
+    }
+  }
+
+  // Hardcore guarantee: every Hardcore character must cap Fire, Cold, and Lightning up to maxRes
+  if (isHC) {
+    const eleList: ('fire' | 'cold' | 'lightning')[] = ['fire', 'cold', 'lightning'];
+    const rebuildRawAndExplicits = (it: GeneratedItem) => {
+      it.explicits = [
+        ...it.prefixes.flatMap((p) => p.resolvedLines),
+        ...it.suffixes.flatMap((s) => s.resolvedLines),
+        ...(it.craftedMod ? [`${it.craftedMod} (crafted)`] : []),
+      ];
+      const hasQuality = !it.jewelNodeId && !['Ring', 'Amulet', 'Belt', 'Quiver'].includes(it.base.type);
+      const rawLines: string[] = [
+        'Rarity: RARE',
+        it.name,
+        it.baseName,
+        'Crafted: true',
+        ...it.prefixes.map((p) => `Prefix: {range:${p.range.toFixed(3)}}${p.mod.id}`),
+        ...it.suffixes.map((s) => `Suffix: {range:${s.range.toFixed(3)}}${s.mod.id}`),
+        `Item Level: ${it.itemLevel}`,
+      ];
+      if (hasQuality) rawLines.push('Quality: 20');
+      if (it.sockets) rawLines.push(`Sockets: ${it.sockets}`);
+      rawLines.push(`Implicits: ${it.implicits.length}`);
+      if (it.base.implicit) rawLines.push(`{range:0.750}${it.base.implicit}`);
+      if (it.craftedMod) rawLines.push(`{crafted}${it.craftedMod}`);
+      it.rawText = rawLines.join('\n');
+    };
+
+    const untally = (lines: string[]) => {
+      const delta = { fire: 0, cold: 0, lightning: 0, chaos: 0 };
+      const dummy = { str: 0, dex: 0, int: 0 };
+      tallyModsStats(lines, delta, dummy);
+      resists.fire -= delta.fire;
+      resists.cold -= delta.cold;
+      resists.lightning -= delta.lightning;
+      resists.chaos -= delta.chaos;
+    };
+
+    for (let pass = 0; pass < 12; pass++) {
+      const missing = eleList.find((el) => resists[el] < maxRes[el]);
+      if (!missing) break;
+      const targetCap = capWord(missing);
+      const craftLine = `+35% to ${targetCap} Resistance`;
+      const resRe = new RegExp(`to ${missing} resistance|to all elemental resistances`, 'i');
+      let fixed = false;
+
+      // 1. Add/replace bench craft suffix on a rare item
+      for (const it of items) {
+        if (it.rarity !== 'RARE' || it.jewelNodeId || it.base.type === 'Flask') continue;
+        if (it.suffixes.length < 3 && (!it.craftedMod || !resRe.test(it.craftedMod))) {
+          const oldCraft = it.craftedMod ? [it.craftedMod] : [];
+          untally(oldCraft);
+          it.craftedMod = craftLine;
+          tallyModsStats([craftLine], resists, dummyAttrs);
+          rebuildRawAndExplicits(it);
+          fixed = true;
+          break;
+        }
+      }
+      if (fixed) continue;
+
+      // 2. Replace a non-essential or overcapped-res suffix on a rare armour/jewelry slot with a T1/T2 res mod
+      for (const it of items) {
+        if (it.rarity !== 'RARE' || it.jewelNodeId || it.base.type === 'Flask') continue;
+        const itemTags = new Set(it.base.tags);
+        const modMatch = data.mods.item
+          .filter((m) =>
+            m.t === 'S'
+            && m.lvl <= it.itemLevel
+            && getModWeightForTags(m, itemTags) > 0
+            && !it.suffixes.some((s) => s.mod.group === m.group)
+            && new RegExp(`to ${missing} resistance$`, 'i').test(m.lines.join(' ')),
+          )
+          .sort((a, b) => b.lvl - a.lvl)[0];
+        if (!modMatch) continue;
+
+        const replaceIdx = it.suffixes.findIndex((s) => {
+          const sl = s.resolvedLines.join(' ').toLowerCase();
+          if (resRe.test(sl)) return false;
+          if (/fire resistance/.test(sl) && resists.fire - 45 >= maxRes.fire) return true;
+          if (/cold resistance/.test(sl) && resists.cold - 45 >= maxRes.cold) return true;
+          if (/lightning resistance/.test(sl) && resists.lightning - 45 >= maxRes.lightning) return true;
+          return !/suppress|maximum .* resistance|physical damage reduction/i.test(sl);
+        });
+        if (replaceIdx < 0) continue;
+
+        const removed = it.suffixes[replaceIdx];
+        untally(removed.resolvedLines);
+        const r = 0.85;
+        const added: RolledAffix = { mod: modMatch, range: r, resolvedLines: modMatch.lines.map((l) => applyRange(l, r)) };
+        it.suffixes[replaceIdx] = added;
+        tallyModsStats(added.resolvedLines, resists, dummyAttrs);
+        rebuildRawAndExplicits(it);
+        fixed = true;
+        break;
+      }
+      if (!fixed) break;
     }
   }
 
