@@ -1567,6 +1567,12 @@ input[type="range"] {
   gap: 10px;
 }
 
+.gear-jewel-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
 @container (max-width: 780px) {
   .gear-paperdoll {
     gap: 6px;

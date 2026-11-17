@@ -990,7 +990,7 @@ export function generateGear(
   let hasValako = false;
   let hasArmourMaxResMastery = false;
   for (const id of tree.nodes) {
-    const n = data.tree.nodes[id];
+    const n = tree.clusterNodes?.[id] ?? data.tree.nodes[id];
     if (n?.s) {
       tallyModsStats(n.s, resists, dummyAttrs, maxRes);
       currentSuppress += countSuppressLines(n.s);
@@ -1179,9 +1179,33 @@ export function generateGear(
     }
   }
 
-  // Jewels for every allocated jewel socket on the passive tree
+  // Jewels for every allocated jewel socket on the passive tree (Cluster Jewels + Base Jewels)
+  const clusterBySocket = new Map((tree.clusterJewels ?? []).map((cj) => [cj.socketNodeId, cj]));
   for (const nodeId of tree.jewelSockets) {
     const id = nextId++;
+    const cj = clusterBySocket.get(nodeId);
+    if (cj) {
+      const base = data.bases[cj.baseName];
+      if (base) {
+        items.push({
+          id,
+          slot: `Jewel Socket #${nodeId}`,
+          name: cj.name,
+          baseName: cj.baseName,
+          rarity: 'RARE',
+          base,
+          itemLevel: cj.itemLevel,
+          implicits: cj.implicits,
+          explicits: cj.explicits,
+          prefixes: cj.prefixes,
+          suffixes: cj.suffixes,
+          rawText: cj.rawText,
+          jewelNodeId: nodeId,
+        });
+        jewelMap[nodeId] = id;
+        continue;
+      }
+    }
     const jewelBaseName = arch.primaryAttr === 'str'
       ? 'Crimson Jewel'
       : arch.primaryAttr === 'dex'

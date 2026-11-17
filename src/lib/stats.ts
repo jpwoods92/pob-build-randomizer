@@ -50,7 +50,7 @@ export interface ProjectedOffense {
 function collectTreeLines(data: GameData, tree: GeneratedTree): string[] {
   const lines: string[] = [];
   for (const id of tree.nodes) {
-    const n = data.tree.nodes[id];
+    const n = tree.clusterNodes?.[id] ?? data.tree.nodes[id];
     if (!n) continue;
     if (n.s) lines.push(...n.s);
     if (n.t === 'mastery' && tree.masteryEffects[id]) {

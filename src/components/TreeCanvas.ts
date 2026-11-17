@@ -83,12 +83,15 @@ export class TreeCanvas {
   private focusedId: number | null = null;
   private onFocusClear?: () => void;
   private nodeEntries: [number, TreeNode][];
+  private renderEntries: [number, TreeNode][];
+  private clusterAdj = new Map<number, number[]>();
 
   constructor(container: HTMLElement, treeData: TreeData, isDark = false, onFocusClear?: () => void) {
     this.treeData = treeData;
     this.isDark = isDark;
     this.onFocusClear = onFocusClear;
     this.nodeEntries = Object.entries(treeData.nodes).map(([k, v]) => [Number(k), v]);
+    this.renderEntries = this.nodeEntries;
 
     container.classList.add('tree-viewport');
     this.canvas = document.createElement('canvas');
@@ -141,6 +144,16 @@ export class TreeCanvas {
     this.draw();
   }
 
+  private getNode(id: number): TreeNode | undefined {
+    return this.buildTree?.clusterNodes?.[id] ?? this.treeData.nodes[id];
+  }
+
+  private getAdj(id: number, node: TreeNode): number[] {
+    const extra = this.clusterAdj.get(id);
+    if (!extra || extra.length === 0) return node.adj;
+    return [...node.adj, ...extra];
+  }
+
   setBuildTree(buildTree: GeneratedTree): void {
     this.buildTree = buildTree;
     this.focusedId = null;
@@ -150,11 +163,27 @@ export class TreeCanvas {
     this.allocSet = new Set(buildTree.nodes);
     if (cls) this.allocSet.add(cls.start);
     if (asc?.start) this.allocSet.add(asc.start);
+
+    this.clusterAdj.clear();
+    const clusterList = Object.entries(buildTree.clusterNodes ?? {}).map(
+      ([k, v]) => [Number(k), v] as [number, TreeNode],
+    );
+    for (const [cid, cn] of clusterList) {
+      for (const adjId of cn.adj) {
+        const other = buildTree.clusterNodes?.[adjId] ?? this.treeData.nodes[adjId];
+        if (other && !other.adj.includes(cid)) {
+          const arr = this.clusterAdj.get(adjId) ?? [];
+          arr.push(cid);
+          this.clusterAdj.set(adjId, arr);
+        }
+      }
+    }
+    this.renderEntries = clusterList.length > 0 ? [...this.nodeEntries, ...clusterList] : this.nodeEntries;
     this.fitToBuild();
   }
 
   focusNode(nodeId: number): void {
-    const n = this.treeData.nodes[nodeId];
+    const n = this.getNode(nodeId);
     if (!n) return;
     const rect = this.canvas.getBoundingClientRect();
     const w = rect.width || 800;
@@ -191,7 +220,7 @@ export class TreeCanvas {
 
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
     for (const id of this.allocSet) {
-      const n = this.treeData.nodes[id];
+      const n = this.getNode(id);
       if (!n || n.a) continue;
       minX = Math.min(minX, n.x);
       maxX = Math.max(maxX, n.x);
@@ -275,7 +304,7 @@ export class TreeCanvas {
 
     let bestId: number | null = null;
     let bestD2 = hitDist * hitDist;
-    for (const [id, n] of this.nodeEntries) {
+    for (const [id, n] of this.renderEntries) {
       const dx = n.x - wx;
       const dy = n.y - wy;
       const d2 = dx * dx + dy * dy;
@@ -299,7 +328,7 @@ export class TreeCanvas {
   }
 
   private showTooltip(nodeId: number, mx: number, my: number, rect: DOMRect): void {
-    const n = this.treeData.nodes[nodeId];
+    const n = this.getNode(nodeId);
     if (!n) return;
     const isAlloc = this.allocSet.has(nodeId);
     let statsHtml = '';
@@ -346,10 +375,10 @@ export class TreeCanvas {
     ctx.lineWidth = Math.max(18, 1.1 / this.scale);
     ctx.strokeStyle = pal.unallocEdge;
     ctx.beginPath();
-    for (const [id, n] of this.nodeEntries) {
-      for (const adj of n.adj) {
+    for (const [id, n] of this.renderEntries) {
+      for (const adj of this.getAdj(id, n)) {
         if (adj <= id) continue;
-        const other = this.treeData.nodes[adj];
+        const other = this.getNode(adj);
         if (!other) continue;
         if ((n.a ?? '') !== (other.a ?? '')) continue;
         if (this.allocSet.has(id) && this.allocSet.has(adj)) continue;
@@ -364,11 +393,11 @@ export class TreeCanvas {
     ctx.strokeStyle = pal.allocEdge;
     ctx.beginPath();
     for (const id of this.allocSet) {
-      const n = this.treeData.nodes[id];
+      const n = this.getNode(id);
       if (!n || n.a) continue;
-      for (const adj of n.adj) {
+      for (const adj of this.getAdj(id, n)) {
         if (adj <= id || !this.allocSet.has(adj)) continue;
-        const other = this.treeData.nodes[adj];
+        const other = this.getNode(adj);
         if (!other || other.a) continue;
         ctx.moveTo(n.x, n.y);
         ctx.lineTo(other.x, other.y);
@@ -381,11 +410,11 @@ export class TreeCanvas {
     ctx.strokeStyle = pal.allocAscEdge;
     ctx.beginPath();
     for (const id of this.allocSet) {
-      const n = this.treeData.nodes[id];
+      const n = this.getNode(id);
       if (!n || !n.a) continue;
-      for (const adj of n.adj) {
+      for (const adj of this.getAdj(id, n)) {
         if (adj <= id || !this.allocSet.has(adj)) continue;
-        const other = this.treeData.nodes[adj];
+        const other = this.getNode(adj);
         if (!other || other.a !== n.a) continue;
         ctx.moveTo(n.x, n.y);
         ctx.lineTo(other.x, other.y);
@@ -394,7 +423,7 @@ export class TreeCanvas {
     ctx.stroke();
 
     // 4. Nodes
-    for (const [id, n] of this.nodeEntries) {
+    for (const [id, n] of this.renderEntries) {
       const alloc = this.allocSet.has(id);
       const hovered = id === this.hoveredId;
       const focused = id === this.focusedId;

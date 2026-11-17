@@ -535,10 +535,10 @@ async function main() {
       .map((id) => ({ id, node: data.tree.nodes[id] }))
       .filter((x) => x.node && (x.node.t === 'notable' || x.node.mco));
     const keystoneNodes = b.tree.nodes
-      .map((id) => ({ id, node: data.tree.nodes[id] }))
+      .map((id) => ({ id, node: b.tree.clusterNodes?.[id] ?? data.tree.nodes[id] }))
       .filter((x) => x.node && x.node.t === 'keystone');
     const notableNodes = b.tree.nodes
-      .map((id) => ({ id, node: data.tree.nodes[id] }))
+      .map((id) => ({ id, node: b.tree.clusterNodes?.[id] ?? data.tree.nodes[id] }))
       .filter((x) => x.node && x.node.t === 'notable' && !x.node.a)
       .slice(0, 8);
 
@@ -799,10 +799,10 @@ async function main() {
       .map((id) => ({ id, node: data.tree.nodes[id] }))
       .filter((x) => x.node && (x.node.t === 'notable' || x.node.mco));
     const keystones = b.tree.nodes
-      .map((id) => ({ id, node: data.tree.nodes[id] }))
+      .map((id) => ({ id, node: b.tree.clusterNodes?.[id] ?? data.tree.nodes[id] }))
       .filter((x) => x.node && x.node.t === 'keystone');
     const notables = b.tree.nodes
-      .map((id) => ({ id, node: data.tree.nodes[id] }))
+      .map((id) => ({ id, node: b.tree.clusterNodes?.[id] ?? data.tree.nodes[id] }))
       .filter((x) => x.node && x.node.t === 'notable' && !x.node.a);
 
     const sideEl = document.getElementById('tree-side')!;
@@ -923,6 +923,8 @@ async function main() {
       .map((slot) => slotItem(slot))
       .filter((it): it is NonNullable<typeof it> => Boolean(it));
     const jewels = b.gear.items.filter((it) => it.jewelNodeId !== undefined);
+    const clusterJewels = jewels.filter((j) => j.base.subType === 'Cluster');
+    const baseJewels = jewels.filter((j) => j.base.subType !== 'Cluster');
 
     document.getElementById('view-gear')!.innerHTML = `
       <div class="gear-layout">
@@ -952,17 +954,34 @@ async function main() {
           </div>
         </div>
 
-        ${jewels.length > 0 ? `
+        ${clusterJewels.length > 0 || baseJewels.length > 0 ? `
           <div class="bento-card gear-jewels-panel">
-            <div class="card-head gear-section-head">
-              <div>
-                <h3>Socketed Jewels</h3>
-                <p class="card-sub">${jewels.length} jewel socket${jewels.length === 1 ? '' : 's'} allocated on passive tree</p>
+            ${clusterJewels.length > 0 ? `
+              <div class="gear-jewel-group">
+                <div class="card-head gear-section-head">
+                  <div>
+                    <h3>Cluster Jewels</h3>
+                    <p class="card-sub">${clusterJewels.length} cluster jewel${clusterJewels.length === 1 ? '' : 's'} socketed in passive tree</p>
+                  </div>
+                </div>
+                <div class="gear-jewels-grid">
+                  ${clusterJewels.map((j) => renderGearCard(j, `Cluster #${j.jewelNodeId}`)).join('')}
+                </div>
               </div>
-            </div>
-            <div class="gear-jewels-grid">
-              ${jewels.map((j) => renderGearCard(j, `Socket #${j.jewelNodeId}`)).join('')}
-            </div>
+            ` : ''}
+            ${baseJewels.length > 0 ? `
+              <div class="gear-jewel-group">
+                <div class="card-head gear-section-head">
+                  <div>
+                    <h3>Base Jewels</h3>
+                    <p class="card-sub">${baseJewels.length} jewel socket${baseJewels.length === 1 ? '' : 's'} allocated</p>
+                  </div>
+                </div>
+                <div class="gear-jewels-grid">
+                  ${baseJewels.map((j) => renderGearCard(j, `Socket #${j.jewelNodeId}`)).join('')}
+                </div>
+              </div>
+            ` : ''}
           </div>
         ` : ''}
       </div>
@@ -1096,7 +1115,7 @@ async function main() {
   const showNodeTooltipFor = (el: HTMLElement) => {
     if (el.dataset.hoverKeystones && currentBuild) {
       const ks = currentBuild.tree.nodes
-        .map((id) => data.tree.nodes[id])
+        .map((id) => currentBuild?.tree.clusterNodes?.[id] ?? data.tree.nodes[id])
         .filter((n) => n && n.t === 'keystone');
       gemTooltip.innerHTML = ks.length
         ? ks.map((k) => `
@@ -1110,7 +1129,7 @@ async function main() {
       return;
     }
     const nodeId = Number(el.dataset.hoverNode);
-    const n = data.tree.nodes[nodeId];
+    const n = currentBuild?.tree.clusterNodes?.[nodeId] ?? data.tree.nodes[nodeId];
     if (!n) return;
     const kind = n.a ? `${n.a} Ascendancy` : n.t === 'keystone' ? 'Keystone' : 'Notable';
     gemTooltip.innerHTML = `

@@ -601,6 +601,86 @@ function buildMinions(gems) {
 }
 
 // ---------------------------------------------------------------------------
+// Cluster Jewels
+// ---------------------------------------------------------------------------
+function buildClusters() {
+  const rawTree = JSON.parse(read(treeFile));
+  const rawCluster = parseLuaReturn(read(join(pobData, 'ClusterJewels.lua')));
+  const clusterMods = compactMods('ModJewelCluster.lua', { maxLevel: 86 });
+
+  const sockets = {};
+  for (const [id, n] of Object.entries(rawTree.nodes)) {
+    if (!n.isJewelSocket || !n.expansionJewel) continue;
+    const pxNode = rawTree.nodes[n.expansionJewel.proxy];
+    const pxGrp = pxNode ? rawTree.groups[pxNode.group] : null;
+    if (!pxGrp) continue;
+    sockets[id] = {
+      id: Number(id),
+      size: n.expansionJewel.size,
+      index: n.expansionJewel.index,
+      proxy: Number(n.expansionJewel.proxy),
+      ...(n.expansionJewel.parent ? { parent: Number(n.expansionJewel.parent) } : {}),
+      px: Math.round(pxGrp.x),
+      py: Math.round(pxGrp.y),
+    };
+  }
+
+  const clusterNodes = {};
+  for (const n of Object.values(rawTree.nodes)) {
+    if (n.group === undefined && (n.isNotable || n.isKeystone) && n.name) {
+      clusterNodes[n.name] = {
+        n: n.name,
+        s: n.stats || [],
+        ...(n.isKeystone ? { ks: 1 } : {}),
+      };
+    }
+  }
+
+  const jewels = {};
+  for (const [baseName, j] of Object.entries(rawCluster.jewels || {})) {
+    const skills = {};
+    for (const [skId, sk] of Object.entries(j.skills || {})) {
+      if (!sk || (sk.tag && sk.tag.startsWith('old_do_not_use'))) continue;
+      skills[skId] = {
+        name: sk.name,
+        tag: sk.tag,
+        stats: sk.stats || [],
+        enchant: sk.enchant || [],
+      };
+    }
+    jewels[baseName] = {
+      size: j.size,
+      sizeIndex: j.sizeIndex,
+      minNodes: j.minNodes,
+      maxNodes: j.maxNodes,
+      smallIndicies: j.smallIndicies,
+      notableIndicies: j.notableIndicies,
+      socketIndicies: j.socketIndicies,
+      totalIndicies: j.totalIndicies,
+      skills,
+    };
+  }
+
+  const orbitOffsets = {};
+  for (const [proxyId, map] of Object.entries(rawCluster.orbitOffsets || {})) {
+    orbitOffsets[proxyId] = { ...map };
+  }
+
+  return {
+    constants: {
+      orbitRadii: rawTree.constants.orbitRadii,
+      skillsPerOrbit: rawTree.constants.skillsPerOrbit,
+    },
+    sockets,
+    clusterNodes,
+    jewels,
+    notableSortOrder: rawCluster.notableSortOrder || {},
+    orbitOffsets,
+    mods: clusterMods,
+  };
+}
+
+// ---------------------------------------------------------------------------
 const tree = buildTree();
 write('tree.json', tree);
 const gems = buildGems();
@@ -615,3 +695,4 @@ write('mods.json', {
 write('uniques.json', buildUniques(bases));
 write('pantheons.json', buildPantheons());
 write('minions.json', buildMinions(gems));
+write('clusters.json', buildClusters());

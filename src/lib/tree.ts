@@ -1,6 +1,7 @@
 import type { GameData, TreeData, TreeNode } from './types.ts';
 import type { BuildArchetype } from './archetype.ts';
 import type { Rng } from './rng.ts';
+import { allocateClusterJewelsForTree, type GeneratedClusterJewel } from './cluster.ts';
 
 export interface GeneratedTree {
   classId: number;
@@ -9,6 +10,8 @@ export interface GeneratedTree {
   ascendancyNodes: number[];
   masteryEffects: Record<number, number>;
   jewelSockets: number[];
+  clusterNodes?: Record<number, TreeNode>;
+  clusterJewels?: GeneratedClusterJewel[];
   pointsUsed: number;
   pointsBudget: number;
   ascPointsUsed: number;
@@ -161,6 +164,8 @@ function scoreStatsText(stats: string[] | undefined, arch: BuildArchetype): numb
     if (/maximum life/.test(text)) score += (isHC ? 38 : 18) + hpBoost;
     if (/life regeneration|regenerate .* life/.test(text)) score += isHC ? 14 : 6;
     if (/life leech/.test(text)) score += 7;
+  } else if (arch.defenseStyle === 'es' && /\bmaximum life\b|life regeneration|regenerate .* life|life leech/.test(text) && !/\bminions?\b/.test(text)) {
+    score -= 200;
   }
   if (arch.defenseStyle === 'es' || arch.defenseStyle === 'hybrid') {
     if (/maximum energy shield/.test(text)) score += (isHC ? 34 : 20) + hpBoost;
@@ -354,8 +359,8 @@ function isKeystoneAllowed(
 }
 
 const KEYSTONE_WEIGHT: Record<string, number> = {
-  'Chaos Inoculation': 220,
-  'Ancestral Bond': 120,
+  'Chaos Inoculation': 360,
+  'Ancestral Bond': 180,
   Runebinder: 80,
   'Elemental Overload': 36,
   'Resolute Technique': 36,
@@ -401,8 +406,8 @@ function scoreNode(id: number, node: TreeNode, arch: BuildArchetype, manaReserve
     if (node.n === 'Versatile Combatant' && (arch.options.targets?.minSpellBlockPct ?? 0) > 0) kw = 130;
     score += kw;
   }
-  // Small bonus for life/ES cluster travel nodes
-  if (node.t === 'normal' && score <= 0) score = 0.5;
+  // Small bonus for neutral travel nodes (never overwrite negative scores like life on CI/ES!)
+  if (node.t === 'normal' && score === 0) score = 0.5;
   void id;
   return score;
 }
@@ -602,7 +607,11 @@ export function generatePassiveTree(
   for (const [idStr, node] of Object.entries(tree.nodes)) {
     if (node.a || node.t === 'start' || node.t === 'ascStart' || node.t === 'mastery') continue;
     const id = Number(idStr);
-    nodeScore.set(id, scoreNode(id, node, arch, manaReservedPct));
+    let sc = scoreNode(id, node, arch, manaReservedPct);
+    if (node.t === 'jewel' && data.clusters.sockets[idStr]?.size === 2) {
+      sc += arch.options.economy === 'trade' ? 22 : 12;
+    }
+    nodeScore.set(id, sc);
   }
 
   // Helper: allocate a node and optionally pick a high-value adjacent mastery
@@ -635,100 +644,141 @@ export function generatePassiveTree(
     }
   };
 
-  // Iteratively expand toward the best efficiency notable / keystone / jewel socket
-  while (pointsUsed < pointsBudget) {
-    const remaining = pointsBudget - pointsUsed;
-    // Dijkstra from all currently allocated main nodes (cost = 1 per unallocated node)
-    const dist = new Map<number, number>();
-    const prev = new Map<number, number>();
-    // Simple bucketed queue since every step costs 1 (BFS!)
-    const queue: number[] = [];
-    for (const a of allocated) {
-      dist.set(a, 0);
-      queue.push(a);
-    }
-    for (const seed of rootSeeds) {
-      if (!allocated.has(seed) && !dist.has(seed)) {
-        dist.set(seed, 1);
-        queue.push(seed);
-      }
-    }
+  const clusterReserve = arch.options.economy === 'trade' ? 13 : 7;
+  const hasOuterSocketAllocated = () =>
+    [...allocated].some((id) => data.clusters.sockets[String(id)]?.size === 2);
 
-    let qi = 0;
-    while (qi < queue.length) {
-      const cur = queue[qi++];
-      const d = dist.get(cur)!;
-      if (d >= remaining || d >= 18) continue; // cap search radius per step for speed
-      const cnode = tree.nodes[cur];
-      if (!cnode || cnode.t === 'mastery') continue; // can't path THROUGH a mastery
-      for (const nxt of cnode.adj) {
-        const nn = tree.nodes[nxt];
-        if (!nn || nn.a || nn.t === 'start' || nn.t === 'mastery') continue;
-        if (nn.t === 'keystone' && !isKeystoneAllowed(nn, arch, manaReservedPct, allocatedKeystones)) continue;
-        if (!dist.has(nxt)) {
-          dist.set(nxt, d + 1);
-          prev.set(nxt, cur);
-          queue.push(nxt);
+  // Helper: iteratively expand toward the best efficiency notable / keystone / jewel socket
+  const expandNotableBfs = (stopForCluster: boolean) => {
+    while (pointsUsed < pointsBudget) {
+      const waitForCI = arch.defenseStyle === 'es' && arch.options.leagueMode === 'hardcore' && !allocatedKeystones.has('Chaos Inoculation');
+      if (stopForCluster && !waitForCI && hasOuterSocketAllocated() && pointsBudget - pointsUsed <= clusterReserve) break;
+      const remaining = pointsBudget - pointsUsed;
+      const dist = new Map<number, number>();
+      const prev = new Map<number, number>();
+      const queue: number[] = [];
+      for (const a of allocated) {
+        dist.set(a, 0);
+        queue.push(a);
+      }
+      for (const seed of rootSeeds) {
+        if (!allocated.has(seed) && !dist.has(seed)) {
+          dist.set(seed, 1);
+          queue.push(seed);
+        }
+      }
+
+      let qi = 0;
+      while (qi < queue.length) {
+        const cur = queue[qi++];
+        const d = dist.get(cur)!;
+        if (d >= remaining || d >= 18) continue;
+        const cnode = tree.nodes[cur];
+        if (!cnode || cnode.t === 'mastery') continue;
+        for (const nxt of cnode.adj) {
+          const nn = tree.nodes[nxt];
+          if (!nn || nn.a || nn.t === 'start' || nn.t === 'mastery') continue;
+          if (nn.t === 'keystone' && !isKeystoneAllowed(nn, arch, manaReservedPct, allocatedKeystones)) continue;
+          if ((nodeScore.get(nxt) ?? 0) <= -80) continue;
+          if (!dist.has(nxt)) {
+            dist.set(nxt, d + 1);
+            prev.set(nxt, cur);
+            queue.push(nxt);
+          }
+        }
+      }
+
+      const targets: { id: number; d: number; effScore: number }[] = [];
+      for (const [id, d] of dist.entries()) {
+        if (d === 0 || d > remaining) continue;
+        const nn = tree.nodes[id];
+        if (!nn) continue;
+        if (nn.t !== 'notable' && nn.t !== 'keystone' && nn.t !== 'jewel') continue;
+        let base = nodeScore.get(id) ?? 0;
+        const pureKind = pureAttrKind(nn);
+        if (pureKind && !arch.statStack && pointsUsed >= Math.floor(pointsBudget * 0.8)) {
+          const missing =
+            (pureKind === 'str' && curAttrs.str < needStr) ||
+            (pureKind === 'dex' && curAttrs.dex < needDex) ||
+            (pureKind === 'int' && curAttrs.int < needInt);
+          if (missing && d === 1) base = 24;
+        }
+        if (base <= 2) continue;
+
+        let pathBonus = 0;
+        let p: number | undefined = prev.get(id);
+        while (p !== undefined && !allocated.has(p)) {
+          pathBonus += Math.max(0, (nodeScore.get(p) ?? 0) * 0.25);
+          p = prev.get(p);
+        }
+        const effScore = (base + pathBonus) / Math.pow(d, 1.32);
+        targets.push({ id, d, effScore });
+      }
+
+      if (targets.length === 0) break;
+      targets.sort((a, b) => b.effScore - a.effScore);
+      const topPool = targets.slice(0, Math.min(6, targets.length));
+      const chosen = rng.weighted(topPool, (t) => Math.pow(Math.max(0.1, t.effScore), 1.6))!;
+
+      const path: number[] = [];
+      let cur: number | undefined = chosen.id;
+      while (cur !== undefined && !allocated.has(cur)) {
+        path.push(cur);
+        cur = prev.get(cur);
+      }
+      path.reverse();
+
+      for (const pid of path) {
+        if (pointsUsed >= pointsBudget) break;
+        if (!allocated.has(pid)) {
+          const pn = tree.nodes[pid];
+          if (pn?.t === 'keystone') allocatedKeystones.add(pn.n);
+          allocated.add(pid);
+          addNodeAttrs(pid);
+          pointsUsed++;
+          if (pn?.t === 'notable') {
+            tryPickMasteryForNotable(pid);
+          }
         }
       }
     }
+  };
 
-    // Rank target nodes (notables, keystones, jewel sockets)
-    const targets: { id: number; d: number; effScore: number }[] = [];
-    for (const [id, d] of dist.entries()) {
-      if (d === 0 || d > remaining) continue;
-      const nn = tree.nodes[id];
-      if (!nn) continue;
-      if (nn.t !== 'notable' && nn.t !== 'keystone' && nn.t !== 'jewel') continue;
-      let base = nodeScore.get(id) ?? 0;
-      const pureKind = pureAttrKind(nn);
-      if (pureKind && !arch.statStack && pointsUsed >= Math.floor(pointsBudget * 0.8)) {
-        const missing =
-          (pureKind === 'str' && curAttrs.str < needStr) ||
-          (pureKind === 'dex' && curAttrs.dex < needDex) ||
-          (pureKind === 'int' && curAttrs.int < needInt);
-        if (missing && d === 1) base = 24;
-      }
-      if (base <= 2) continue;
+  expandNotableBfs(true);
 
-      // Also include small bonus for any high-value nodes along the path
-      let pathBonus = 0;
-      let p: number | undefined = prev.get(id);
-      while (p !== undefined && !allocated.has(p)) {
-        pathBonus += Math.max(0, (nodeScore.get(p) ?? 0) * 0.25);
-        p = prev.get(p);
-      }
-      const effScore = (base + pathBonus) / Math.pow(d, 1.32);
-      targets.push({ id, d, effScore });
-    }
-
-    if (targets.length === 0) break;
-    targets.sort((a, b) => b.effScore - a.effScore);
-    const topPool = targets.slice(0, Math.min(6, targets.length));
-    const chosen = rng.weighted(topPool, (t) => Math.max(0.1, t.effScore))!;
-
-    // Reconstruct path from chosen.id back to allocated
-    const path: number[] = [];
-    let cur: number | undefined = chosen.id;
-    while (cur !== undefined && !allocated.has(cur)) {
-      path.push(cur);
-      cur = prev.get(cur);
-    }
-    path.reverse();
-
-    for (const pid of path) {
-      if (pointsUsed >= pointsBudget) break;
-      if (!allocated.has(pid)) {
-        const pn = tree.nodes[pid];
-        if (pn?.t === 'keystone') allocatedKeystones.add(pn.n);
-        allocated.add(pid);
-        addNodeAttrs(pid);
-        pointsUsed++;
-        if (pn?.t === 'notable') {
-          tryPickMasteryForNotable(pid);
-        }
+  const clusterRes = allocateClusterJewelsForTree(
+    data,
+    arch,
+    rng.fork('clusters'),
+    allocated,
+    pointsUsed,
+    pointsBudget,
+    (s) => scoreStatsText(s, arch),
+  );
+  for (const nid of clusterRes.allocatedNodeIds) {
+    allocated.add(nid);
+    const cn = clusterRes.clusterNodes[nid];
+    if (cn?.gs) curAttrs.str += cn.gs;
+    if (cn?.gd) curAttrs.dex += cn.gd;
+    if (cn?.gi) curAttrs.int += cn.gi;
+    for (const s of cn?.s ?? []) {
+      const ms = /\+(\d+) to Strength/.exec(s);
+      if (ms) curAttrs.str += Number(ms[1]);
+      const md = /\+(\d+) to Dexterity/.exec(s);
+      if (md) curAttrs.dex += Number(md[1]);
+      const mi = /\+(\d+) to Intelligence/.exec(s);
+      if (mi) curAttrs.int += Number(mi[1]);
+      const ma = /\+(\d+) to all Attributes/.exec(s);
+      if (ma) {
+        const v = Number(ma[1]);
+        curAttrs.str += v; curAttrs.dex += v; curAttrs.int += v;
       }
     }
+  }
+  pointsUsed += clusterRes.pointsSpent;
+
+  if (pointsUsed < pointsBudget) {
+    expandNotableBfs(false);
   }
 
   // Spend any leftover points on best adjacent travel / jewel / notable nodes
@@ -745,7 +795,9 @@ export function generatePassiveTree(
       }
     }
     if (frontier.length === 0) break;
-    const pick = rng.weighted(frontier, (id) => {
+    const safeFrontier = frontier.filter((id) => (nodeScore.get(id) ?? 0) > -80);
+    const pool = safeFrontier.length > 0 ? safeFrontier : frontier;
+    const pick = rng.weighted(pool, (id) => {
       const sc = nodeScore.get(id) ?? 1;
       if (sc < 0) return 0.05;
       return Math.max(1, sc + 5);
@@ -772,7 +824,7 @@ export function generatePassiveTree(
   const jewelSockets: number[] = [];
 
   for (const id of allNodes) {
-    const n = tree.nodes[id];
+    const n = tree.nodes[id] ?? clusterRes.clusterNodes[id];
     if (!n) continue;
     if (n.gs) str += n.gs;
     if (n.gd) dex += n.gd;
@@ -819,6 +871,8 @@ export function generatePassiveTree(
     ascendancyNodes,
     masteryEffects,
     jewelSockets,
+    ...(Object.keys(clusterRes.clusterNodes).length > 0 ? { clusterNodes: clusterRes.clusterNodes } : {}),
+    ...(clusterRes.clusterJewels.length > 0 ? { clusterJewels: clusterRes.clusterJewels } : {}),
     pointsUsed,
     pointsBudget,
     ascPointsUsed,
@@ -999,7 +1053,7 @@ export function patchTreeAttributes(
     genTree.attributes.dex += added.dex;
     genTree.attributes.int += added.int;
     genTree.summary.notables = allNodes
-      .map((id) => tree.nodes[id])
+      .map((id) => tree.nodes[id] ?? genTree.clusterNodes?.[id])
       .filter((n) => n && n.t === 'notable' && !n.a)
       .map((n) => n.n);
     genTree.url = encodeTreeUrl(
@@ -1023,12 +1077,20 @@ export function encodeTreeUrl(
   tree: TreeData,
 ): string {
   const bytes: number[] = [0, 0, 0, 6, classId, ascendClassId, 0];
+  const clusterBytes: number[] = [];
   const masteryBytes: number[] = [];
   let nodeCount = 0;
+  let clusterCount = 0;
   let masteryCount = 0;
 
   const sorted = [...nodeIds].sort((a, b) => a - b);
   for (const id of sorted) {
+    if (id >= 65536 && clusterCount < 255) {
+      const cid = id - 65536;
+      clusterBytes.push(Math.floor(cid / 256), cid % 256);
+      clusterCount++;
+      continue;
+    }
     const n = tree.nodes[id];
     if (!n || n.t === 'start' || n.t === 'ascStart') continue;
     if (id < 65536 && nodeCount < 255) {
@@ -1042,7 +1104,7 @@ export function encodeTreeUrl(
     }
   }
   bytes[6] = nodeCount;
-  bytes.push(0); // cluster count
+  bytes.push(clusterCount, ...clusterBytes);
   bytes.push(masteryCount, ...masteryBytes);
 
   let bin = '';

@@ -33,6 +33,7 @@ const data: GameData = {
   uniques: loadJson('uniques.json'),
   pantheons: loadJson('pantheons.json'),
   minions: loadJson('minions.json'),
+  clusters: loadJson('clusters.json'),
 };
 
 function baseOptions(overrides: Partial<BuildOptions> = {}): BuildOptions {
@@ -88,10 +89,19 @@ function isTreeConnected(buildTree: Awaited<ReturnType<typeof generateBuild>>['t
       }
     }
   }
+  const adjFor = (id: number): number[] => {
+    const res = new Set<number>(data.tree.nodes[id]?.adj ?? []);
+    for (const nid of buildTree.clusterNodes?.[id]?.adj ?? []) res.add(nid);
+    for (const [cidStr, cn] of Object.entries(buildTree.clusterNodes ?? {})) {
+      if (cn.adj.includes(id)) res.add(Number(cidStr));
+    }
+    return [...res];
+  };
   while (qMain.length > 0) {
     const cur = qMain.shift()!;
-    for (const nxt of data.tree.nodes[cur]?.adj ?? []) {
-      if (allocSet.has(nxt) && !data.tree.nodes[nxt]?.a && !visitedMain.has(nxt)) {
+    for (const nxt of adjFor(cur)) {
+      const nNode = buildTree.clusterNodes?.[nxt] ?? data.tree.nodes[nxt];
+      if (allocSet.has(nxt) && !nNode?.a && !visitedMain.has(nxt)) {
         visitedMain.add(nxt);
         qMain.push(nxt);
       }
@@ -724,4 +734,33 @@ test('block chances (attack & spell) calculate accurately and respond to block t
   assert.ok(d.spellBlockPct >= 45 && d.spellBlockPct <= d.maxSpellBlockPct);
   const ev = evaluateBuildTargets(blockBuild);
   assert.equal(ev.metAll, true, `Expected block targets met, got ${JSON.stringify(ev.items)}`);
+});
+
+test('cluster jewels allocate valid subgraphs, PoB XML sockets, and stats within point budget', async () => {
+  let sawCluster = false;
+  for (let i = 0; i < 12; i++) {
+    const b = await generateBuild(data, baseOptions({
+      seed: `cluster-test-${i}`,
+      economy: 'trade',
+      level: 94,
+    }));
+    assert.ok(b.tree.pointsUsed <= b.tree.pointsBudget, `Over point budget: ${b.tree.pointsUsed}/${b.tree.pointsBudget}`);
+    if (b.tree.clusterJewels && b.tree.clusterJewels.length > 0) {
+      sawCluster = true;
+      for (const cj of b.tree.clusterJewels) {
+        assert.ok(cj.allocatedNodeIds.length >= 2, `Cluster jewel ${cj.name} allocated too few nodes`);
+        for (const nid of cj.allocatedNodeIds) {
+          assert.ok(b.tree.nodes.includes(nid), `Missing cluster node ${nid} in tree.nodes`);
+          assert.ok(b.tree.clusterNodes?.[nid], `Missing synthetic cluster node ${nid}`);
+        }
+        const gearItem = b.gear.items.find((it) => it.jewelNodeId === cj.socketNodeId);
+        assert.ok(gearItem, `Missing Cluster Jewel item for socket #${cj.socketNodeId}`);
+        assert.equal(gearItem.base.subType, 'Cluster');
+        assert.ok(gearItem.rawText.includes(`Cluster Jewel Skill: ${cj.skillId}`));
+        assert.ok(gearItem.rawText.includes(`Cluster Jewel Node Count: ${cj.nodeCount}`));
+        assert.ok(b.xml.includes(`<Socket nodeId="${cj.socketNodeId}" itemId="${gearItem.id}"/>`));
+      }
+    }
+  }
+  assert.ok(sawCluster, 'Expected Trade builds at level 94 to allocate at least one Cluster Jewel');
 });

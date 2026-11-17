@@ -155,6 +155,51 @@ export interface MinionsData {
   gemMinions: Record<string, GemMinionMeta>;
 }
 
+export interface ClusterSocketMeta {
+  id: number;
+  size: number;
+  index: number;
+  proxy: number;
+  parent?: number;
+  px: number;
+  py: number;
+}
+
+export interface ClusterNodeTemplate {
+  n: string;
+  s: string[];
+  ks?: 1;
+}
+
+export interface ClusterSkillDef {
+  name: string;
+  tag: string;
+  stats: string[];
+  enchant: string[];
+}
+
+export interface ClusterJewelDef {
+  size: 'Small' | 'Medium' | 'Large';
+  sizeIndex: 0 | 1 | 2;
+  minNodes: number;
+  maxNodes: number;
+  smallIndicies: number[];
+  notableIndicies: number[];
+  socketIndicies: number[];
+  totalIndicies: number;
+  skills: Record<string, ClusterSkillDef>;
+}
+
+export interface ClusterData {
+  constants: { orbitRadii: number[]; skillsPerOrbit: number[] };
+  sockets: Record<string, ClusterSocketMeta>;
+  clusterNodes: Record<string, ClusterNodeTemplate>;
+  jewels: Record<string, ClusterJewelDef>;
+  notableSortOrder: Record<string, number>;
+  orbitOffsets: Record<string, Record<string, number>>;
+  mods: ModData[];
+}
+
 export interface GameData {
   tree: TreeData;
   gems: GemData[];
@@ -163,4 +208,5 @@ export interface GameData {
   uniques: UniqueData[];
   pantheons: PantheonData;
   minions: MinionsData;
+  clusters: ClusterData;
 }

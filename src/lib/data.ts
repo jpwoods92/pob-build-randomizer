@@ -13,7 +13,8 @@ export function loadGameData(): Promise<GameData> {
       import('../data/uniques.json'),
       import('../data/pantheons.json'),
       import('../data/minions.json'),
-    ]).then(([tree, gems, bases, mods, uniques, pantheons, minions]) => ({
+      import('../data/clusters.json'),
+    ]).then(([tree, gems, bases, mods, uniques, pantheons, minions, clusters]) => ({
       tree: tree.default,
       gems: gems.default,
       bases: bases.default,
@@ -21,6 +22,7 @@ export function loadGameData(): Promise<GameData> {
       uniques: uniques.default,
       pantheons: pantheons.default,
       minions: minions.default,
+      clusters: clusters.default,
     }) as unknown as GameData);
   }
   return cache;
