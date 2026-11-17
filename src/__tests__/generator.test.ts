@@ -415,22 +415,23 @@ test('support gems strictly align with skill element and damage style', async ()
   }
 });
 
-test('hardcore builds are always resistance-capped at or above their max ele res', async () => {
-  for (let i = 0; i < 40; i++) {
+test('both hardcore and softcore builds always cap elemental resistances', async () => {
+  for (let i = 0; i < 60; i++) {
+    const mode = i % 2 === 0 ? 'hardcore' : 'softcore';
     const b = await generateBuild(data, baseOptions({
-      seed: `hc-res-cap-${i}`,
+      seed: `ele-res-cap-${i}`,
       classId: (i % 7) as 0 | 1 | 2 | 3 | 4 | 5 | 6,
-      leagueMode: 'hardcore',
-      economy: i % 2 === 0 ? 'ssf' : 'trade',
-      level: i % 3 === 0 ? 75 : 92,
+      leagueMode: mode,
+      economy: i % 3 === 0 ? 'ssf' : 'trade',
+      level: i % 4 === 0 ? 75 : 92,
     }));
     const r = b.gear.resists;
-    assert.ok(r.fire >= 75, `HC Fire res uncapped (${r.fire}%) on ${b.archetype.title}`);
-    assert.ok(r.cold >= 75, `HC Cold res uncapped (${r.cold}%) on ${b.archetype.title}`);
-    assert.ok(r.lightning >= 75, `HC Lightning res uncapped (${r.lightning}%) on ${b.archetype.title}`);
+    assert.ok(r.fire >= 75, `${mode} Fire res uncapped (${r.fire}%) on ${b.archetype.title}`);
+    assert.ok(r.cold >= 75, `${mode} Cold res uncapped (${r.cold}%) on ${b.archetype.title}`);
+    assert.ok(r.lightning >= 75, `${mode} Lightning res uncapped (${r.lightning}%) on ${b.archetype.title}`);
     assert.ok(
       b.defenses.effEleRes >= b.defenses.maxEleRes,
-      `HC effEleRes (${b.defenses.effEleRes}%) below maxEleRes (${b.defenses.maxEleRes}%) on ${b.archetype.title}`,
+      `${mode} effEleRes (${b.defenses.effEleRes}%) below maxEleRes (${b.defenses.maxEleRes}%) on ${b.archetype.title}`,
     );
   }
 });

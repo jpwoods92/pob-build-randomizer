@@ -861,55 +861,102 @@ export function patchTreeAttributes(
       .sort((a, b) => b.miss - a.miss)[0]?.k;
     if (!needKey) break;
 
-    // Pick best adjacent unallocated non-keystone, non-mastery node providing the missing attribute
-    let bestAddId: number | null = null;
-    let bestAddScore = -1;
+    // Pick highest-value nearby unallocated path (1..3 hops) ending on a node providing the missing attribute
+    let bestPath: number[] | null = null;
+    let bestScore = -1;
+    const dist = new Map<number, number>();
+    const prev = new Map<number, number>();
+    const q: number[] = [];
     for (const a of mainSet) {
       const an = tree.nodes[a];
       if (!an || an.t === 'mastery') continue;
-      for (const nid of an.adj) {
-        if (mainSet.has(nid)) continue;
+      dist.set(a, 0);
+      q.push(a);
+    }
+    let qi = 0;
+    while (qi < q.length) {
+      const u = q[qi++];
+      const du = dist.get(u)!;
+      if (du >= 3) continue;
+      for (const nid of tree.nodes[u]?.adj ?? []) {
+        if (mainSet.has(nid) || dist.has(nid)) continue;
         const nn = tree.nodes[nid];
         if (!nn || nn.a || nn.t === 'start' || nn.t === 'mastery' || nn.t === 'keystone') continue;
+        dist.set(nid, du + 1);
+        prev.set(nid, u);
+        q.push(nid);
+
         const delta = getNodeAttrDelta(nn);
-        if (delta[needKey] <= 0) continue;
-        const sc = delta[needKey] * 2 + (nn.t === 'notable' ? 10 : 0);
-        if (sc > bestAddScore) {
-          bestAddScore = sc;
-          bestAddId = nid;
+        if (delta[needKey] > 0) {
+          const hop = du + 1;
+          const sc = (delta[needKey] * 2 + (nn.t === 'notable' ? 10 : 0)) / hop;
+          if (sc > bestScore) {
+            const path: number[] = [];
+            let trace: number | undefined = nid;
+            while (trace !== undefined && !mainSet.has(trace)) {
+              path.push(trace);
+              trace = prev.get(trace);
+            }
+            path.reverse();
+            bestScore = sc;
+            bestPath = path;
+          }
         }
       }
     }
-    if (bestAddId === null) break;
+    if (!bestPath || bestPath.length === 0) break;
 
-    // Find a safe normal leaf node (degree 1 in mainSet, no HC res, doesn't lose needed attr) to swap out
-    let dropId: number | null = null;
-    for (const id of mainSet) {
-      if (id === arch.classData.start || ascSet.has(id)) continue;
-      const n = tree.nodes[id];
-      if (!n || n.t !== 'normal') continue;
-      const deg = n.adj.filter((adjId) => mainSet.has(adjId)).length;
-      if (deg !== 1) continue;
-      if (n.adj.includes(bestAddId)) continue; // Don't sever the bridge to the new node
-      const txt = (n.s ?? []).join(' ').toLowerCase();
-      if (isHC && /resistance/.test(txt)) continue;
-      const ld = getNodeAttrDelta(n);
-      if (ld[needKey] > 0) continue;
-      if (ld.str > 0 && cur.str - ld.str < required.str && needKey !== 'str') continue;
-      if (ld.dex > 0 && cur.dex - ld.dex < required.dex && needKey !== 'dex') continue;
-      if (ld.int > 0 && cur.int - ld.int < required.int && needKey !== 'int') continue;
-      dropId = id;
-      break;
+    // Find safe normal leaf nodes (degree 1 in mainSet, keeping ele res & other attrs safe) to swap out
+    const bridgeParent = tree.nodes[bestPath[0]]?.adj ?? [];
+    const dropIds: number[] = [];
+    const simSet = new Set(mainSet);
+    const simCur = { ...cur };
+    for (let k = 0; k < bestPath.length; k++) {
+      let pickedDrop: number | null = null;
+      for (const id of simSet) {
+        if (id === arch.classData.start || ascSet.has(id)) continue;
+        const n = tree.nodes[id];
+        if (!n || n.t !== 'normal') continue;
+        const deg = n.adj.filter((adjId) => simSet.has(adjId)).length;
+        if (deg !== 1) continue;
+        if (bridgeParent.includes(id) && n.adj.filter((adjId) => simSet.has(adjId)).length <= 1) {
+          // Ensure we don't delete the sole allocated neighbor anchoring bestPath[0]
+          const anchorsElsewhere = bridgeParent.some((bid) => bid !== id && simSet.has(bid));
+          if (!anchorsElsewhere) continue;
+        }
+        const txt = (n.s ?? []).join(' ').toLowerCase();
+        if (/elemental resistances|(?:fire|cold|lightning) resistance/.test(txt) || (isHC && /resistance/.test(txt))) continue;
+        const ld = getNodeAttrDelta(n);
+        if (ld[needKey] > 0) continue;
+        if (ld.str > 0 && simCur.str - ld.str < required.str && needKey !== 'str') continue;
+        if (ld.dex > 0 && simCur.dex - ld.dex < required.dex && needKey !== 'dex') continue;
+        if (ld.int > 0 && simCur.int - ld.int < required.int && needKey !== 'int') continue;
+        pickedDrop = id;
+        simCur.str -= ld.str;
+        simCur.dex -= ld.dex;
+        simCur.int -= ld.int;
+        break;
+      }
+      if (pickedDrop === null) break;
+      simSet.delete(pickedDrop);
+      dropIds.push(pickedDrop);
     }
-    if (dropId === null) break;
+    if (dropIds.length < bestPath.length) break;
 
-    const dropDelta = getNodeAttrDelta(tree.nodes[dropId]);
-    const addDelta = getNodeAttrDelta(tree.nodes[bestAddId]);
-    mainSet.delete(dropId);
-    mainSet.add(bestAddId);
-    added.str += addDelta.str - dropDelta.str;
-    added.dex += addDelta.dex - dropDelta.dex;
-    added.int += addDelta.int - dropDelta.int;
+    for (const did of dropIds) {
+      const dd = getNodeAttrDelta(tree.nodes[did]);
+      mainSet.delete(did);
+      added.str -= dd.str;
+      added.dex -= dd.dex;
+      added.int -= dd.int;
+    }
+    for (const aid of bestPath) {
+      const ad = getNodeAttrDelta(tree.nodes[aid]);
+      mainSet.add(aid);
+      added.str += ad.str;
+      added.dex += ad.dex;
+      added.int += ad.int;
+    }
   }
 
   if (added.str !== 0 || added.dex !== 0 || added.int !== 0) {
