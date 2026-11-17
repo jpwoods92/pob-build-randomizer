@@ -380,3 +380,36 @@ test('minion calculations read from extracted PoB minion and monster tables', as
     assert.ok(!/^200 ×/.test(b.offense.rateLabel), 'Raise Zombie of Falling must not scale by dummy cap 200');
   }
 });
+
+test('support gems strictly align with skill element and damage style', async () => {
+  for (let i = 0; i < 35; i++) {
+    const b = await generateBuild(data, baseOptions({
+      seed: `sup-align-${i}`,
+      classId: (i % 7) as 0 | 1 | 2 | 3 | 4 | 5 | 6,
+      leagueMode: i % 2 === 0 ? 'softcore' : 'hardcore',
+      economy: i % 3 === 0 ? 'ssf' : 'trade',
+    }));
+    const els = new Set(b.archetype.elements);
+    const sups = b.skills.groups[0].gems.slice(1).map((g) => g.gem.name);
+    for (const s of sups) {
+      if (/Ignite Proliferation|Burning Damage|Combustion|Immolate|Controlled Blaze/.test(s)) {
+        assert.ok(els.has('fire'), `${s} rolled on non-fire ${b.archetype.title} (${[...els]})`);
+      }
+      if (/Hypothermia|Ice Bite|Bonechill/.test(s)) {
+        assert.ok(els.has('cold'), `${s} rolled on non-cold ${b.archetype.title} (${[...els]})`);
+      }
+      if (/Innervate|Overcharge/.test(s)) {
+        assert.ok(els.has('lightning'), `${s} rolled on non-lightning ${b.archetype.title} (${[...els]})`);
+      }
+      if (/Chance to Poison|Vile Toxins/.test(s)) {
+        assert.ok(els.has('chaos') || (els.has('physical') && b.archetype.damageStyle === 'dot'), `${s} rolled on incompatible ${b.archetype.title}`);
+      }
+      if (/Chance to Bleed|Bloodlust|Rupture/.test(s)) {
+        assert.ok(els.has('physical') && b.archetype.damageStyle === 'dot', `${s} rolled on non-phys-dot ${b.archetype.title}`);
+      }
+      if (b.archetype.damageStyle === 'minion') {
+        assert.ok(!/Rage|Unleash|Coursing Current|Controlled Destruction/.test(s), `${s} should not support minion skill ${b.archetype.title}`);
+      }
+    }
+  }
+});

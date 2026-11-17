@@ -76,7 +76,7 @@ function colorChar(color: number): 'R' | 'G' | 'B' | 'W' {
 function scoreSupportForMain(sup: GemData, arch: BuildArchetype): number {
   const name = sup.name;
   // Filter out pure utility/trigger/meme/non-DPS supports
-  if (/Cast on|Cast when|Cast While|Spellslinger|Hextouch|Mark On Hit|Generosity|Guardian's Blessing|Meat Shield|Elemental Army|Item Rarity|Mana Leech|Life Leech|Life Gain on Hit|Stun$|Endurance Charge on Melee Stun|Knockback|Blind|Chance to Flee|Block Chance Reduction|Additional Accuracy|Second Wind|Swiftbrand|Arcane Surge|Urgent Orders|Corrupting Cry|Autoexertion|Summon Phantasm|Pacifism|Invert the Rules|Cull the Weak|Hallow|Foulgrasp|Hextoad|Hexpass|Hex Bloom|Blessed Call|Devour|Greater Devour|Crystalfall|Excommunicate|Exemplar|Machinations|Invention|Transfusion|Communion|Companionship|Congregation|Scornful Herald|Manaforged Arrows|Frigid Bond|Flamewood|Overloaded Intensity|Living Lightning|Voidstorm|Void Shockwave|Bonespire|Eclipse|Fissure|Windburst|Kinetic Instability|Greater Kinetic Instability|Prismatic Burst/.test(name)) {
+  if (/Cast on|Cast when|Cast While|Spellslinger|Hextouch|Mark On Hit|Generosity|Guardian's Blessing|Meat Shield|Elemental Army|Item Rarity|Mana Leech|Life Leech|Life Gain on Hit|Stun$|Endurance Charge on Melee Stun|Knockback|Blind|Chance to Flee|Block Chance Reduction|Additional Accuracy|Second Wind|Swiftbrand|Arcane Surge|Urgent Orders|Corrupting Cry|Autoexertion|Summon Phantasm|Pacifism|Invert the Rules|Cull the Weak|Hallow|Foulgrasp|Hextoad|Hexpass|Hex Bloom|Blessed Call|Devour|Greater Devour|Crystalfall|Excommunicate|Exemplar|Machinations|Invention|Transfusion|Communion|Companionship|Congregation|Scornful Herald|Manaforged Arrows|Frigid Bond|Flamewood|Overloaded Intensity|Living Lightning|Voidstorm|Void Shockwave|Bonespire|Eclipse|Fissure|Windburst|Kinetic Instability|Greater Kinetic Instability|Prismatic Burst|Coursing Current|Eldritch Blasphemy|Gluttony|Overheat|Sacred Wisps|Arrogance|Divine Blessing|Eternal Blessing|Cursed Ground|Archmage/.test(name)) {
     return 0;
   }
   if (/Lifetap|Culling Strike/.test(name)) {
@@ -88,6 +88,11 @@ function scoreSupportForMain(sup: GemData, arch: BuildArchetype): number {
   if (/Mine$|High-Impact Mine|Blastchain Mine|Locus Mine|Minefield|Swift Assembly|Charged Mines/.test(name) && arch.damageStyle !== 'trap_mine') return 0;
   if (/Spell Totem|Ballista Totem|Multiple Totems|Focused Ballista|Earthbreaker/.test(name) && arch.damageStyle !== 'totem') return 0;
 
+  // Summoner-only / player-only supports do not buff minion attacks/spells
+  if (arch.damageStyle === 'minion' && /Rage|Behead|Controlled Destruction|Spell Echo|Greater Spell Echo|Unleash|Greater Unleash|Intensify|Pinpoint|Spellblade|Energy Leech|Focused Channelling|Infused Channelling|Spell Cascade|Greater Spell Cascade|Shockwave|Momentum|Close Combat|Overexertion/.test(name)) {
+    return 0;
+  }
+
   let score = 10;
   const isTrade = arch.options.economy === 'trade';
   const isAwakened = sup.tags.includes('awakened');
@@ -97,26 +102,40 @@ function scoreSupportForMain(sup: GemData, arch: BuildArchetype): number {
   if (isExceptional && !isTrade) score *= 0.1;
   if (isAwakened && isTrade) score *= 1.45;
 
-  // Anti-synergies & ailment/conversion-specific guards
-  const isPurePhys = arch.elements.length === 1 && arch.elements[0] === 'physical';
+  // Anti-synergies & element/ailment/conversion-specific guards
+  const hasFire = arch.elements.includes('fire');
+  const hasCold = arch.elements.includes('cold');
+  const hasLight = arch.elements.includes('lightning');
+  const hasPhys = arch.elements.includes('physical');
+  const hasChaos = arch.elements.includes('chaos');
+  const hasEle = hasFire || hasCold || hasLight;
+  const isPurePhys = arch.elements.length === 1 && hasPhys;
+
   if (name.includes('Brutality') && !isPurePhys) return 0;
-  if (name.includes('Void Manipulation') && !arch.elements.includes('chaos')) return 0;
-  if (name.includes('Added Chaos Damage') && !arch.elements.includes('chaos')) return 0;
-  if (name.includes('Added Fire Damage') && !arch.elements.includes('fire')) return 0;
-  if (name.includes('Added Cold Damage') && !arch.elements.includes('cold')) return 0;
-  if (name.includes('Added Lightning Damage') && !arch.elements.includes('lightning')) return 0;
-  if (name === 'Physical to Lightning' && !(arch.elements.includes('physical') && arch.elements.includes('lightning'))) return 0;
-  if (name === 'Cold to Fire' && !(arch.elements.includes('cold') && arch.elements.includes('fire'))) return 0;
-  if (name === 'Fire Penetration' && (!arch.elements.includes('fire') || arch.damageStyle === 'dot')) return 0;
-  if (name === 'Cold Penetration' && (!arch.elements.includes('cold') || arch.damageStyle === 'dot')) return 0;
-  if (name === 'Lightning Penetration' && (!arch.elements.includes('lightning') || arch.damageStyle === 'dot')) return 0;
-  if (name === 'Elemental Penetration' && (!arch.elements.some((e) => e === 'fire' || e === 'cold' || e === 'lightning') || arch.damageStyle === 'dot')) return 0;
-  if (/Combustion|Immolate|Controlled Blaze/.test(name) && !arch.elements.includes('fire')) return 0;
-  if (/Hypothermia|Ice Bite|Bonechill/.test(name) && !arch.elements.includes('cold')) return 0;
-  if (/Innervate|Overcharge/.test(name) && !arch.elements.includes('lightning')) return 0;
-  if (name === 'Melee Physical Damage' && !arch.elements.includes('physical')) return 0;
-  if (name === 'Impale' && (!arch.elements.includes('physical') || arch.damageStyle !== 'attack')) return 0;
-  if (name === 'Vicious Projectiles' && !arch.elements.includes('physical') && !arch.elements.includes('chaos')) return 0;
+  if (name.includes('Void Manipulation') && !hasChaos) return 0;
+  if (name.includes('Added Chaos Damage') && !hasChaos) return 0;
+  if (name.includes('Added Fire Damage') && !hasFire) return 0;
+  if (name.includes('Added Cold Damage') && !hasCold) return 0;
+  if (name.includes('Added Lightning Damage') && !hasLight) return 0;
+  if (name === 'Physical to Lightning' && !(hasPhys && hasLight)) return 0;
+  if (name === 'Cold to Fire' && !(hasCold && hasFire)) return 0;
+  if (name === 'Fire Penetration' && (!hasFire || arch.damageStyle === 'dot')) return 0;
+  if (name === 'Cold Penetration' && (!hasCold || arch.damageStyle === 'dot')) return 0;
+  if (name === 'Lightning Penetration' && (!hasLight || arch.damageStyle === 'dot')) return 0;
+  if (name === 'Elemental Penetration' && (!hasEle || arch.damageStyle === 'dot')) return 0;
+  if (/Combustion|Immolate|Controlled Blaze|Ignite Proliferation|Burning Damage|Infernal Legion/.test(name) && !hasFire) return 0;
+  if (/Hypothermia|Ice Bite|Bonechill|Frostmage/.test(name) && !hasCold) return 0;
+  if (/Innervate|Overcharge/.test(name) && !hasLight) return 0;
+  if (/Chance to Poison|Vile Toxins|Lethal Dose/.test(name) && !(hasChaos || (hasPhys && arch.damageStyle === 'dot'))) return 0;
+  if (name.includes('Withering Touch') && !hasChaos) return 0;
+  if (name === 'Decay' && (!hasChaos || arch.damageStyle !== 'dot')) return 0;
+  if (name === 'Sacrifice' && (!hasChaos || arch.defenseStyle === 'es' || !arch.mainSkill.tags.includes('spell'))) return 0;
+  if (/Melee Physical Damage|Maim|Close Combat|Bloodthirst|Trauma/.test(name) && !hasPhys) return 0;
+  if (name === 'Impale' && (!hasPhys || arch.damageStyle !== 'attack')) return 0;
+  if (/Chance to Bleed|Bloodlust|Rupture/.test(name) && !(hasPhys && arch.damageStyle === 'dot' && arch.mainSkill.tags.includes('attack'))) return 0;
+  if (name === 'Vicious Projectiles' && !hasPhys && !hasChaos) return 0;
+  if (name === 'Elemental Damage with Attacks' && !hasEle) return 0;
+  if (/Elemental Proliferation|Elemental Focus/.test(name) && !hasEle) return 0;
   if (name === 'Controlled Destruction' && !arch.mainSkill.tags.includes('spell')) return 0;
   if (name === 'Iron Grip' && arch.primaryAttr !== 'str') return 0;
   if (name === 'Iron Will' && arch.primaryAttr !== 'str') return 0;
@@ -124,9 +143,9 @@ function scoreSupportForMain(sup: GemData, arch: BuildArchetype): number {
   if ((name.includes('Overexertion') || name.includes('Fist of War')) && !arch.mainSkill.tags.includes('slam')) return 0;
   if (name.includes('Energy Leech') && arch.defenseStyle === 'life') return 0;
   if (name.includes('Elemental Focus') && arch.damageStyle === 'dot') return 0;
-  if (/Deadly Ailments|Sadism|Rupture|Ignite Proliferation|Chance to Bleed|Bloodlust|Decay|Vile Toxins|Critical Strike Affliction/.test(name) && arch.damageStyle !== 'dot') return 0;
-  if (/Elemental Proliferation|Overcharge/.test(name)) score *= 0.2;
-  if (name.includes('Cruelty') && arch.damageStyle !== 'dot' && !arch.elements.includes('physical')) return 2;
+  if (/Deadly Ailments|Sadism|Rupture|Ignite Proliferation|Burning Damage|Chance to Bleed|Bloodlust|Decay|Vile Toxins|Critical Strike Affliction/.test(name) && arch.damageStyle !== 'dot') return 0;
+  if (/Elemental Proliferation/.test(name) && arch.damageStyle !== 'dot') return 0;
+  if (name.includes('Cruelty') && arch.damageStyle !== 'dot' && !hasPhys) return 2;
   if (name.includes('Concentrated Effect') && arch.options.leagueMode === 'hardcore') score *= 0.85;
   if (name.includes('Greater Multiple Projectiles') && arch.damageStyle === 'dot') score *= 0.4;
   if (arch.trapOrMine === 'trap' && /Mine|Minefield/.test(name)) return 0;
@@ -244,7 +263,7 @@ export function generateSkills(data: GameData, arch: BuildArchetype, rng: Rng): 
       if (hasSinglePen && hasSinglePen !== 'Fire Penetration' && s.name === 'Cold to Fire') return false;
       if (hasPhysToLight && /^(Fire|Cold) Penetration$/.test(s.name)) return false;
       if (hasColdToFire && /^(Cold|Lightning) Penetration$/.test(s.name)) return false;
-      return true;
+      return scoreSupportForMain(s, arch) > 0;
     });
     if (pool.length === 0) break;
     const picked = rng.weighted(pool, (s) => scoreSupportForMain(s, arch));
