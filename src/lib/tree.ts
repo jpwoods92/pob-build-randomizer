@@ -891,9 +891,9 @@ export function patchTreeAttributes(
       if (isHC && /resistance/.test(txt)) continue;
       const ld = getNodeAttrDelta(n);
       if (ld[needKey] > 0) continue;
-      if (cur.str - ld.str < required.str && needKey !== 'str') continue;
-      if (cur.dex - ld.dex < required.dex && needKey !== 'dex') continue;
-      if (cur.int - ld.int < required.int && needKey !== 'int') continue;
+      if (ld.str > 0 && cur.str - ld.str < required.str && needKey !== 'str') continue;
+      if (ld.dex > 0 && cur.dex - ld.dex < required.dex && needKey !== 'dex') continue;
+      if (ld.int > 0 && cur.int - ld.int < required.int && needKey !== 'int') continue;
       dropId = id;
       break;
     }

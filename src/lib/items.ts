@@ -53,6 +53,7 @@ export interface GeneratedGear {
   jewelMap: Record<number, number>;
   resists: { fire: number; cold: number; lightning: number; chaos: number };
   attributes: { str: number; dex: number; int: number };
+  requiredAttributes: { str: number; dex: number; int: number };
 }
 
 const RARE_FIRST = [
@@ -856,15 +857,16 @@ export function generateGear(
   const jewelMap: Record<number, number> = {};
   let nextId = 1;
 
+  const reqAttrs = { ...skills.maxReq };
   const overcapMargin = isHC ? 20 : 5;
   const currentNeeds = () => ({
     fire: Math.max(0, maxRes.fire + overcapMargin - resists.fire),
     cold: Math.max(0, maxRes.cold + overcapMargin - resists.cold),
     lightning: Math.max(0, maxRes.lightning + overcapMargin - resists.lightning),
     chaos: Math.max(0, targetChaosRes - resists.chaos),
-    str: Math.max(0, skills.maxReq.str - attrs.str),
-    dex: Math.max(0, skills.maxReq.dex - attrs.dex),
-    int: Math.max(0, skills.maxReq.int - attrs.int),
+    str: Math.max(0, reqAttrs.str - attrs.str),
+    dex: Math.max(0, reqAttrs.dex - attrs.dex),
+    int: Math.max(0, reqAttrs.int - attrs.int),
   });
 
   // Determine how many uniques to aim for (Trade: 1-3, SSF: 0-2, HC SSF leans toward defensive rares)
@@ -948,6 +950,9 @@ export function generateGear(
     }
 
     tallyModsStats([...item.implicits, ...item.explicits], resists, attrs, maxRes);
+    if (item.base.req.str) reqAttrs.str = Math.max(reqAttrs.str, item.base.req.str);
+    if (item.base.req.dex) reqAttrs.dex = Math.max(reqAttrs.dex, item.base.req.dex);
+    if (item.base.req.int) reqAttrs.int = Math.max(reqAttrs.int, item.base.req.int);
     items.push(item);
     slotMap[def.slot] = id;
   }
@@ -1112,12 +1117,6 @@ export function generateGear(
   }
 
   // Gear-first attribute requirement pass (without violating Hardcore elemental resistance caps)
-  const reqAttrs = { ...skills.maxReq };
-  for (const it of items) {
-    if (it.base.req.str) reqAttrs.str = Math.max(reqAttrs.str, it.base.req.str);
-    if (it.base.req.dex) reqAttrs.dex = Math.max(reqAttrs.dex, it.base.req.dex);
-    if (it.base.req.int) reqAttrs.int = Math.max(reqAttrs.int, it.base.req.int);
-  }
   const attrList = ['str', 'dex', 'int'] as const;
   const attrNameMap = { str: 'Strength', dex: 'Dexterity', int: 'Intelligence' } as const;
 
@@ -1171,6 +1170,9 @@ export function generateGear(
       : `+55 to ${attrNameMap[topAttr]}`;
     let patched = false;
 
+    const breaksOtherAttr = (attrDelta: { str: number; dex: number; int: number }) =>
+      attrList.some((k) => k !== topAttr && attrDelta[k] > 0 && attrs[k] - attrDelta[k] < reqAttrs[k]);
+
     // 1. Try adding or swapping a non-essential bench craft on jewelry/armour rares
     for (const it of items) {
       if (it.rarity !== 'RARE' || it.jewelNodeId || it.base.type === 'Flask') continue;
@@ -1179,10 +1181,7 @@ export function generateGear(
         const cl = it.craftedMod.toLowerCase();
         if (cl.includes(attrNameMap[topAttr].toLowerCase()) || cl.includes('all attributes')) continue;
         const safe = canSafelyRemoveLines([it.craftedMod]);
-        if (!safe) continue;
-        if (attrs.str - safe.attrDelta.str < reqAttrs.str && topAttr !== 'str') continue;
-        if (attrs.dex - safe.attrDelta.dex < reqAttrs.dex && topAttr !== 'dex') continue;
-        if (attrs.int - safe.attrDelta.int < reqAttrs.int && topAttr !== 'int') continue;
+        if (!safe || breaksOtherAttr(safe.attrDelta)) continue;
         resists.fire -= safe.delta.fire; resists.cold -= safe.delta.cold; resists.lightning -= safe.delta.lightning; resists.chaos -= safe.delta.chaos;
         attrs.str -= safe.attrDelta.str; attrs.dex -= safe.attrDelta.dex; attrs.int -= safe.attrDelta.int;
       }
@@ -1214,11 +1213,7 @@ export function generateGear(
         const sl = s.resolvedLines.join(' ').toLowerCase();
         if (sl.includes(targetName.toLowerCase()) || /all attributes|suppress|maximum .* resistance|physical damage reduction/.test(sl)) return false;
         const safe = canSafelyRemoveLines(s.resolvedLines);
-        if (!safe) return false;
-        if (attrs.str - safe.attrDelta.str < reqAttrs.str && topAttr !== 'str') return false;
-        if (attrs.dex - safe.attrDelta.dex < reqAttrs.dex && topAttr !== 'dex') return false;
-        if (attrs.int - safe.attrDelta.int < reqAttrs.int && topAttr !== 'int') return false;
-        return true;
+        return Boolean(safe && !breaksOtherAttr(safe.attrDelta));
       });
       if (replaceIdx < 0) continue;
 
@@ -1238,5 +1233,5 @@ export function generateGear(
     if (!patched) break;
   }
 
-  return { items, slotMap, jewelMap, resists, attributes: attrs };
+  return { items, slotMap, jewelMap, resists, attributes: attrs, requiredAttributes: reqAttrs };
 }

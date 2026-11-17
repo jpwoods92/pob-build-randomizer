@@ -27,9 +27,16 @@ npm test
 npm run build
 ```
 
-To refresh the game data from Path of Building Community and GGG's `skilltree-export`:
+To sync upstream Path of Building Community and GGG `skilltree-export` data, auto-detect the latest tree version, rebuild `src/data/*.json`, and verify tests and build in one step:
 
 ```bash
-npm run fetch-data
-npm run build-data
+npm run sync-pob
 ```
+
+Or to rebuild & verify from an existing `.cache/` without network access:
+
+```bash
+npm run sync-pob -- --offline
+```
+
+Individual data steps are also available as `npm run fetch-data` and `npm run build-data`.

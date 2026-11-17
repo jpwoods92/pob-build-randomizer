@@ -26,13 +26,7 @@ export async function generateBuild(data: GameData, options: BuildOptions): Prom
   const skills = generateSkills(data, archetype, rootRng.fork('skills'));
   const tree = generatePassiveTree(data, archetype, rootRng.fork('tree'), skills.maxReq, skills.manaReservedPct);
   const gear = generateGear(data, archetype, tree, skills, rootRng.fork('gear'));
-  const reqAttrs = { ...skills.maxReq };
-  for (const it of gear.items) {
-    if (it.base.req.str) reqAttrs.str = Math.max(reqAttrs.str, it.base.req.str);
-    if (it.base.req.dex) reqAttrs.dex = Math.max(reqAttrs.dex, it.base.req.dex);
-    if (it.base.req.int) reqAttrs.int = Math.max(reqAttrs.int, it.base.req.int);
-  }
-  const addedTreeAttrs = patchTreeAttributes(data, archetype, tree, reqAttrs, gear.attributes);
+  const addedTreeAttrs = patchTreeAttributes(data, archetype, tree, gear.requiredAttributes, gear.attributes);
   gear.attributes.str += addedTreeAttrs.str;
   gear.attributes.dex += addedTreeAttrs.dex;
   gear.attributes.int += addedTreeAttrs.int;

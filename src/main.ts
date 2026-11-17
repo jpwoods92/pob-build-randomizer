@@ -38,7 +38,7 @@ async function main() {
   document.documentElement.dataset.theme = isDark ? 'dark' : 'light';
 
   const root = document.getElementById('app')!;
-  root.innerHTML = `<div class="loading">Loading Path of Exile 3.30 tree, gems, bases, mods &amp; uniques...</div>`;
+  root.innerHTML = `<div class="loading">Loading Path of Exile tree, gems, bases, mods &amp; uniques...</div>`;
 
   const data: GameData = await loadGameData();
 
@@ -64,7 +64,7 @@ async function main() {
           <div class="brand-mark">PoB</div>
           <div class="brand-text">
             <h1>PoB Forge</h1>
-            <p>PoE 1 (3.30) Randomizer</p>
+            <p>PoE 1 (${esc(data.tree.version.replace('_', '.'))}) Randomizer</p>
           </div>
         </div>
 
@@ -313,7 +313,7 @@ async function main() {
     const a = b.archetype;
     const r = b.gear.resists;
     const at = b.gear.attributes;
-    const req = b.skills.maxReq;
+    const req = b.gear.requiredAttributes;
     const mainGems = b.skills.groups[0]?.gems ?? [];
     const mainLinksText = mainGems.map((g) => g.gem.name).join(' · ') || a.mainSkill.name;
     const pantheonMaj = data.pantheons.major.find((p) => p.id === a.pantheonMajor)?.name ?? a.pantheonMajor;
@@ -420,7 +420,7 @@ async function main() {
           <div class="card-head">
             <div>
               <h3>Attribute Requirements</h3>
-              <p class="card-sub">Total attributes vs highest gem requirement</p>
+              <p class="card-sub">Total attributes vs highest gem &amp; gear requirement</p>
             </div>
             <span class="badge">${at.str >= req.str && at.dex >= req.dex && at.int >= req.int ? 'All Met' : 'Deficit'}</span>
           </div>

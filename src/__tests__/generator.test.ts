@@ -434,7 +434,9 @@ test('hardcore builds are always resistance-capped at or above their max ele res
   }
 });
 
-test('attribute requirements are satisfied across classes and modes', async () => {
+test('attribute requirements (gems + gear) are satisfied globally across classes and modes', async () => {
+  assert.match(data.tree.version, /^\d+_\d+$/);
+  assert.match(data.tree.urlVersion, /^\d+\.\d+\.\d+$/);
   for (let i = 0; i < 30; i++) {
     const b = await generateBuild(data, baseOptions({
       seed: `attr-req-${i}`,
@@ -443,8 +445,14 @@ test('attribute requirements are satisfied across classes and modes', async () =
       economy: i % 3 === 0 ? 'ssf' : 'trade',
       level: i % 4 === 0 ? 75 : 92,
     }));
-    const req = b.skills.maxReq;
+    const req = b.gear.requiredAttributes;
     const at = b.gear.attributes;
+    assert.ok(req.str >= b.skills.maxReq.str && req.dex >= b.skills.maxReq.dex && req.int >= b.skills.maxReq.int);
+    for (const it of b.gear.items) {
+      assert.ok(req.str >= (it.base.req.str ?? 0), `requiredAttributes missed ${it.baseName} str`);
+      assert.ok(req.dex >= (it.base.req.dex ?? 0), `requiredAttributes missed ${it.baseName} dex`);
+      assert.ok(req.int >= (it.base.req.int ?? 0), `requiredAttributes missed ${it.baseName} int`);
+    }
     assert.ok(at.str >= req.str, `Str deficit ${at.str}/${req.str} on ${b.archetype.title}`);
     assert.ok(at.dex >= req.dex, `Dex deficit ${at.dex}/${req.dex} on ${b.archetype.title}`);
     assert.ok(at.int >= req.int, `Int deficit ${at.int}/${req.int} on ${b.archetype.title}`);

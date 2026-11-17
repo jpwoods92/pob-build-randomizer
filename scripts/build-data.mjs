@@ -30,6 +30,20 @@ function orbitAngles(count) {
   return deg.map((d) => (d * Math.PI) / 180);
 }
 
+function detectTreeVersion() {
+  try {
+    const src = read(join(root, '.cache/pob/src/GameVersions.lua'));
+    const latestMatch = src.match(/latestTreeVersion\s*=\s*"(\d+_\d+)"/);
+    const entries = [...src.matchAll(/\["(\d+_\d+)"\]\s*=\s*\{[^}]*url\s*=\s*"https:\/\/www\.pathofexile\.com\/passive-skill-tree\/([^"/]+)\/"/gs)];
+    const version = latestMatch?.[1] ?? entries.at(-1)?.[1] ?? '3_30';
+    const matched = entries.find((e) => e[1] === version);
+    const urlVersion = matched?.[2] ?? `${version.replace(/_/g, '.')}.0`;
+    return { version, urlVersion };
+  } catch {
+    return { version: '3_30', urlVersion: '3.30.0' };
+  }
+}
+
 function buildTree() {
   const raw = JSON.parse(read(treeFile));
   const { orbitRadii, skillsPerOrbit } = raw.constants;
@@ -111,9 +125,10 @@ function buildTree() {
     };
   });
 
+  const { version, urlVersion } = detectTreeVersion();
   return {
-    version: '3_30',
-    urlVersion: '3.30.0',
+    version,
+    urlVersion,
     points: raw.points,
     bounds: { minX: raw.min_x, minY: raw.min_y, maxX: raw.max_x, maxY: raw.max_y },
     classes,
