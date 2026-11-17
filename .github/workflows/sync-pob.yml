@@ -1,0 +1,41 @@
+name: Sync PoB Data
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: sync-pob
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run sync-pob
+      - name: Commit & trigger Pages deploy if data changed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if git diff --quiet src/data/; then
+            echo "PoB data is already up to date."
+            exit 0
+          fi
+          VERSION=$(node -e "console.log(require('./src/data/tree.json').display || require('./src/data/tree.json').version.replace(/_/g, '.'))")
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/data/
+          git commit -m "chore(data): sync Path of Building data ($VERSION)"
+          git push origin main
+          gh workflow run deploy.yml --ref main
