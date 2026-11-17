@@ -1037,6 +1037,19 @@ input[type="range"] {
   gap: 8px;
 }
 
+.feed-list-compact {
+  gap: 5px;
+}
+
+.feed-list-compact .feed-row {
+  padding: 5px 9px;
+  font-size: 0.78rem;
+}
+
+.feed-list-compact .feed-meta {
+  font-size: 0.7rem;
+}
+
 .feed-row {
   display: flex;
   align-items: center;

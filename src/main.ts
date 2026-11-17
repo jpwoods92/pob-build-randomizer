@@ -759,8 +759,14 @@ async function main() {
             </div>
             <button type="button" class="btn btn-sm" data-jump="gear">Gear →</button>
           </div>
-          <div class="feed-list">
-            ${b.gear.items.slice(0, 5).map((item, idx) => `
+          <div class="feed-list feed-list-compact">
+            ${(['Weapon 1', 'Weapon 2', 'Helmet', 'Body Armour', 'Gloves', 'Boots', 'Amulet', 'Ring 1', 'Ring 2', 'Belt'] as const)
+              .map((slot) => {
+                const idx = b.gear.items.findIndex((it) => it.slot === slot);
+                return idx >= 0 ? { item: b.gear.items[idx], idx } : null;
+              })
+              .filter((x): x is { item: GeneratedBuild['gear']['items'][number]; idx: number } => Boolean(x))
+              .map(({ item, idx }) => `
               <div class="feed-row feed-row-hover" tabindex="0" data-hover-item="${idx}" data-item-mode="full">
                 <div>
                   <div class="feed-title item-name-${item.rarity}">${esc(item.name)}</div>
