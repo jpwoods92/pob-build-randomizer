@@ -22,7 +22,9 @@ export type TargetStatKey =
   | 'minSuppressPct'
   | 'minDodgePct'
   | 'minMaxFireRes'
-  | 'minCritChancePct';
+  | 'minCritChancePct'
+  | 'minAttackBlockPct'
+  | 'minSpellBlockPct';
 
 export type BuildTargets = Partial<Record<TargetStatKey, number>>;
 
@@ -261,17 +263,18 @@ function chooseWeaponSetup(
     );
     const twoHanded = rawWt.filter((w) => w.startsWith('Two Handed') || w === 'Staff' || w === 'Warstaff');
     const options: { setup: WeaponSetup; w: number; types: string[] }[] = [];
-    const wantShieldBias = (targets?.minPhysMaxHit ?? 0) >= 10000 || (targets?.minEleMaxHit ?? 0) >= 25000;
+    const wantBlockTarget = (targets?.minAttackBlockPct ?? 0) > 0 || (targets?.minSpellBlockPct ?? 0) > 0;
+    const wantShieldBias = wantBlockTarget || (targets?.minPhysMaxHit ?? 0) >= 10000 || (targets?.minEleMaxHit ?? 0) >= 25000;
     const wantOffBias = (targets?.minDps ?? 0) >= 2_000_000 && !wantShieldBias;
     if (oneHanded.length > 0) {
-      options.push({ setup: 'one_hand_shield', w: (league === 'hardcore' ? 4 : 2.2) * (wantShieldBias ? 2.4 : 1), types: oneHanded });
-      options.push({ setup: 'dual_wield', w: (league === 'hardcore' ? 0.5 : 1.8) * (wantOffBias ? 1.8 : 1), types: oneHanded });
+      options.push({ setup: 'one_hand_shield', w: (league === 'hardcore' ? 4 : 2.2) * (wantBlockTarget ? 8 : wantShieldBias ? 2.4 : 1), types: oneHanded });
+      options.push({ setup: 'dual_wield', w: (league === 'hardcore' ? 0.5 : 1.8) * (wantOffBias ? 1.8 : 1) * (wantBlockTarget ? 0.15 : 1), types: oneHanded });
     }
     if (twoHanded.length > 0) {
-      options.push({ setup: 'two_hand', w: (league === 'hardcore' ? 1.4 : 2.0) * (wantOffBias ? 1.7 : 1), types: twoHanded });
+      options.push({ setup: 'two_hand', w: (league === 'hardcore' ? 1.4 : 2.0) * (wantOffBias ? 1.7 : 1) * (wantBlockTarget ? 0.25 : 1), types: twoHanded });
     }
     if (rawWt.includes('Bow')) {
-      options.push({ setup: 'bow_quiver', w: 1.8, types: ['Bow'] });
+      options.push({ setup: 'bow_quiver', w: 1.8 * (wantBlockTarget ? 0.05 : 1), types: ['Bow'] });
     }
     const picked = rng.weighted(options, (o) => o.w);
     if (picked) {
@@ -301,7 +304,8 @@ function chooseWeaponSetup(
 
   // Spell / Minion / Totem / Trap / DoT / Link / Shield-attack caster weapons
   if (style === 'minion' || style === 'spell' || style === 'totem' || style === 'trap_mine' || style === 'dot' || style === 'link_support' || rawWt.length === 0) {
-    const esBias = defense === 'es' ? 2.0 : 1.0;
+    const wantBlockTarget = (targets?.minAttackBlockPct ?? 0) > 0 || (targets?.minSpellBlockPct ?? 0) > 0;
+    const esBias = (defense === 'es' ? 2.0 : 1.0) * (wantBlockTarget ? 4.0 : 1.0);
     const hcBias = league === 'hardcore' ? 3.5 : 1.5;
     const casterSetups: { setup: WeaponSetup; w: number; classes: { wc: WeaponClass; types: string[] }[] }[] = [
       {

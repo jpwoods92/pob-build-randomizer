@@ -19,6 +19,10 @@ export interface ProjectedDefenses {
   isSuppressLucky: boolean;
   attackDodgePct: number;
   spellDodgePct: number;
+  attackBlockPct: number;
+  spellBlockPct: number;
+  maxAttackBlockPct: number;
+  maxSpellBlockPct: number;
   maxFireRes: number;
   maxColdRes: number;
   maxLightRes: number;
@@ -89,6 +93,29 @@ export function computeProjectedDefenses(
   let isSuppressLucky = false;
   let rawAttackDodge = 0;
   let rawSpellDodge = 0;
+  let rawAtkBlock = 0;
+  let rawSpellBlock = 0;
+  let maxAtkBlockBonus = 0;
+  let maxSpellBlockBonus = 0;
+  let doubleAtkBlock = false;
+  let doubleSpellBlock = false;
+  let noInherentDualBlock = false;
+  let doubleInherentDual = false;
+  let shieldFixed50 = false;
+  let versatileOvercapSpellBlock = false;
+  let spellPer5AtkBlock = 0;
+  let atkPer5ShieldBlock = 0;
+
+  const weapon1Item = gear.slotMap['Weapon 1']
+    ? gear.items.find((x) => x.id === gear.slotMap['Weapon 1'])
+    : undefined;
+  const weapon2Item = gear.slotMap['Weapon 2']
+    ? gear.items.find((x) => x.id === gear.slotMap['Weapon 2'])
+    : undefined;
+  const shieldItem = weapon2Item?.base.type === 'Shield' ? weapon2Item : undefined;
+  const hasShield = Boolean(shieldItem);
+  const isDualWield = arch.weaponSetup === 'dual_wield';
+  const hasStaff = weapon1Item?.base.type === 'Staff' || weapon1Item?.base.type === 'Warstaff';
   let maxAllEleBonus = 0;
   let maxAllResBonus = 0;
   let maxFireBonus = 0;
@@ -230,6 +257,61 @@ export function computeProjectedDefenses(
       const mSplDodge = /\+(\d+)% Chance to Dodge Spell Hits/i.exec(l);
       if (mSplDodge) rawSpellDodge += Number(mSplDodge[1]);
 
+      if (!/minions|Enemy|Stun and Block Recovery/i.test(l)) {
+        if (/Chance to Block Attack Damage is doubled/i.test(l)) doubleAtkBlock = true;
+        if (/Chance to Block Spell Damage is doubled/i.test(l)) doubleSpellBlock = true;
+        if (/Dual Wielding does not inherently grant chance to Block Attack Damage/i.test(l)) noInherentDualBlock = true;
+        if (/Inherent Bonuses from Dual Wielding are doubled/i.test(l)) doubleInherentDual = true;
+        if (/Gain 50% Chance to Block from Equipped Shield instead/i.test(l)) shieldFixed50 = true;
+        if (/\+2% Chance to Block Spell Damage for each 1% Overcapped Chance to Block Attack Damage/i.test(l)) {
+          versatileOvercapSpellBlock = true;
+        }
+        if (/\+1% Chance to Block Spell Damage per 5% Chance to Block Attack Damage/i.test(l)) spellPer5AtkBlock += 1;
+        if (/\+1% Chance to Block Attack Damage per 5% Chance to Block on Equipped Shield/i.test(l)) atkPer5ShieldBlock += 1;
+
+        const mMaxAtkBlk = /([+-]\d+)% to maximum Chance to Block Attack Damage/i.exec(l);
+        if (mMaxAtkBlk) maxAtkBlockBonus += Number(mMaxAtkBlk[1]);
+        const mMaxSplBlk = /([+-]\d+)% to maximum Chance to Block Spell Damage/i.exec(l);
+        if (mMaxSplBlk) maxSpellBlockBonus += Number(mMaxSplBlk[1]);
+
+        const mBlk = /^\+?(\d+)% Chance to Block (Attack|Spell) Damage(.*)$/i.exec(l);
+        if (mBlk) {
+          const val = Number(mBlk[1]);
+          const kind = mBlk[2].toLowerCase();
+          const cond = mBlk[3].trim().toLowerCase();
+          let applies = false;
+          if (!cond) {
+            applies = true;
+          } else if (cond === 'while dual wielding or holding a shield') {
+            applies = isDualWield || hasShield;
+          } else if (cond === 'while holding a shield') {
+            applies = hasShield;
+          } else if (cond === 'while dual wielding') {
+            applies = isDualWield;
+          } else if (cond === 'while holding a staff or shield') {
+            applies = hasStaff || hasShield;
+          } else if (cond === 'while wielding a staff') {
+            applies = hasStaff;
+          }
+          if (applies) {
+            if (kind === 'attack') rawAtkBlock += val;
+            else rawSpellBlock += val;
+          }
+        } else {
+          const mGuardBlk = /If you've (Attacked|Cast a Spell) Recently, you and Allies within 6 metres have \+(\d+)% Chance to Block (Attack|Spell) Damage/i.exec(l);
+          if (mGuardBlk) {
+            const trigger = mGuardBlk[1].toLowerCase();
+            const val = Number(mGuardBlk[2]);
+            const kind = mGuardBlk[3].toLowerCase();
+            const matchesStyle = trigger === 'attacked' ? arch.damageStyle === 'attack' : arch.damageStyle === 'spell';
+            if (matchesStyle) {
+              if (kind === 'attack') rawAtkBlock += val;
+              else rawSpellBlock += val;
+            }
+          }
+        }
+      }
+
       const mTaken = /(\d+)% of (.+?) Damage(?: from Hits)? taken as (Fire|Cold|Lightning|Chaos) Damage/i.exec(l);
       if (mTaken) {
         const pct = Number(mTaken[1]) / 100;
@@ -344,6 +426,38 @@ export function computeProjectedDefenses(
   const hasDiscipline = activeGemNames.has('Discipline');
   const hasArcticArmour = activeGemNames.has('Arctic Armour');
   const hasFortify = activeGemNames.has('Fortify');
+
+  if (activeGemNames.has('Tempest Shield')) rawSpellBlock += 25;
+
+  let shieldLocalIncBlock = 0;
+  if (shieldItem) {
+    for (const raw of [...shieldItem.implicits, ...shieldItem.explicits]) {
+      const mIncBlk = /^(\d+)% increased Chance to Block$/i.exec(raw.replace(/\{[^}]+\}/g, ''));
+      if (mIncBlk) shieldLocalIncBlock += Number(mIncBlk[1]);
+    }
+  }
+  const shieldLocalTotal = shieldItem
+    ? Math.round((shieldItem.base.armour?.BlockChance ?? 0) * (1 + shieldLocalIncBlock / 100))
+    : 0;
+  const effectiveShieldBlock = shieldItem ? (shieldFixed50 ? 50 : shieldLocalTotal) : 0;
+  const baseDualBlock = isDualWield && !noInherentDualBlock ? (doubleInherentDual ? 40 : 20) : 0;
+  let totalRawAtkBlock =
+    effectiveShieldBlock +
+    baseDualBlock +
+    rawAtkBlock +
+    (hasShield ? Math.floor(effectiveShieldBlock / 5) * atkPer5ShieldBlock : 0);
+  if (doubleAtkBlock) totalRawAtkBlock *= 2;
+  const maxAttackBlockPct = Math.max(0, Math.min(90, 75 + maxAtkBlockBonus));
+  const attackBlockPct = Math.min(maxAttackBlockPct, Math.max(0, totalRawAtkBlock));
+  const overcappedAtkBlock = Math.max(0, totalRawAtkBlock - maxAttackBlockPct);
+
+  let totalRawSpellBlock =
+    rawSpellBlock +
+    Math.floor(attackBlockPct / 5) * spellPer5AtkBlock +
+    (versatileOvercapSpellBlock ? overcappedAtkBlock * 2 : 0);
+  if (doubleSpellBlock) totalRawSpellBlock *= 2;
+  const maxSpellBlockPct = Math.max(0, Math.min(90, 75 + maxSpellBlockBonus));
+  const spellBlockPct = Math.min(maxSpellBlockPct, Math.max(0, totalRawSpellBlock));
 
   if (hasDetermination) gearArmour += 2042;
   if (hasGrace) gearEvasion += 2575;
@@ -492,6 +606,10 @@ export function computeProjectedDefenses(
     isSuppressLucky,
     attackDodgePct,
     spellDodgePct,
+    attackBlockPct,
+    spellBlockPct,
+    maxAttackBlockPct,
+    maxSpellBlockPct,
     maxFireRes: capFire,
     maxColdRes: capCold,
     maxLightRes: capLight,

@@ -707,3 +707,21 @@ test('dynamic targets catalog is unique and steers suppression, evasion, chaos h
   assert.equal(loaded.length, 1);
   assert.deepEqual(loaded[0].options.targets, evaSuppressBuild.archetype.options.targets);
 });
+
+test('block chances (attack & spell) calculate accurately and respond to block targets', async () => {
+  const blockBuild = await generateBuild(data, baseOptions({
+    seed: 'block-target-1',
+    leagueMode: 'hardcore',
+    economy: 'trade',
+    classId: 5, // Templar
+    targets: {
+      minAttackBlockPct: 50,
+      minSpellBlockPct: 45,
+    },
+  }));
+  const d = blockBuild.defenses;
+  assert.ok(d.attackBlockPct >= 50 && d.attackBlockPct <= d.maxAttackBlockPct);
+  assert.ok(d.spellBlockPct >= 45 && d.spellBlockPct <= d.maxSpellBlockPct);
+  const ev = evaluateBuildTargets(blockBuild);
+  assert.equal(ev.metAll, true, `Expected block targets met, got ${JSON.stringify(ev.items)}`);
+});

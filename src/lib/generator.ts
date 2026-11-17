@@ -182,6 +182,30 @@ export const TARGET_STAT_DEFS: readonly TargetStatDef[] = [
     placeholder: '50',
     getActual: (b) => b.offense.critChancePct,
   },
+  {
+    key: 'minAttackBlockPct',
+    label: 'Attack Block %',
+    shortLabel: 'Atk Block %',
+    unit: '%',
+    min: 5,
+    max: 90,
+    step: 5,
+    defaultValue: 50,
+    placeholder: '50',
+    getActual: (b) => b.defenses.attackBlockPct,
+  },
+  {
+    key: 'minSpellBlockPct',
+    label: 'Spell Block %',
+    shortLabel: 'Spell Block %',
+    unit: '%',
+    min: 5,
+    max: 90,
+    step: 5,
+    defaultValue: 50,
+    placeholder: '50',
+    getActual: (b) => b.defenses.spellBlockPct,
+  },
 ];
 
 export interface TargetEvalItem {

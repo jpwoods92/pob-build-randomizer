@@ -152,6 +152,8 @@ function scoreStatsText(stats: string[] | undefined, arch: BuildArchetype): numb
   const suppBoost = (targets?.minSuppressPct ?? 0) > 0 || (targets?.minDodgePct ?? 0) > 0 ? 35 : 0;
   const chaosBoost = (targets?.minChaosMaxHit ?? 0) > 0 ? 28 : 0;
   const critChanceBoost = (targets?.minCritChancePct ?? 0) > 0 ? 22 : 0;
+  const atkBlockBoost = (targets?.minAttackBlockPct ?? 0) > 0 ? 75 : 0;
+  const spellBlockBoost = (targets?.minSpellBlockPct ?? 0) > 0 ? 95 : 0;
   const dpsTargetMult = (targets?.minDps ?? 0) > 0 ? 1.45 : 1;
 
   // Defenses
@@ -174,7 +176,12 @@ function scoreStatsText(stats: string[] | undefined, arch: BuildArchetype): numb
   if (/chaos resistance/.test(text)) score += arch.defenseStyle === 'es' ? -80 : (isHC ? 28 : 4) + chaosBoost;
   if (/armour/.test(text) && (arch.primaryAttr === 'str' || isHC || physHitBoost > 0)) score += (isHC ? 10 : 4) + (physHitBoost > 0 ? 18 : 0);
   if (/evasion/.test(text) && (arch.primaryAttr === 'dex' || isHC || evaBoost > 0)) score += (isHC ? 9 : 4) + evaBoost;
-  if (/chance to block/.test(text) && arch.weaponSetup.includes('shield')) score += isHC ? 15 : 7;
+  if (/chance to block attack damage|maximum chance to block attack damage/.test(text) && (arch.weaponSetup.includes('shield') || arch.weaponSetup === 'dual_wield' || arch.weaponSetup === 'staff')) {
+    score += (isHC ? 16 : 8) + atkBlockBoost;
+  }
+  if (/chance to block spell damage|maximum chance to block spell damage|per 5% chance to block attack damage|overcapped chance to block attack damage/.test(text) && (arch.weaponSetup.includes('shield') || arch.weaponSetup === 'dual_wield' || arch.weaponSetup === 'staff')) {
+    score += (isHC ? 16 : 8) + spellBlockBoost;
+  }
   if (/reservation efficiency/.test(text)) score += isHC ? 20 : 15;
   if (/fortif/.test(text) && arch.damageStyle === 'attack') score += (isHC ? 18 : 8) + physHitBoost;
   if (/additional physical damage reduction|taken as/.test(text)) score += physHitBoost;
@@ -326,8 +333,12 @@ function isKeystoneAllowed(
     case 'The Impaler':
       return arch.damageStyle === 'attack' && arch.elements.length === 1 && arch.elements[0] === 'physical' && arch.critMode === 'non_crit' && arch.statKeywords.includes('slam');
     case 'Glancing Blows':
+      if ((arch.options.targets?.minAttackBlockPct ?? 0) > 0 || (arch.options.targets?.minSpellBlockPct ?? 0) > 0) {
+        return arch.weaponSetup.includes('shield') || arch.weaponSetup === 'staff' || arch.weaponSetup === 'dual_wield';
+      }
       return arch.weaponSetup.includes('shield') && (arch.ascendancy.internal === 'Necromancer' || arch.ascendancy.internal === 'Guardian');
     case 'Versatile Combatant':
+      if ((arch.options.targets?.minSpellBlockPct ?? 0) > 0) return arch.weaponSetup.includes('shield');
       return arch.weaponSetup.includes('shield') && arch.ascendancy.internal === 'Gladiator';
     case 'Solipsism':
       return arch.statStack === 'int' && arch.defenseStyle === 'life';
@@ -386,6 +397,8 @@ function scoreNode(id: number, node: TreeNode, arch: BuildArchetype, manaReserve
     if (!isKeystoneAllowed(node, arch, manaReservedPct)) return -9999;
     let kw = KEYSTONE_WEIGHT[node.n] ?? 12;
     if (node.n === 'Acrobatics' && (arch.options.targets?.minDodgePct ?? 0) > 0) kw = 85;
+    if (node.n === 'Glancing Blows' && ((arch.options.targets?.minAttackBlockPct ?? 0) > 0 || (arch.options.targets?.minSpellBlockPct ?? 0) > 0)) kw = 140;
+    if (node.n === 'Versatile Combatant' && (arch.options.targets?.minSpellBlockPct ?? 0) > 0) kw = 130;
     score += kw;
   }
   // Small bonus for life/ES cluster travel nodes

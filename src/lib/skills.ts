@@ -297,6 +297,7 @@ export function generateSkills(data: GameData, arch: BuildArchetype, rng: Rng): 
   const wantEvaTarget = (targets?.minEvasion ?? 0) > 0 || (targets?.minEvadePct ?? 0) > 0;
   const wantDpsTarget = (targets?.minDps ?? 0) > 0;
   const wantCritTarget = (targets?.minCritChancePct ?? 0) > 0;
+  const wantSpellBlockTarget = (targets?.minSpellBlockPct ?? 0) > 0;
   const isDexEvasion = arch.primaryAttr === 'dex' && arch.defenseStyle !== 'es';
   const auraCandidates: { name: string; w: number }[] = [
     { name: 'Determination', w: (isHC ? (isDexEvasion ? 14 : 38) : (isDexEvasion ? 4 : 8)) * (wantPhysHit ? 2.8 : 1) },
@@ -306,7 +307,7 @@ export function generateSkills(data: GameData, arch: BuildArchetype, rng: Rng): 
     { name: 'Purity of Ice', w: (isHC ? (arch.defenseStyle === 'es' || arch.elements.includes('cold') ? 14 : 6) : 0) + (wantEleHit ? 20 : 0) },
     { name: 'Purity of Lightning', w: (isHC ? (arch.elements.includes('lightning') ? 16 : 6) : 0) + (wantEleHit ? 20 : 0) },
     { name: 'Discipline', w: (arch.defenseStyle === 'es' || arch.defenseStyle === 'hybrid' ? 28 : 1) * ((targets?.minHp ?? 0) > 0 && arch.defenseStyle !== 'life' ? 2.0 : 1) },
-    { name: 'Tempest Shield', w: arch.weaponSetup.includes('shield') ? (isHC ? 26 : 16) : 2 },
+    { name: 'Tempest Shield', w: (arch.weaponSetup.includes('shield') ? (isHC ? 26 : 16) : 2) * (wantSpellBlockTarget ? 8.0 : 1) },
     { name: 'Arctic Armour', w: (isHC ? 18 : 3) * (wantPhysHit ? 2.4 : 1) },
     { name: 'Defiance Banner', w: (isHC ? 20 : 4) * (wantPhysHit || wantEvaTarget ? 1.8 : 1) },
     { name: 'Vitality', w: arch.defenseStyle === 'es' ? 0 : (isHC ? 12 : 2) },

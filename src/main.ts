@@ -734,6 +734,11 @@ async function main() {
               <span class="def-hit-meta">Cap 75%</span>
               <span class="def-hit-val">${d.attackDodgePct}% / ${d.spellDodgePct}%</span>
             </div>
+            <div class="def-hit-row">
+              <span class="def-hit-name">Block (Atk / Spell)</span>
+              <span class="def-hit-meta">Cap ${d.maxAttackBlockPct}% / ${d.maxSpellBlockPct}%</span>
+              <span class="def-hit-val">${d.attackBlockPct}% / ${d.spellBlockPct}%</span>
+            </div>
           </div>
         </div>
 

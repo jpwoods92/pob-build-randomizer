@@ -160,6 +160,8 @@ function scoreModForArchetype(
   if (wantEvaTarget && /evasion rating/.test(txt)) w *= 14;
   if ((targets?.minArmour ?? 0) > 0 && /armour/.test(txt)) w *= 14;
   if (wantCritTarget && /critical strike chance/.test(txt)) w *= 14;
+  if ((targets?.minAttackBlockPct ?? 0) > 0 && /chance to block(?! spell)|chance to block attack/.test(txt)) w *= 90;
+  if ((targets?.minSpellBlockPct ?? 0) > 0 && /chance to block spell/.test(txt)) w *= 140;
 
   if (/suppress spell damage/.test(txt)) {
     w *= needs.suppress > 0 ? (isEvasionBuild ? (isHC ? 75 : 18) : (isHC ? 28 : 8)) : 0.25;
