@@ -7,6 +7,7 @@ import type { GeneratedGear } from './items.ts';
 export interface ProjectedDefenses {
   lifePct: number;
   esPct: number;
+  manaPct: number;
   maxLife: number;
   maxEs: number;
   maxMana: number;
@@ -368,6 +369,7 @@ export function computeProjectedDefenses(
   return {
     lifePct: incLife,
     esPct: incEs,
+    manaPct: hasBM ? 0 : incMana,
     maxLife,
     maxEs,
     maxMana,

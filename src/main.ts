@@ -458,6 +458,7 @@ async function main() {
             <div class="def-stat-box">
               <div class="def-stat-top">
                 <span class="def-stat-label">Max Mana</span>
+                <span class="def-pct-badge" title="${d.manaPct}% increased maximum Mana">${d.manaPct}%</span>
               </div>
               <span class="def-stat-val def-mana">${d.maxMana.toLocaleString()}</span>
             </div>
