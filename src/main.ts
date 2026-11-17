@@ -1,8 +1,8 @@
 import './styles.css';
 import { loadGameData } from './lib/data.ts';
 import { randomSeed } from './lib/rng.ts';
-import { generateBuild, type GeneratedBuild } from './lib/generator.ts';
-import type { BuildOptions, DamageStyle, DefenseStyle, EconomyMode, LeagueMode } from './lib/archetype.ts';
+import { evaluateBuildTargets, generateBuild, hasActiveTargets, type GeneratedBuild } from './lib/generator.ts';
+import type { BuildOptions, BuildTargets, DamageStyle, DefenseStyle, EconomyMode, LeagueMode } from './lib/archetype.ts';
 import type { GameData } from './lib/types.ts';
 import { TreeCanvas } from './components/TreeCanvas.ts';
 import {
@@ -171,6 +171,31 @@ async function main() {
             <label for="level-range"><span>Target Level</span><span id="level-val">92</span></label>
             <input type="range" id="level-range" min="80" max="100" value="92" />
           </div>
+
+          <div class="knob-targets-head">
+            <span class="section-caption" style="padding:0;">Targets (Optional)</span>
+            <button type="button" class="target-clear-btn" id="clear-targets-btn" hidden>Clear</button>
+          </div>
+          <div class="knob-row">
+            <div class="knob">
+              <label for="target-hp">Min HP / Pool</label>
+              <input type="number" id="target-hp" min="0" step="500" placeholder="e.g. 5000" />
+            </div>
+            <div class="knob">
+              <label for="target-dps">Min DPS</label>
+              <input type="number" id="target-dps" min="0" step="100000" placeholder="e.g. 1500000" />
+            </div>
+          </div>
+          <div class="knob-row">
+            <div class="knob">
+              <label for="target-phys">Min Phys Hit</label>
+              <input type="number" id="target-phys" min="0" step="1000" placeholder="e.g. 15000" />
+            </div>
+            <div class="knob">
+              <label for="target-ele">Min Ele Hit</label>
+              <input type="number" id="target-ele" min="0" step="2500" placeholder="e.g. 40000" />
+            </div>
+          </div>
         </div>
 
         <div class="promo-card">
@@ -234,6 +259,11 @@ async function main() {
   const defSel = document.getElementById('def-select') as HTMLSelectElement;
   const levelRange = document.getElementById('level-range') as HTMLInputElement;
   const levelVal = document.getElementById('level-val')!;
+  const targetHpInput = document.getElementById('target-hp') as HTMLInputElement;
+  const targetDpsInput = document.getElementById('target-dps') as HTMLInputElement;
+  const targetPhysInput = document.getElementById('target-phys') as HTMLInputElement;
+  const targetEleInput = document.getElementById('target-ele') as HTMLInputElement;
+  const clearTargetsBtn = document.getElementById('clear-targets-btn') as HTMLButtonElement;
   const seedInput = document.getElementById('seed-input') as HTMLInputElement;
   const knobSummaryEl = document.getElementById('sidebar-knob-summary')!;
   const officialTreeLink = document.getElementById('official-tree-link') as HTMLAnchorElement;
@@ -291,10 +321,27 @@ async function main() {
     if (options.ascendancyIndex !== 'random') ascSel.value = String(options.ascendancyIndex);
   }
 
+  function parseTargetVal(inp: HTMLInputElement): number | undefined {
+    const n = Number(inp.value);
+    return Number.isFinite(n) && n > 0 ? Math.round(n) : undefined;
+  }
+
+  function syncTargetsFromInputs() {
+    const next: BuildTargets = {
+      minHp: parseTargetVal(targetHpInput),
+      minDps: parseTargetVal(targetDpsInput),
+      minPhysMaxHit: parseTargetVal(targetPhysInput),
+      minEleMaxHit: parseTargetVal(targetEleInput),
+    };
+    options.targets = hasActiveTargets(next) ? next : undefined;
+    clearTargetsBtn.hidden = !options.targets;
+  }
+
   function updateSidebarMeta(b: GeneratedBuild) {
     const modeLabel = options.leagueMode === 'hardcore' ? 'Hardcore' : 'Softcore';
     const ecoLabel = options.economy === 'ssf' ? 'SSF' : 'Trade';
-    knobSummaryEl.textContent = `${modeLabel} · ${ecoLabel} · Level ${options.level}`;
+    const targetTag = hasActiveTargets(options.targets) ? ' · Targeted' : '';
+    knobSummaryEl.textContent = `${modeLabel} · ${ecoLabel} · Level ${options.level}${targetTag}`;
     document.getElementById('nav-pts-pill')!.textContent = String(b.tree.pointsUsed);
     const mainLinks = b.skills.groups[0]?.gems.length ?? 6;
     document.getElementById('nav-links-pill')!.textContent = `${mainLinks}L`;
@@ -302,7 +349,10 @@ async function main() {
   }
 
   function syncControlsFromOptions(next: BuildOptions) {
-    Object.assign(options, next);
+    Object.assign(options, {
+      ...next,
+      targets: next.targets ? { ...next.targets } : undefined,
+    });
     document.querySelectorAll('#league-seg button').forEach((b) => {
       b.classList.toggle('active', (b as HTMLElement).dataset.mode === options.leagueMode);
     });
@@ -316,6 +366,11 @@ async function main() {
     defSel.value = String(options.defenseStyle);
     levelRange.value = String(options.level);
     levelVal.textContent = String(options.level);
+    targetHpInput.value = options.targets?.minHp ? String(options.targets.minHp) : '';
+    targetDpsInput.value = options.targets?.minDps ? String(options.targets.minDps) : '';
+    targetPhysInput.value = options.targets?.minPhysMaxHit ? String(options.targets.minPhysMaxHit) : '';
+    targetEleInput.value = options.targets?.minEleMaxHit ? String(options.targets.minEleMaxHit) : '';
+    clearTargetsBtn.hidden = !hasActiveTargets(options.targets);
     seedInput.value = options.seed;
   }
 
@@ -384,6 +439,7 @@ async function main() {
       .slice(0, 8);
 
     const eleCapped = r.fire >= d.maxFireRes && r.cold >= d.maxColdRes && r.lightning >= d.maxLightRes;
+    const targetEval = evaluateBuildTargets(b);
     const hasCustomCaps = d.maxFireRes !== 75 || d.maxColdRes !== 75 || d.maxLightRes !== 75 || d.maxChaosRes !== 75;
     const resCapSummary = !hasCustomCaps
       ? '75% default cap'
@@ -403,6 +459,9 @@ async function main() {
               <span class="badge">${esc(a.damageStyle)}</span>
               <span class="badge">${esc(a.defenseStyle)}</span>
               <span class="badge">${esc(a.critMode === 'crit' ? 'Crit' : a.critMode === 'dot' ? 'DoT' : 'Non-Crit')}</span>
+              ${targetEval.active
+                ? `<span class="badge ${targetEval.metAll ? 'badge-ssf' : 'badge-hc'}">${targetEval.metAll ? 'Targets Met' : 'Closest Match'}</span>`
+                : ''}
             </div>
           </div>
           <button type="button" class="btn btn-sm" data-jump="tree">View Tree →</button>
@@ -1225,6 +1284,28 @@ async function main() {
     options.level = Number(levelRange.value);
   });
   levelRange.addEventListener('change', () => void regenerate());
+
+  for (const tinp of [targetHpInput, targetDpsInput, targetPhysInput, targetEleInput]) {
+    tinp.addEventListener('change', () => {
+      syncTargetsFromInputs();
+      void regenerate();
+    });
+    tinp.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        syncTargetsFromInputs();
+        void regenerate();
+      }
+    });
+  }
+
+  clearTargetsBtn.addEventListener('click', () => {
+    targetHpInput.value = '';
+    targetDpsInput.value = '';
+    targetPhysInput.value = '';
+    targetEleInput.value = '';
+    syncTargetsFromInputs();
+    void regenerate();
+  });
 
   document.getElementById('apply-seed-btn')!.addEventListener('click', () => {
     options.seed = seedInput.value.trim() || randomSeed();

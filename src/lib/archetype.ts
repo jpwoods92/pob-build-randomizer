@@ -10,6 +10,13 @@ export type DamageElement = 'physical' | 'fire' | 'cold' | 'lightning' | 'chaos'
 export type WeaponSetup = 'bow_quiver' | 'two_hand' | 'one_hand_shield' | 'dual_wield' | 'wand_shield' | 'staff';
 export type WeaponClass = 'sword' | 'axe' | 'mace' | 'claw' | 'dagger' | 'sceptre' | 'wand' | 'staff' | 'bow' | 'unarmed';
 
+export interface BuildTargets {
+  minHp?: number;
+  minPhysMaxHit?: number;
+  minEleMaxHit?: number;
+  minDps?: number;
+}
+
 export interface BuildOptions {
   seed: string;
   leagueMode: LeagueMode;
@@ -19,6 +26,7 @@ export interface BuildOptions {
   level: number;
   damageStyle: DamageStyle | 'random';
   defenseStyle: DefenseStyle | 'random';
+  targets?: BuildTargets;
 }
 
 export interface BuildArchetype {
@@ -204,6 +212,7 @@ function chooseWeaponSetup(
   league: LeagueMode,
   economy: EconomyMode,
   rng: Rng,
+  targets?: BuildTargets,
 ): {
   setup: WeaponSetup;
   weaponClass: WeaponClass;
@@ -243,12 +252,14 @@ function chooseWeaponSetup(
     );
     const twoHanded = rawWt.filter((w) => w.startsWith('Two Handed') || w === 'Staff' || w === 'Warstaff');
     const options: { setup: WeaponSetup; w: number; types: string[] }[] = [];
+    const wantShieldBias = (targets?.minPhysMaxHit ?? 0) >= 10000 || (targets?.minEleMaxHit ?? 0) >= 25000;
+    const wantOffBias = (targets?.minDps ?? 0) >= 2_000_000 && !wantShieldBias;
     if (oneHanded.length > 0) {
-      options.push({ setup: 'one_hand_shield', w: league === 'hardcore' ? 4 : 2.2, types: oneHanded });
-      options.push({ setup: 'dual_wield', w: league === 'hardcore' ? 0.5 : 1.8, types: oneHanded });
+      options.push({ setup: 'one_hand_shield', w: (league === 'hardcore' ? 4 : 2.2) * (wantShieldBias ? 2.4 : 1), types: oneHanded });
+      options.push({ setup: 'dual_wield', w: (league === 'hardcore' ? 0.5 : 1.8) * (wantOffBias ? 1.8 : 1), types: oneHanded });
     }
     if (twoHanded.length > 0) {
-      options.push({ setup: 'two_hand', w: league === 'hardcore' ? 1.4 : 2.0, types: twoHanded });
+      options.push({ setup: 'two_hand', w: (league === 'hardcore' ? 1.4 : 2.0) * (wantOffBias ? 1.7 : 1), types: twoHanded });
     }
     if (rawWt.includes('Bow')) {
       options.push({ setup: 'bow_quiver', w: 1.8, types: ['Bow'] });
@@ -362,10 +373,16 @@ export function pickArchetype(data: GameData, options: BuildOptions, rng: Rng): 
     critBias: 0.5,
   };
 
+  const targets = options.targets;
+
   // 2. Damage style
+  const rawStyleChoices = options.damageStyle !== 'random' ? [options.damageStyle] : aff.styles;
+  const filteredStyles = (targets?.minDps ?? 0) > 0
+    ? rawStyleChoices.filter((s) => s !== 'link_support')
+    : rawStyleChoices;
   const damageStyle: DamageStyle = options.damageStyle !== 'random'
     ? options.damageStyle
-    : rng.pick(aff.styles);
+    : rng.pick(filteredStyles.length ? filteredStyles : aff.styles);
 
   // 3. Defense style
   let defenseStyle: DefenseStyle;
@@ -431,13 +448,14 @@ export function pickArchetype(data: GameData, options: BuildOptions, rng: Rng): 
     critMode = 'non_crit';
   } else {
     const bias = aff.critBias ?? 0.5;
-    const critChance = options.leagueMode === 'hardcore' ? bias * 0.78 : bias;
+    let critChance = options.leagueMode === 'hardcore' ? bias * 0.78 : bias;
+    if ((targets?.minDps ?? 0) >= 2_500_000) critChance = Math.min(0.95, critChance + 0.25);
     critMode = rng.chance(critChance) ? 'crit' : 'non_crit';
   }
 
   // 6. Weapon setup
   const weaponInfo = chooseWeaponSetup(
-    mainSkill, resolvedStyle, defenseStyle, classData, options.leagueMode, options.economy, rng,
+    mainSkill, resolvedStyle, defenseStyle, classData, options.leagueMode, options.economy, rng, targets,
   );
 
   // 7. Primary attribute
@@ -463,12 +481,15 @@ export function pickArchetype(data: GameData, options: BuildOptions, rng: Rng): 
 
   // 9. Bandit & Pantheon
   let bandit: BuildArchetype['bandit'] = 'None';
-  if (critMode === 'crit' && options.leagueMode === 'softcore' && rng.chance(0.35)) bandit = 'Alira';
+  if ((targets?.minHp ?? 0) > 0 && defenseStyle !== 'es' && rng.chance(0.55)) bandit = 'Oak';
+  else if (critMode === 'crit' && options.leagueMode === 'softcore' && rng.chance(0.35)) bandit = 'Alira';
   else if (options.leagueMode === 'hardcore' && defenseStyle === 'life' && rng.chance(0.25)) bandit = 'Oak';
 
   const hcMajors = ['TheBrineKing', 'Lunaris', 'Solaris', 'Arakaali'];
   const scMajors = ['Solaris', 'Lunaris', 'TheBrineKing', 'Arakaali'];
-  const pantheonMajor = rng.pick(options.leagueMode === 'hardcore' ? hcMajors : scMajors);
+  const pantheonMajor = (targets?.minPhysMaxHit ?? 0) > 0 && rng.chance(0.65)
+    ? 'Solaris'
+    : rng.pick(options.leagueMode === 'hardcore' ? hcMajors : scMajors);
   const pantheonMinor = rng.pick(data.pantheons.minor).id;
 
   const title = `${mainSkill.name} ${ascendancy.name}`;

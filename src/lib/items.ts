@@ -133,7 +133,11 @@ function scoreModForArchetype(
     return 0;
   }
   const isHC = arch.options.leagueMode === 'hardcore';
-  const dpsBoost = isHC ? 1.0 : 2.3;
+  const targets = arch.options.targets;
+  const wantHpTarget = (targets?.minHp ?? 0) > 0;
+  const wantPhysTarget = (targets?.minPhysMaxHit ?? 0) > 0;
+  const wantEleTarget = (targets?.minEleMaxHit ?? 0) > 0;
+  const dpsBoost = (isHC ? 1.0 : 2.3) * ((targets?.minDps ?? 0) > 0 ? 1.8 : 1);
   const tags = new Set(mod.tags ?? []);
   let w = 1;
 
@@ -142,21 +146,21 @@ function scoreModForArchetype(
   w *= tierFactor;
 
   if (arch.defenseStyle === 'life' || arch.defenseStyle === 'hybrid') {
-    if (/to maximum life/.test(txt)) w *= isHC ? 26 : 10;
+    if (/to maximum life/.test(txt)) w *= (isHC ? 26 : 10) * (wantHpTarget ? 2.2 : 1);
     if (/regenerate .* life/.test(txt)) w *= isHC ? 5 : 1.2;
   } else if (/to maximum life/.test(txt)) {
     w *= 0.05; // CI/ES build doesn't want flat life
   }
 
   if (arch.defenseStyle === 'es' || arch.defenseStyle === 'hybrid') {
-    if (/energy shield/.test(txt)) w *= isHC ? 18 : 8;
+    if (/energy shield/.test(txt)) w *= (isHC ? 18 : 8) * (wantHpTarget ? 2.0 : 1);
   }
 
   if (/suppress spell damage/.test(txt)) {
     w *= needs.suppress > 0 ? (isEvasionBuild ? (isHC ? 75 : 18) : (isHC ? 28 : 8)) : 0.25;
   }
-  if (/additional physical damage reduction/.test(txt)) w *= isHC ? 28 : 4;
-  if (/to (?:all )?maximum .* resistance/.test(txt)) w *= isHC ? 34 : 5;
+  if (/additional physical damage reduction/.test(txt)) w *= (isHC ? 28 : 4) * (wantPhysTarget ? 2.8 : 1);
+  if (/to (?:all )?maximum .* resistance/.test(txt)) w *= (isHC ? 34 : 5) * (wantEleTarget ? 2.8 : 1);
   const mTaken = /taken as (fire|cold|lightning|chaos) damage/.exec(txt);
   if (mTaken) {
     const dst = mTaken[1] as 'fire' | 'cold' | 'lightning' | 'chaos';
@@ -164,7 +168,7 @@ function scoreModForArchetype(
       w *= hasCI ? (isHC ? 45 : 10) : 0.05;
     } else {
       const excess = Math.max(0, maxRes[dst] - 75);
-      w *= isHC ? 26 + excess * 4 : 4;
+      w *= (isHC ? 26 + excess * 4 : 4) * (wantPhysTarget ? 2.6 : 1);
     }
   }
   if (/movement speed/.test(txt)) w *= 24;
@@ -657,16 +661,17 @@ function buildRareItem(
   };
 
   // Reserve 1 slot for a deterministic crafting bench mod when non-jewel so life/max-hit/DPS/res is reliable
+  const targets = arch.options.targets;
   const useBenchCraft = !opts.isJewel;
   const maxEleNeed = Math.max(needs.fire, needs.cold, needs.lightning);
   const hcNeedsResBench = isHC && maxEleNeed > 20;
   const wantLifeBench = !hcNeedsResBench && maxEleNeed <= 30
     && (arch.defenseStyle === 'life' || arch.defenseStyle === 'hybrid')
     && !prefixes.some((p) => p.mod.group === 'IncreasedLife');
-  const wantHcConversionBench = isHC && !hcNeedsResBench && (base.type === 'Helmet' || base.type === 'Body Armour')
-    && (hasCI || !wantLifeBench);
-  const wantScDamageBench = !isHC && (isWeapon || base.type === 'Amulet' || base.type === 'Gloves' || base.type === 'Ring');
-  const benchIsPrefix = wantLifeBench || wantHcConversionBench || (!isHC && maxEleNeed <= 25 && isWeapon);
+  const wantHcConversionBench = (isHC || (targets?.minPhysMaxHit ?? 0) > 0) && !hcNeedsResBench && (base.type === 'Helmet' || base.type === 'Body Armour')
+    && (hasCI || (!wantLifeBench && (targets?.minHp ?? 0) === 0));
+  const wantScDamageBench = (!isHC || (targets?.minDps ?? 0) > 0) && (isWeapon || base.type === 'Amulet' || base.type === 'Gloves' || base.type === 'Ring');
+  const benchIsPrefix = wantLifeBench || wantHcConversionBench || ((!isHC || (targets?.minDps ?? 0) > 0) && maxEleNeed <= 25 && isWeapon);
 
   const rollPrefixCount = useBenchCraft && benchIsPrefix ? Math.min(maxAffix - 1, targetPrefixes) : targetPrefixes;
   const rollSuffixCount = useBenchCraft && !benchIsPrefix ? Math.min(maxAffix - 1, targetSuffixes) : targetSuffixes;

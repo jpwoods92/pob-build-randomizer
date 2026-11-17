@@ -144,70 +144,79 @@ function scoreStatsText(stats: string[] | undefined, arch: BuildArchetype): numb
     return -80;
   }
 
+  const targets = arch.options.targets;
+  const hpBoost = (targets?.minHp ?? 0) > 0 ? 28 : 0;
+  const physHitBoost = (targets?.minPhysMaxHit ?? 0) > 0 ? 24 : 0;
+  const eleHitBoost = (targets?.minEleMaxHit ?? 0) > 0 ? 32 : 0;
+  const dpsTargetMult = (targets?.minDps ?? 0) > 0 ? 1.45 : 1;
+
   // Defenses
   if (arch.defenseStyle === 'life' || arch.defenseStyle === 'hybrid') {
-    if (/maximum life/.test(text)) score += isHC ? 38 : 18;
+    if (/maximum life/.test(text)) score += (isHC ? 38 : 18) + hpBoost;
     if (/life regeneration|regenerate .* life/.test(text)) score += isHC ? 14 : 6;
     if (/life leech/.test(text)) score += 7;
   }
   if (arch.defenseStyle === 'es' || arch.defenseStyle === 'hybrid') {
-    if (/maximum energy shield/.test(text)) score += isHC ? 34 : 20;
+    if (/maximum energy shield/.test(text)) score += (isHC ? 34 : 20) + hpBoost;
     if (/energy shield recharge|faster start of energy shield/.test(text)) score += isHC ? 12 : 6;
   }
   const isEvasionBuild = arch.primaryAttr === 'dex' && arch.defenseStyle !== 'es';
   if (/suppress spell damage|chance to suppress spell damage is lucky|of suppressed spell damage/.test(text) && !/instead apply to chance to dodge/.test(text)) {
     score += isEvasionBuild ? (isHC ? 65 : 22) : (isHC ? 28 : 11);
   }
-  if (/maximum (all )?(fire|cold|lightning|elemental) resistance/.test(text)) score += isHC ? 26 : 12;
+  if (/maximum (all )?(fire|cold|lightning|elemental) resistance/.test(text)) score += (isHC ? 26 : 12) + eleHitBoost;
   if (/maximum chaos resistance/.test(text)) score += arch.defenseStyle === 'es' ? -80 : (isHC ? 22 : 10);
   if (/to all elemental resistances|to (fire|cold|lightning) resistance/.test(text)) score += isHC ? 10 : 5;
   if (/chaos resistance/.test(text)) score += arch.defenseStyle === 'es' ? -80 : (isHC ? 28 : 4);
-  if (/armour/.test(text) && (arch.primaryAttr === 'str' || isHC)) score += isHC ? 10 : 4;
+  if (/armour/.test(text) && (arch.primaryAttr === 'str' || isHC || physHitBoost > 0)) score += (isHC ? 10 : 4) + (physHitBoost > 0 ? 18 : 0);
   if (/evasion/.test(text) && (arch.primaryAttr === 'dex' || isHC)) score += isHC ? 9 : 4;
   if (/chance to block/.test(text) && arch.weaponSetup.includes('shield')) score += isHC ? 15 : 7;
   if (/reservation efficiency/.test(text)) score += isHC ? 20 : 15;
-  if (/fortif/.test(text) && arch.damageStyle === 'attack') score += isHC ? 18 : 8;
+  if (/fortif/.test(text) && arch.damageStyle === 'attack') score += (isHC ? 18 : 8) + physHitBoost;
+  if (/additional physical damage reduction|taken as/.test(text)) score += physHitBoost;
   if (/recoup/.test(text)) score += isHC ? 12 : 5;
   if (/avoid being (shocked|frozen|chilled|ignited)|elemental ailments/.test(text)) score += isHC ? 13 : 5;
   if (/immune to corrupted blood|cannot be inflicted/.test(text)) score += isHC ? 16 : 7;
 
   // Offense by damage style
+  let offScore = 0;
   if (arch.damageStyle === 'attack') {
     if (/attack damage|physical damage with|melee damage|projectile attack|bow damage|with axes|with swords|with maces|with claws|with daggers|with wands/.test(text)) {
-      score += isHC ? 14 : 18;
+      offScore += isHC ? 14 : 18;
     }
-    if (/attack speed/.test(text)) score += isHC ? 10 : 14;
-    if (/accuracy/.test(text) && arch.critMode !== 'non_crit') score += 8;
-    if (/impale/.test(text) && arch.elements.includes('physical')) score += 12;
+    if (/attack speed/.test(text)) offScore += isHC ? 10 : 14;
+    if (/accuracy/.test(text) && arch.critMode !== 'non_crit') offScore += 8;
+    if (/impale/.test(text) && arch.elements.includes('physical')) offScore += 12;
   } else if (arch.damageStyle === 'spell') {
-    if (/spell damage|elemental damage|chaos damage/.test(text)) score += isHC ? 12 : 17;
-    if (/cast speed/.test(text)) score += isHC ? 10 : 14;
-    if (/critical strike chance for spells|spell critical/.test(text) && arch.critMode === 'crit') score += 14;
+    if (/spell damage|elemental damage|chaos damage/.test(text)) offScore += isHC ? 12 : 17;
+    if (/cast speed/.test(text)) offScore += isHC ? 10 : 14;
+    if (/critical strike chance for spells|spell critical/.test(text) && arch.critMode === 'crit') offScore += 14;
   } else if (arch.damageStyle === 'minion') {
-    if (/minion/.test(text)) score += 26;
-    if (/minion.*maximum life/.test(text)) score += isHC ? 16 : 8;
-    if (/aura/.test(text)) score += 8;
+    if (/minion/.test(text)) offScore += 26;
+    if (/minion.*maximum life/.test(text)) offScore += isHC ? 16 : 8;
+    if (/aura/.test(text)) offScore += 8;
   } else if (arch.damageStyle === 'totem') {
-    if (/totem/.test(text)) score += 24;
-    if (/spell damage|attack damage|elemental damage/.test(text)) score += 9;
+    if (/totem/.test(text)) offScore += 24;
+    if (/spell damage|attack damage|elemental damage/.test(text)) offScore += 9;
   } else if (arch.damageStyle === 'trap_mine') {
-    if (arch.trapOrMine === 'trap' && /\btraps?\b/.test(text)) score += 26;
-    if (arch.trapOrMine === 'mine' && /\bmines?\b/.test(text)) score += 26;
-    if (/spell damage|elemental damage|area damage|projectile/.test(text)) score += 9;
+    if (arch.trapOrMine === 'trap' && /\btraps?\b/.test(text)) offScore += 26;
+    if (arch.trapOrMine === 'mine' && /\bmines?\b/.test(text)) offScore += 26;
+    if (/spell damage|elemental damage|area damage|projectile/.test(text)) offScore += 9;
   } else if (arch.damageStyle === 'dot') {
-    if (/damage over time|dot multiplier|ignite|bleed|poison|ailment/.test(text)) score += 22;
+    if (/damage over time|dot multiplier|ignite|bleed|poison|ailment/.test(text)) offScore += 22;
   } else if (arch.damageStyle === 'link_support') {
-    if (/link skills|effect of non-curse auras|mercenary|light radius|skill effect duration/.test(text)) score += 28;
-    if (/aura/.test(text)) score += 12;
+    if (/link skills|effect of non-curse auras|mercenary|light radius|skill effect duration/.test(text)) offScore += 28;
+    if (/aura/.test(text)) offScore += 12;
   }
 
   // Crit vs non-crit
   if (arch.critMode === 'crit') {
-    if (/critical strike multiplier/.test(text)) score += isHC ? 14 : 21;
-    if (/critical strike chance/.test(text)) score += isHC ? 11 : 16;
+    if (/critical strike multiplier/.test(text)) offScore += isHC ? 14 : 21;
+    if (/critical strike chance/.test(text)) offScore += isHC ? 11 : 16;
   } else {
     if (/critical strike/.test(text)) score -= 35;
   }
+  score += Math.round(offScore * dpsTargetMult);
 
   // Elements
   for (const el of arch.elements) {

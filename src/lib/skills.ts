@@ -176,7 +176,9 @@ function scoreSupportForMain(sup: GemData, arch: BuildArchetype): number {
   if (arch.damageStyle === 'dot' && /Efficacy|Swift Affliction|Unbound Ailments|Deadly Ailments|Burning Damage|Void Manipulation|Ignite Proliferation|Chance to Bleed/.test(name)) score += 45;
   if (arch.damageStyle === 'attack' && /Multistrike|Melee Physical Damage|Close Combat|Fortify|Mirage Archer|Vicious Projectiles|Faster Attacks|Inspiration|Damage on Full Life|Volatility|Returning Projectiles|Barrage/.test(name)) {
     score += 36;
-    if (name === 'Fortify' && arch.options.leagueMode === 'hardcore') score += 25;
+    if (name === 'Fortify' && (arch.options.leagueMode === 'hardcore' || (arch.options.targets?.minPhysMaxHit ?? 0) > 0 || (arch.options.targets?.minEleMaxHit ?? 0) > 0)) {
+      score += 28;
+    }
   }
   if (arch.damageStyle === 'spell' && /Spell Echo|Unleash|Controlled Destruction|Inspiration|Concentrated Effect|Intensify|Faster Casting|Energy Leech|Spellblade/.test(name)) score += 36;
   if (arch.damageStyle === 'totem' && /Multiple Totems|Spell Totem|Ballista Totem|Focused Ballista/.test(name)) score += 45;
@@ -289,24 +291,28 @@ export function generateSkills(data: GameData, arch: BuildArchetype, rng: Rng): 
   });
 
   // 2. Auras & Reservation (Helmet)
+  const targets = arch.options.targets;
+  const wantPhysHit = (targets?.minPhysMaxHit ?? 0) > 0;
+  const wantEleHit = (targets?.minEleMaxHit ?? 0) > 0;
+  const wantDpsTarget = (targets?.minDps ?? 0) > 0;
   const isDexEvasion = arch.primaryAttr === 'dex' && arch.defenseStyle !== 'es';
   const auraCandidates: { name: string; w: number }[] = [
-    { name: 'Determination', w: isHC ? (isDexEvasion ? 14 : 38) : (isDexEvasion ? 4 : 8) },
+    { name: 'Determination', w: (isHC ? (isDexEvasion ? 14 : 38) : (isDexEvasion ? 4 : 8)) * (wantPhysHit ? 2.5 : 1) },
     { name: 'Grace', w: isHC ? (isDexEvasion ? 48 : 30) : (isDexEvasion ? 14 : 8) },
     { name: 'Purity of Elements', w: isHC ? 24 : (arch.options.economy === 'ssf' ? 14 : 4) },
-    { name: 'Purity of Fire', w: isHC ? (arch.ascendancy.internal === 'Chieftain' || arch.elements.includes('fire') ? 26 : 10) : 0 },
-    { name: 'Purity of Ice', w: isHC ? (arch.defenseStyle === 'es' || arch.elements.includes('cold') ? 14 : 6) : 0 },
-    { name: 'Purity of Lightning', w: isHC ? (arch.elements.includes('lightning') ? 16 : 6) : 0 },
-    { name: 'Discipline', w: arch.defenseStyle === 'es' || arch.defenseStyle === 'hybrid' ? 28 : 1 },
+    { name: 'Purity of Fire', w: (isHC ? (arch.ascendancy.internal === 'Chieftain' || arch.elements.includes('fire') ? 26 : 10) : 0) + (wantEleHit ? 22 : 0) },
+    { name: 'Purity of Ice', w: (isHC ? (arch.defenseStyle === 'es' || arch.elements.includes('cold') ? 14 : 6) : 0) + (wantEleHit ? 18 : 0) },
+    { name: 'Purity of Lightning', w: (isHC ? (arch.elements.includes('lightning') ? 16 : 6) : 0) + (wantEleHit ? 18 : 0) },
+    { name: 'Discipline', w: (arch.defenseStyle === 'es' || arch.defenseStyle === 'hybrid' ? 28 : 1) * ((targets?.minHp ?? 0) > 0 && arch.defenseStyle !== 'life' ? 2.0 : 1) },
     { name: 'Tempest Shield', w: arch.weaponSetup.includes('shield') ? (isHC ? 26 : 16) : 2 },
-    { name: 'Arctic Armour', w: isHC ? 18 : 3 },
+    { name: 'Arctic Armour', w: (isHC ? 18 : 3) * (wantPhysHit ? 2.4 : 1) },
     { name: 'Defiance Banner', w: isHC ? 20 : 4 },
     { name: 'Vitality', w: arch.defenseStyle === 'es' ? 0 : (isHC ? 12 : 2) },
     { name: 'Precision', w: arch.critMode === 'crit' || arch.damageStyle === 'attack' ? (isHC ? 14 : 24) : 2 },
     { name: 'Clarity', w: arch.damageStyle === 'spell' ? 8 : 2 },
   ];
 
-  const offMult = isHC ? 1 : 1.7;
+  const offMult = (isHC ? 1 : 1.7) * (wantDpsTarget ? 1.8 : 1);
   if (arch.elements.includes('fire')) auraCandidates.push({ name: 'Anger', w: 18 * offMult }, { name: 'Herald of Ash', w: 15 * offMult });
   if (arch.elements.includes('cold')) auraCandidates.push({ name: 'Hatred', w: 22 * offMult }, { name: 'Herald of Ice', w: 16 * offMult });
   if (arch.elements.includes('lightning')) auraCandidates.push({ name: 'Wrath', w: 20 * offMult }, { name: 'Herald of Thunder', w: 15 * offMult });

@@ -40,7 +40,7 @@ function defaultStorage(): StorageLike | null {
 }
 
 export function buildOptionsSignature(opts: BuildOptions): string {
-  return [
+  const base = [
     opts.seed,
     opts.leagueMode,
     opts.economy,
@@ -50,6 +50,9 @@ export function buildOptionsSignature(opts: BuildOptions): string {
     opts.damageStyle,
     opts.defenseStyle,
   ].join('|');
+  const t = opts.targets;
+  if (!t || (!t.minHp && !t.minPhysMaxHit && !t.minEleMaxHit && !t.minDps)) return base;
+  return `${base}|${t.minHp ?? ''}|${t.minPhysMaxHit ?? ''}|${t.minEleMaxHit ?? ''}|${t.minDps ?? ''}`;
 }
 
 export function loadSavedBuilds(storage: StorageLike | null = defaultStorage()): SavedBuildEntry[] {
@@ -96,7 +99,10 @@ export function saveBuildToStorage(
     name,
     savedAt: new Date().toISOString(),
     treeVersion,
-    options: { ...build.archetype.options },
+    options: {
+      ...build.archetype.options,
+      targets: build.archetype.options.targets ? { ...build.archetype.options.targets } : undefined,
+    },
     summary: {
       title: build.archetype.title,
       className: build.archetype.classData.name,

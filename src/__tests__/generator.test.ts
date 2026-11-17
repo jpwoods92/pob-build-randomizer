@@ -6,7 +6,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import type { GameData } from '../lib/types.ts';
-import { generateBuild } from '../lib/generator.ts';
+import { evaluateBuildTargets, generateBuild } from '../lib/generator.ts';
 import { canSupportSkill } from '../lib/skills.ts';
 import type { BuildOptions } from '../lib/archetype.ts';
 import { parseGameVersionsLua } from '../../scripts/pob-version.mjs';
@@ -618,4 +618,31 @@ test('armour and shield bases share one consistent defensive profile aligned wit
       );
     }
   }
+});
+
+test('build targets (HP, Phys/Ele Max Hit, Projected DPS) steer randomization deterministically', async () => {
+  const targets = {
+    minHp: 5000,
+    minPhysMaxHit: 14000,
+    minEleMaxHit: 35000,
+    minDps: 1_200_000,
+  };
+  const b1 = await generateBuild(data, baseOptions({
+    seed: 'target-steer-1',
+    leagueMode: 'hardcore',
+    economy: 'trade',
+    classId: 1, // Marauder
+    targets,
+  }));
+  const b2 = await generateBuild(data, baseOptions({
+    seed: 'target-steer-1',
+    leagueMode: 'hardcore',
+    economy: 'trade',
+    classId: 1,
+    targets,
+  }));
+  assert.equal(b1.pobCode, b2.pobCode, 'Targeted builds must remain deterministic');
+  const ev = evaluateBuildTargets(b1);
+  assert.equal(ev.active, true);
+  assert.equal(ev.metAll, true, `Expected targets met, got ${JSON.stringify(ev)}`);
 });
