@@ -9,6 +9,7 @@ export interface ProjectedDefenses {
   esPct: number;
   maxLife: number;
   maxEs: number;
+  maxMana: number;
   armour: number;
   evasion: number;
   maxEleRes: number;
@@ -45,6 +46,7 @@ export function computeProjectedDefenses(
   const hasCI = keystones.has('Chaos Inoculation');
   const hasEB = keystones.has('Eldritch Battery');
   const hasIR = keystones.has('Iron Reflexes');
+  const hasBM = keystones.has('Blood Magic');
 
   // 1. Gather passive tree modifiers
   let flatLife = arch.bandit === 'Oak' ? 40 : 0;
@@ -52,6 +54,8 @@ export function computeProjectedDefenses(
   let moreLifeMult = 1;
   let flatEs = 0;
   let incEs = 0;
+  let flatMana = 0;
+  let incMana = 0;
   let incArmour = 0;
   let incEvasion = 0;
   let maxFireBonus = 0;
@@ -87,6 +91,12 @@ export function computeProjectedDefenses(
       if (mIncEs && (isTree || /Global/i.test(l) || /maximum/i.test(l))) {
         incEs += Number(mIncEs[1]);
       }
+
+      const mFlatMana = /^\+(\d+) to maximum Mana$/i.exec(l);
+      if (mFlatMana) flatMana += Number(mFlatMana[1]);
+
+      const mIncMana = /(\d+)% increased maximum Mana\b/i.exec(l);
+      if (mIncMana && !/minions/i.test(l)) incMana += Number(mIncMana[1]);
 
       if (isTree || /Global|Armour and Evasion/i.test(l)) {
         const mArm = /(\d+)% increased (?:Global )?Armour\b/i.exec(l);
@@ -211,6 +221,10 @@ export function computeProjectedDefenses(
   const totalFlatEs = gearEs + flatEs;
   const maxEs = Math.round(totalFlatEs * (1 + (incEs + intEsBonus) / 100));
 
+  const baseMana = 34 + 6 * arch.options.level;
+  const intMana = Math.floor(gear.attributes.int / 2);
+  const maxMana = hasBM ? 0 : Math.round((baseMana + intMana + flatMana) * (1 + incMana / 100));
+
   // 5. Final Armour & Evasion
   let totalEvasion = Math.round(gearEvasion * (1 + incEvasion / 100) * (hasGrace ? 1.29 : 1));
   let totalArmour = Math.round(gearArmour * (1 + incArmour / 100) * (hasDetermination ? 1.49 : 1));
@@ -264,6 +278,7 @@ export function computeProjectedDefenses(
     esPct: incEs,
     maxLife,
     maxEs,
+    maxMana,
     armour: totalArmour,
     evasion: totalEvasion,
     maxEleRes,

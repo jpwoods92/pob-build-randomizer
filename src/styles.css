@@ -674,8 +674,8 @@ input[type="range"] {
 
 .def-pool-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 8px;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
   margin-bottom: 10px;
 }
 
@@ -683,22 +683,25 @@ input[type="range"] {
   background: var(--surface-subtle);
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 9px 12px;
+  padding: 8px 10px;
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 
 .def-stat-label {
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   font-weight: 600;
   color: var(--muted);
+  white-space: nowrap;
 }
 
 .def-stat-val {
-  font-size: 1.15rem;
+  font-size: 1.04rem;
   font-weight: 700;
   letter-spacing: -0.02em;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .def-life {
@@ -710,10 +713,18 @@ input[type="range"] {
 }
 
 .def-es {
-  color: #2563eb;
+  color: #0891b2;
 }
 
 [data-theme="dark"] .def-es {
+  color: #22d3ee;
+}
+
+.def-mana {
+  color: #2563eb;
+}
+
+[data-theme="dark"] .def-mana {
   color: #60a5fa;
 }
 

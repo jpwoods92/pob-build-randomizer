@@ -280,6 +280,7 @@ test('chaos inoculation builds skip chaos resistance on tree and gear', async ()
 test('projected defenses produce valid life, ES, and max hit figures', async () => {
   const build = await generateBuild(data, baseOptions({ seed: 'def-proj-1', classId: 1, defenseStyle: 'life' }));
   assert.ok(build.defenses.maxLife > 1000, `Expected maxLife > 1000, got ${build.defenses.maxLife}`);
+  assert.ok(build.defenses.maxMana >= 0, `Expected non-negative maxMana, got ${build.defenses.maxMana}`);
   assert.ok(build.defenses.physMaxHit >= build.defenses.maxLife, 'Phys max hit should be >= maxLife');
   assert.ok(build.defenses.eleMaxHit > build.defenses.maxLife, 'Ele max hit should exceed maxLife with positive ele res');
   assert.ok(build.defenses.chaosMaxHit !== null && build.defenses.chaosMaxHit > 0);

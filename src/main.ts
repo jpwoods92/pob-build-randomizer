@@ -443,6 +443,10 @@ async function main() {
               <span class="def-stat-label">Max ES</span>
               <span class="def-stat-val def-es">${d.maxEs.toLocaleString()}</span>
             </div>
+            <div class="def-stat-box">
+              <span class="def-stat-label">Max Mana</span>
+              <span class="def-stat-val def-mana">${d.maxMana.toLocaleString()}</span>
+            </div>
           </div>
           <div class="def-hit-list">
             <div class="def-hit-row">
