@@ -764,3 +764,25 @@ test('cluster jewels allocate valid subgraphs, PoB XML sockets, and stats within
   }
   assert.ok(sawCluster, 'Expected Trade builds at level 94 to allocate at least one Cluster Jewel');
 });
+
+test('totem builds and Ancestral Bond always use a native totem skill or link Spell/Ballista Totem', async () => {
+  for (let i = 0; i < 30; i++) {
+    const b = await generateBuild(data, baseOptions({
+      seed: `totem-link-${i}`,
+      damageStyle: 'totem',
+      economy: i % 2 === 0 ? 'trade' : 'ssf',
+    }));
+    const mainGroup = b.skills.groups[0];
+    const hasNativeTotem = b.archetype.mainSkill.tags.includes('totem');
+    const hasTotemSupport = mainGroup.gems.some(
+      (g) => g.gem.name === 'Spell Totem' || g.gem.name === 'Ballista Totem',
+    );
+    assert.ok(
+      hasNativeTotem || hasTotemSupport,
+      `Totem build ${b.archetype.title} (${b.archetype.mainSkill.name}) missing totem support: ${mainGroup.gems.map((g) => g.gem.name).join(', ')}`,
+    );
+    if (b.tree.summary.keystones.includes('Ancestral Bond')) {
+      assert.ok(hasNativeTotem || hasTotemSupport, 'Ancestral Bond allocated without any totem skill or support');
+    }
+  }
+});

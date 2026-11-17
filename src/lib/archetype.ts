@@ -172,7 +172,10 @@ function inferSkillStyle(gem: GemData, preferredStyle: DamageStyle | 'random'): 
   if (gem.tags.includes('minion')) return 'minion';
   if (gem.tags.includes('totem')) return 'totem';
   if (gem.tags.includes('trap') || gem.tags.includes('mine')) return 'trap_mine';
-  if (preferredStyle === 'totem' && gem.types.includes('Totemable')) return 'totem';
+  const canBeTotem = !gem.types.includes('InbuiltTrigger')
+    && gem.types.includes('Totemable')
+    && (gem.types.includes('Spell') || gem.types.includes('RangedAttack'));
+  if (preferredStyle === 'totem' && canBeTotem) return 'totem';
   if (preferredStyle === 'trap_mine' && (gem.types.includes('Trappable') || gem.types.includes('Mineable'))) return 'trap_mine';
   if (preferredStyle === 'dot' && (gem.types.includes('DamageOverTime') || gem.tags.includes('chaos') || gem.tags.includes('fire'))) return 'dot';
   if (gem.tags.includes('attack')) return 'attack';
@@ -427,7 +430,9 @@ export function pickArchetype(data: GameData, options: BuildOptions, rng: Rng): 
     // Style match
     const gStyle = inferSkillStyle(g, damageStyle);
     if (gStyle === damageStyle) w *= (allowLink ? 50 : 8);
-    else w *= 0.05;
+    else if (damageStyle === 'totem' || damageStyle === 'trap_mine' || damageStyle === 'minion' || damageStyle === 'link_support') {
+      return 0;
+    } else w *= 0.05;
 
     // Class attribute alignment
     const classStr = classData.str > classData.dex && classData.str > classData.int;

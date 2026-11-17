@@ -216,7 +216,9 @@ export function generateSkills(data: GameData, arch: BuildArchetype, rng: Rng): 
   const forcedSupports: GemData[] = [];
 
   if (arch.damageStyle === 'totem' && !arch.mainSkill.tags.includes('totem')) {
-    const totemSup = arch.mainSkill.tags.includes('attack') ? getGem('Ballista Totem') : getGem('Spell Totem');
+    const totemSup = arch.mainSkill.types.includes('RangedAttack')
+      ? getGem('Ballista Totem')
+      : getGem('Spell Totem');
     if (totemSup && canSupportSkill(totemSup, arch.mainSkill)) {
       forcedSupports.push(totemSup);
       if (totemSup.add) addedTypes.push(...totemSup.add);
