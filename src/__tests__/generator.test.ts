@@ -6,8 +6,15 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import type { GameData } from '../lib/types.ts';
-import { TARGET_STAT_DEFS, evaluateBuildTargets, generateBuild, rerollBuildItem, serializeTargetsKey } from '../lib/generator.ts';
-import { canSupportSkill } from '../lib/skills.ts';
+import {
+  TARGET_STAT_DEFS,
+  evaluateBuildTargets,
+  generateBuild,
+  rerollBuildItem,
+  rerollBuildSupportGem,
+  serializeTargetsKey,
+} from '../lib/generator.ts';
+import { canSupportSkill, isMandatoryTotemSupport } from '../lib/skills.ts';
 import type { BuildOptions } from '../lib/archetype.ts';
 import { parseGameVersionsLua } from '../../scripts/pob-version.mjs';
 import {
@@ -896,4 +903,50 @@ test('minion caster skills prioritize Convoking Wands and minion gear without Da
   assert.ok(sawConvokingWand, 'Expected minion builds at level 92 to pick Convoking Wand');
   assert.ok(sawMinionModOnWand, 'Expected minion wands to roll minion stats');
   assert.ok(sawMinionArmorOrRingBase, 'Expected minion builds to prioritize Bone Helmet / Bone Ring / Minion Spirit Shields');
+});
+
+test('rerollBuildSupportGem rerolls main and utility support gems cleanly and updates sockets and PoB code', async () => {
+  const b = await generateBuild(data, baseOptions({
+    seed: 'support-reroll-0',
+    level: 92,
+    economy: 'trade',
+    damageStyle: 'spell',
+  }));
+  const mainGroup = b.skills.groups[0];
+  assert.ok(mainGroup.gems.length >= 2);
+  const oldSup = mainGroup.gems[1];
+  assert.equal(oldSup.gem.support, true);
+
+  const afterMain = await rerollBuildSupportGem(data, b, 0, 1, 'sup-main-1');
+  const nextSup = afterMain.skills.groups[0].gems[1];
+  assert.equal(nextSup.gem.support, true);
+  assert.notEqual(nextSup.gem.name, oldSup.gem.name);
+  assert.notEqual(afterMain.pobCode, b.pobCode);
+  const baseNames = afterMain.skills.groups[0].gems.map((g) => g.gem.name.replace(/^Awakened /, ''));
+  assert.equal(new Set(baseNames).size, baseNames.length, 'Should not introduce duplicate support gems');
+
+  const body = afterMain.gear.items.find((it) => it.slot === 'Body Armour');
+  assert.ok(body);
+  assert.equal(body.sockets, afterMain.skills.slotSockets['Body Armour']);
+
+  // Also test rerolling a utility group support gem (Guard or Movement)
+  const utilGrpIdx = afterMain.skills.groups.findIndex((g, idx) => idx > 0 && g.gems.some((gi) => gi.gem.support));
+  assert.ok(utilGrpIdx > 0);
+  const utilGemIdx = afterMain.skills.groups[utilGrpIdx].gems.findIndex((gi) => gi.gem.support);
+  const afterUtil = await rerollBuildSupportGem(data, afterMain, utilGrpIdx, utilGemIdx, 'sup-util-1');
+  assert.equal(afterUtil.skills.groups[utilGrpIdx].gems[utilGemIdx].gem.support, true);
+
+  // Mandatory totem support stays protected
+  const totemBuild = await generateBuild(data, baseOptions({
+    seed: 'totem-link-0',
+    damageStyle: 'totem',
+    economy: 'trade',
+  }));
+  const mandatoryIdx = totemBuild.skills.groups[0].gems.findIndex((gi) =>
+    isMandatoryTotemSupport(totemBuild.archetype, gi.gem.name),
+  );
+  if (mandatoryIdx >= 0) {
+    const untouched = await rerollBuildSupportGem(data, totemBuild, 0, mandatoryIdx, 'sup-totem-lock');
+    assert.equal(untouched.skills.groups[0].gems[mandatoryIdx].gem.name, totemBuild.skills.groups[0].gems[mandatoryIdx].gem.name);
+  }
 });

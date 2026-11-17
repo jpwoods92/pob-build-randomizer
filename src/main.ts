@@ -7,8 +7,10 @@ import {
   generateBuild,
   hasActiveTargets,
   rerollBuildItem,
+  rerollBuildSupportGem,
   type GeneratedBuild,
 } from './lib/generator.ts';
+import { isMandatoryTotemSupport } from './lib/skills.ts';
 import type {
   BuildOptions,
   BuildTargets,
@@ -280,6 +282,7 @@ async function main() {
   let savedBuilds: SavedBuildEntry[] = loadSavedBuilds();
   let editingSavedId: string | null = null;
   const itemRerollCounts = new Map<number, number>();
+  const supportRerollCounts = new Map<string, number>();
 
   function applyTheme(pref: ThemePref) {
     themePref = pref;
@@ -487,6 +490,7 @@ async function main() {
   async function regenerate() {
     seedInput.value = options.seed;
     itemRerollCounts.clear();
+    supportRerollCounts.clear();
     const snapshot: BuildOptions = {
       ...options,
       targets: options.targets ? { ...options.targets } : undefined,
@@ -858,15 +862,25 @@ async function main() {
               <span class="badge">${grp.gems.length}L</span>
             </div>
             <div class="gem-list">
-              ${grp.gems.map((gi, idx) => `
-                <div class="gem-row gem-row-hover" tabindex="0" data-grp="${gIdx}" data-gem="${idx}">
-                  <span style="display:flex;align-items:center;">
-                    <i class="gem-dot gem-c${gi.gem.color}"></i>
-                    ${esc(gi.gem.name)}
-                  </span>
-                  <span class="gem-meta">Lv ${gi.level} / ${gi.quality}%</span>
-                </div>
-              `).join('')}
+              ${grp.gems.map((gi, idx) => {
+                const rerollBtn = gi.gem.support
+                  ? (isMandatoryTotemSupport(b.archetype, gi.gem.name)
+                    ? `<button type="button" class="gear-reroll-btn gem-reroll-btn" disabled title="Required by totem setup" aria-label="${esc(gi.gem.name)} required by totem setup">↻</button>`
+                    : `<button type="button" class="gear-reroll-btn gem-reroll-btn" data-reroll-grp="${gIdx}" data-reroll-gem="${idx}" title="Reroll ${esc(gi.gem.name)} for this build" aria-label="Reroll ${esc(gi.gem.name)}">↻</button>`)
+                  : '';
+                return `
+                  <div class="gem-row gem-row-hover" tabindex="0" data-grp="${gIdx}" data-gem="${idx}">
+                    <span style="display:flex;align-items:center;">
+                      <i class="gem-dot gem-c${gi.gem.color}"></i>
+                      ${esc(gi.gem.name)}
+                    </span>
+                    <span class="gem-row-right">
+                      <span class="gem-meta">Lv ${gi.level} / ${gi.quality}%</span>
+                      ${rerollBtn}
+                    </span>
+                  </div>
+                `;
+              }).join('')}
             </div>
           </div>
         `).join('')}
@@ -1323,6 +1337,39 @@ async function main() {
   });
   viewSkillsEl.addEventListener('focusout', () => {
     gemTooltip.classList.add('hidden');
+  });
+  viewSkillsEl.addEventListener('click', async (e) => {
+    const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-reroll-grp]');
+    if (!btn || btn.disabled || !currentBuild) return;
+    e.stopPropagation();
+    gemTooltip.classList.add('hidden');
+    const gIdx = Number(btn.dataset.rerollGrp);
+    const gemIdx = Number(btn.dataset.rerollGem);
+    if (!Number.isFinite(gIdx) || !Number.isFinite(gemIdx)) return;
+    const key = `${gIdx}:${gemIdx}`;
+    const nextCount = (supportRerollCounts.get(key) ?? 0) + 1;
+    supportRerollCounts.set(key, nextCount);
+    btn.disabled = true;
+    try {
+      const next = await rerollBuildSupportGem(
+        data,
+        currentBuild,
+        gIdx,
+        gemIdx,
+        `${currentBuild.archetype.options.seed}|sup-${gIdx}-${gemIdx}|reroll-${nextCount}`,
+      );
+      const ws = document.querySelector<HTMLElement>('.workspace');
+      const prevScroll = ws?.scrollTop ?? 0;
+      currentBuild = next;
+      updateSidebarMeta(next);
+      renderDashboard(next);
+      renderSkills(next);
+      renderGear(next);
+      renderExport(next);
+      if (ws) ws.scrollTop = prevScroll;
+    } finally {
+      btn.disabled = false;
+    }
   });
 
   document.getElementById('tree-side')!.addEventListener('click', (e) => {

@@ -1295,6 +1295,13 @@ input[type="range"] {
   white-space: nowrap;
 }
 
+.gem-row-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
 .gem-row-hover {
   cursor: help;
   transition: border-color 0.14s, background 0.14s;
@@ -1527,6 +1534,18 @@ input[type="range"] {
 
 .gear-reroll-btn:active {
   transform: rotate(90deg);
+}
+
+.gear-reroll-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.gear-reroll-btn:disabled:hover {
+  background: var(--surface-subtle);
+  color: var(--muted);
+  border-color: var(--border);
 }
 
 .gear-item-titles {

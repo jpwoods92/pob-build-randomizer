@@ -14,7 +14,7 @@ import {
   scoreStatsText,
   type GeneratedTree,
 } from './tree.ts';
-import { generateSkills, type GeneratedSkills } from './skills.ts';
+import { generateSkills, rerollSupportGem, type GeneratedSkills } from './skills.ts';
 import { generateGear, rerollGearItem, type GeneratedGear, type GeneratedItem } from './items.ts';
 import { rerollClusterJewelSocket } from './cluster.ts';
 import { computeProjectedDefenses, computeProjectedOffense, type ProjectedDefenses, type ProjectedOffense } from './stats.ts';
@@ -410,6 +410,53 @@ export async function rerollBuildItem(
     archetype: build.archetype,
     tree: nextTree,
     skills: build.skills,
+    gear: nextGear,
+    defenses,
+    offense,
+  };
+  const xml = buildPobXml({ ...nextCore, data });
+  const pobCode = await encodePobCode(xml);
+  return { ...nextCore, xml, pobCode };
+}
+
+export async function rerollBuildSupportGem(
+  data: GameData,
+  build: GeneratedBuild,
+  groupIdx: number,
+  gemIdx: number,
+  rerollSeed: string,
+): Promise<GeneratedBuild> {
+  const rng = new Rng(rerollSeed);
+  const nextSkills = rerollSupportGem(data, build.archetype, build.skills, groupIdx, gemIdx, rng.fork('skills'));
+  if (nextSkills === build.skills) return build;
+
+  const reqAttrs = { ...nextSkills.maxReq };
+  const nextItems = build.gear.items.map((it) => {
+    if (it.base.type !== 'Flask' && it.base.subType !== 'Cluster') {
+      if (it.base.req.str) reqAttrs.str = Math.max(reqAttrs.str, it.base.req.str);
+      if (it.base.req.dex) reqAttrs.dex = Math.max(reqAttrs.dex, it.base.req.dex);
+      if (it.base.req.int) reqAttrs.int = Math.max(reqAttrs.int, it.base.req.int);
+    }
+    const targetSockets = nextSkills.slotSockets[it.slot];
+    if (!targetSockets || it.sockets === targetSockets) return it;
+    const nextRawText = /^Sockets:/m.test(it.rawText)
+      ? it.rawText.replace(/^Sockets:.*$/m, `Sockets: ${targetSockets}`)
+      : it.rawText.replace(/^Implicits:/m, `Sockets: ${targetSockets}\nImplicits:`);
+    return { ...it, sockets: targetSockets, rawText: nextRawText };
+  });
+
+  const nextGear: GeneratedGear = {
+    ...build.gear,
+    items: nextItems,
+    requiredAttributes: reqAttrs,
+  };
+
+  const defenses = computeProjectedDefenses(data, build.archetype, build.tree, nextSkills, nextGear);
+  const offense = computeProjectedOffense(data, build.archetype, build.tree, nextSkills, nextGear);
+  const nextCore = {
+    archetype: build.archetype,
+    tree: build.tree,
+    skills: nextSkills,
     gear: nextGear,
     defenses,
     offense,

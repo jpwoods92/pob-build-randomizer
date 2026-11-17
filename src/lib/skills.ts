@@ -196,6 +196,83 @@ function scoreSupportForMain(sup: GemData, arch: BuildArchetype): number {
   return score;
 }
 
+function filterMainSupportPool(
+  compatibleSupports: GemData[],
+  chosenSupports: GemData[],
+  arch: BuildArchetype,
+): GemData[] {
+  const chosenBaseNames = new Set(chosenSupports.map((s) => s.name.replace(/^Awakened /, '')));
+  const hasBrutality = chosenSupports.some((s) => s.name === 'Brutality');
+  const hasEleSup = chosenSupports.some((s) => /Added (Fire|Cold|Lightning)|Elemental|Penetration|Immolate|Combustion|Hypothermia|Ice Bite|Innervate|Cold to Fire|Physical to Lightning|Trinity/.test(s.name));
+  const hasMineOverride = chosenSupports.some((s) => /^(High-Impact Mine|Blastchain Mine|Locus Mine)$/.test(s.name));
+  const hasEleFocus = chosenSupports.some((s) => s.name === 'Elemental Focus');
+  const hasAilmentSup = chosenSupports.some((s) => /Hypothermia|Ice Bite|Innervate|Combustion|Immolate|Ignite Proliferation|Elemental Proliferation|Unbound Ailments|Bonechill|Overcharge/.test(s.name));
+  const hasSinglePen = chosenSupports.find((s) => /^(Fire|Cold|Lightning) Penetration$/.test(s.name))?.name;
+  const hasPhysToLight = chosenSupports.some((s) => s.name === 'Physical to Lightning');
+  const hasColdToFire = chosenSupports.some((s) => s.name === 'Cold to Fire');
+  const hasProjSpread = chosenSupports.some((s) => /^(Greater Multiple Projectiles|Multiple Projectiles|Volley|Greater Volley|Barrage Support)$/.test(s.name));
+  const hasRepeat = chosenSupports.some((s) => /^(Spell Echo|Greater Spell Echo|Unleash|Greater Unleash)$/.test(s.name));
+
+  return compatibleSupports.filter((s) => {
+    const baseName = s.name.replace(/^Awakened /, '');
+    if (chosenBaseNames.has(baseName)) return false;
+    if (hasMineOverride && /^(High-Impact Mine|Blastchain Mine|Locus Mine)$/.test(s.name)) return false;
+    if (hasProjSpread && /^(Greater Multiple Projectiles|Multiple Projectiles|Volley|Greater Volley|Barrage Support)$/.test(s.name)) return false;
+    if (hasRepeat && /^(Spell Echo|Greater Spell Echo|Unleash|Greater Unleash)$/.test(s.name)) return false;
+    if (hasBrutality && (/Added (Fire|Cold|Lightning|Chaos)|Elemental|Penetration|Immolate|Combustion|Hypothermia|Ice Bite|Innervate|Cold to Fire|Physical to Lightning|Trinity|Void Manipulation/.test(s.name))) return false;
+    if (hasEleSup && s.name === 'Brutality') return false;
+    if (hasEleFocus && /Hypothermia|Ice Bite|Innervate|Combustion|Immolate|Ignite Proliferation|Elemental Proliferation|Unbound Ailments|Bonechill|Overcharge/.test(s.name)) return false;
+    if (hasAilmentSup && s.name === 'Elemental Focus') return false;
+    // Never mix single-element penetration with a different single-element pen or mismatched conversion
+    if (hasSinglePen && /^(Fire|Cold|Lightning) Penetration$/.test(s.name) && s.name !== hasSinglePen) return false;
+    if (hasSinglePen && hasSinglePen !== 'Lightning Penetration' && s.name === 'Physical to Lightning') return false;
+    if (hasSinglePen && hasSinglePen !== 'Fire Penetration' && s.name === 'Cold to Fire') return false;
+    if (hasPhysToLight && /^(Fire|Cold) Penetration$/.test(s.name)) return false;
+    if (hasColdToFire && /^(Cold|Lightning) Penetration$/.test(s.name)) return false;
+    return scoreSupportForMain(s, arch) > 0;
+  });
+}
+
+function computeSkillsMeta(
+  groups: SocketGroup[],
+  mainSkill: GemData,
+  mainLinks: number,
+): { slotSockets: Record<string, string>; maxReq: { str: number; dex: number; int: number } } {
+  const slotSockets: Record<string, string> = {};
+  const maxReq = { str: 0, dex: 0, int: 0 };
+
+  for (const grp of groups) {
+    const colors = grp.gems.map((gi) => colorChar(gi.gem.color));
+    if (grp.slot === 'Body Armour') {
+      // Always give Body Armour 6 sockets (with mainLinks linked)
+      while (colors.length < 6) colors.push(colorChar(mainSkill.color));
+      const linked = colors.slice(0, mainLinks).join('-');
+      const unlinked = colors.slice(mainLinks).join(' ');
+      slotSockets[grp.slot] = unlinked ? `${linked} ${unlinked}` : linked;
+    } else {
+      slotSockets[grp.slot] = colors.join('-');
+    }
+
+    for (const gi of grp.gems) {
+      // Scale attribute requirement with level (approx linear for lvl < 20, 100% at lvl 20)
+      const factor = Math.min(1, gi.level / 20);
+      const reqScale = 1.55; // PoB / PoE lvl 20 gems peak around ~155 when reqStr=100
+      maxReq.str = Math.max(maxReq.str, Math.round((gi.gem.str || 0) * reqScale * factor));
+      maxReq.dex = Math.max(maxReq.dex, Math.round((gi.gem.dex || 0) * reqScale * factor));
+      maxReq.int = Math.max(maxReq.int, Math.round((gi.gem.int || 0) * reqScale * factor));
+    }
+  }
+  return { slotSockets, maxReq };
+}
+
+export function isMandatoryTotemSupport(arch: BuildArchetype, gemName: string): boolean {
+  return (
+    arch.damageStyle === 'totem'
+    && !arch.mainSkill.tags.includes('totem')
+    && (gemName === 'Spell Totem' || gemName === 'Ballista Totem')
+  );
+}
+
 export function generateSkills(data: GameData, arch: BuildArchetype, rng: Rng): GeneratedSkills {
   const byName = new Map<string, GemData>();
   for (const g of data.gems) {
@@ -237,43 +314,13 @@ export function generateSkills(data: GameData, arch: BuildArchetype, rng: Rng): 
   );
 
   const chosenSupports: GemData[] = [...forcedSupports];
-  const chosenBaseNames = new Set(chosenSupports.map((s) => s.name.replace(/^Awakened /, '')));
 
   while (chosenSupports.length < mainLinks - 1) {
-    const hasBrutality = chosenSupports.some((s) => s.name === 'Brutality');
-    const hasEleSup = chosenSupports.some((s) => /Added (Fire|Cold|Lightning)|Elemental|Penetration|Immolate|Combustion|Hypothermia|Ice Bite|Innervate|Cold to Fire|Physical to Lightning|Trinity/.test(s.name));
-    const hasMineOverride = chosenSupports.some((s) => /^(High-Impact Mine|Blastchain Mine|Locus Mine)$/.test(s.name));
-    const hasEleFocus = chosenSupports.some((s) => s.name === 'Elemental Focus');
-    const hasAilmentSup = chosenSupports.some((s) => /Hypothermia|Ice Bite|Innervate|Combustion|Immolate|Ignite Proliferation|Elemental Proliferation|Unbound Ailments|Bonechill|Overcharge/.test(s.name));
-    const hasSinglePen = chosenSupports.find((s) => /^(Fire|Cold|Lightning) Penetration$/.test(s.name))?.name;
-    const hasPhysToLight = chosenSupports.some((s) => s.name === 'Physical to Lightning');
-    const hasColdToFire = chosenSupports.some((s) => s.name === 'Cold to Fire');
-    const hasProjSpread = chosenSupports.some((s) => /^(Greater Multiple Projectiles|Multiple Projectiles|Volley|Greater Volley|Barrage Support)$/.test(s.name));
-    const hasRepeat = chosenSupports.some((s) => /^(Spell Echo|Greater Spell Echo|Unleash|Greater Unleash)$/.test(s.name));
-
-    const pool = compatibleSupports.filter((s) => {
-      const baseName = s.name.replace(/^Awakened /, '');
-      if (chosenBaseNames.has(baseName)) return false;
-      if (hasMineOverride && /^(High-Impact Mine|Blastchain Mine|Locus Mine)$/.test(s.name)) return false;
-      if (hasProjSpread && /^(Greater Multiple Projectiles|Multiple Projectiles|Volley|Greater Volley|Barrage Support)$/.test(s.name)) return false;
-      if (hasRepeat && /^(Spell Echo|Greater Spell Echo|Unleash|Greater Unleash)$/.test(s.name)) return false;
-      if (hasBrutality && (/Added (Fire|Cold|Lightning|Chaos)|Elemental|Penetration|Immolate|Combustion|Hypothermia|Ice Bite|Innervate|Cold to Fire|Physical to Lightning|Trinity|Void Manipulation/.test(s.name))) return false;
-      if (hasEleSup && s.name === 'Brutality') return false;
-      if (hasEleFocus && /Hypothermia|Ice Bite|Innervate|Combustion|Immolate|Ignite Proliferation|Elemental Proliferation|Unbound Ailments|Bonechill|Overcharge/.test(s.name)) return false;
-      if (hasAilmentSup && s.name === 'Elemental Focus') return false;
-      // Never mix single-element penetration with a different single-element pen or mismatched conversion
-      if (hasSinglePen && /^(Fire|Cold|Lightning) Penetration$/.test(s.name) && s.name !== hasSinglePen) return false;
-      if (hasSinglePen && hasSinglePen !== 'Lightning Penetration' && s.name === 'Physical to Lightning') return false;
-      if (hasSinglePen && hasSinglePen !== 'Fire Penetration' && s.name === 'Cold to Fire') return false;
-      if (hasPhysToLight && /^(Fire|Cold) Penetration$/.test(s.name)) return false;
-      if (hasColdToFire && /^(Cold|Lightning) Penetration$/.test(s.name)) return false;
-      return scoreSupportForMain(s, arch) > 0;
-    });
+    const pool = filterMainSupportPool(compatibleSupports, chosenSupports, arch);
     if (pool.length === 0) break;
     const picked = rng.weighted(pool, (s) => scoreSupportForMain(s, arch));
     if (!picked) break;
     chosenSupports.push(picked);
-    chosenBaseNames.add(picked.name.replace(/^Awakened /, ''));
   }
 
   groups.push({
@@ -479,37 +526,133 @@ export function generateSkills(data: GameData, arch: BuildArchetype, rng: Rng): 
     });
   }
 
-  // Compute socket strings per slot and max attribute requirements
-  const slotSockets: Record<string, string> = {};
-  const maxReq = { str: 0, dex: 0, int: 0 };
-
-  for (const grp of groups) {
-    const colors = grp.gems.map((gi) => colorChar(gi.gem.color));
-    if (grp.slot === 'Body Armour') {
-      // Always give Body Armour 6 sockets (with mainLinks linked)
-      while (colors.length < 6) colors.push(colorChar(arch.mainSkill.color));
-      const linked = colors.slice(0, mainLinks).join('-');
-      const unlinked = colors.slice(mainLinks).join(' ');
-      slotSockets[grp.slot] = unlinked ? `${linked} ${unlinked}` : linked;
-    } else {
-      slotSockets[grp.slot] = colors.join('-');
-    }
-
-    for (const gi of grp.gems) {
-      // Scale attribute requirement with level (approx linear for lvl < 20, 100% at lvl 20)
-      const factor = Math.min(1, gi.level / 20);
-      const reqScale = 1.55; // PoB / PoE lvl 20 gems peak around ~155 when reqStr=100
-      maxReq.str = Math.max(maxReq.str, Math.round((gi.gem.str || 0) * reqScale * factor));
-      maxReq.dex = Math.max(maxReq.dex, Math.round((gi.gem.dex || 0) * reqScale * factor));
-      maxReq.int = Math.max(maxReq.int, Math.round((gi.gem.int || 0) * reqScale * factor));
-    }
-  }
+  const { slotSockets, maxReq } = computeSkillsMeta(groups, arch.mainSkill, mainLinks);
 
   return {
     groups,
     mainSocketGroupIndex: 1,
     slotSockets,
     manaReservedPct: reservedPct,
+    maxReq,
+  };
+}
+
+/**
+ * Reroll a single support gem inside a socket group for the active build,
+ * keeping gem compatibility, socket colors, attribute requirements, and reservation synced.
+ */
+export function rerollSupportGem(
+  data: GameData,
+  arch: BuildArchetype,
+  skills: GeneratedSkills,
+  groupIdx: number,
+  gemIdx: number,
+  rng: Rng,
+): GeneratedSkills {
+  const grp = skills.groups[groupIdx];
+  const oldGi = grp?.gems[gemIdx];
+  if (!grp || !oldGi || !oldGi.gem.support) return skills;
+
+  const isTrade = arch.options.economy === 'trade';
+  const otherGems = grp.gems.filter((_, i) => i !== gemIdx);
+  const otherBaseNames = new Set(otherGems.map((g) => g.gem.name.replace(/^Awakened /, '')));
+  const allSupports = data.gems.filter((g) => g.support);
+
+  let picked: GemData | undefined;
+
+  if (grp.includeInFullDps) {
+    if (isMandatoryTotemSupport(arch, oldGi.gem.name)) {
+      return skills;
+    }
+    const isMandatoryTrapMine =
+      arch.damageStyle === 'trap_mine'
+      && !arch.mainSkill.tags.includes('trap')
+      && !arch.mainSkill.tags.includes('mine')
+      && /^(High-Impact Mine|Blastchain Mine|Locus Mine|Trap|Cluster Traps|Multiple Traps)$/.test(oldGi.gem.name);
+
+    const addedTypes = otherGems.flatMap((g) => (g.gem.support && g.gem.add ? g.gem.add : []));
+    const compatible = allSupports.filter(
+      (s) => s.name !== oldGi.gem.name && !otherBaseNames.has(s.name.replace(/^Awakened /, '')) && canSupportSkill(s, arch.mainSkill, addedTypes),
+    );
+    const otherSupports = otherGems.filter((g) => g.gem.support).map((g) => g.gem);
+    let pool = filterMainSupportPool(compatible, otherSupports, arch);
+    if (isMandatoryTrapMine) {
+      const tmPattern = arch.trapOrMine === 'mine'
+        ? /^(High-Impact Mine|Blastchain Mine|Locus Mine)$/
+        : /^(Trap|Cluster Traps|Multiple Traps)$/;
+      const tmPool = pool.filter((s) => tmPattern.test(s.name));
+      if (tmPool.length > 0) pool = tmPool;
+    }
+    if (pool.length > 0) {
+      picked = rng.weighted(pool, (s) => scoreSupportForMain(s, arch));
+    }
+  } else {
+    const actives = otherGems.filter((g) => !g.gem.support);
+    const allowList = grp.label.includes('Aura')
+      ? ['Enlighten', 'Awakened Enlighten', 'Empower', 'Awakened Empower', 'Enhance', 'Awakened Enhance', 'Generosity', 'Awakened Generosity', 'Inspiration']
+      : grp.label.includes('Guard')
+        ? ['Automation', 'Cast when Damage Taken', 'More Duration', 'Less Duration', 'Lifetap', 'Inspiration', 'Second Wind', 'Empower', 'Enhance']
+        : grp.label.includes('Movement')
+          ? ['Faster Attacks', 'Faster Casting', 'Momentum', 'Arcane Surge', 'Second Wind', 'Lifetap', 'Inspiration', 'More Duration', 'Culling Strike', 'Fortify', 'Blind']
+          : ['Mark On Hit', 'Hextouch', 'More Duration', 'Increased Area of Effect', 'Culling Strike', 'Lifetap', 'Inspiration', 'Enhance', 'Faster Casting', 'Second Wind'];
+
+    const candidates = allSupports.filter((s) => {
+      if (s.name === oldGi.gem.name) return false;
+      if (otherBaseNames.has(s.name.replace(/^Awakened /, ''))) return false;
+      if (s.tags.includes('awakened') && !isTrade) return false;
+      if (s.name === 'Lifetap' && arch.defenseStyle === 'es') return false;
+      if (!allowList.includes(s.name)) return false;
+      return actives.length === 0 || actives.some((a) => canSupportSkill(s, a.gem));
+    });
+
+    if (candidates.length > 0) {
+      picked = rng.pick(candidates);
+    }
+  }
+
+  if (!picked) return skills;
+
+  const nextLevel = picked.tags.includes('awakened')
+    ? 5
+    : picked.tags.includes('exceptional')
+      ? 3
+      : picked.name === 'Cast when Damage Taken'
+        ? 1
+        : picked.name === 'Arcane Surge'
+          ? 7
+          : 20;
+
+  const nextGroups = skills.groups.map((g, gIdx) => {
+    if (gIdx !== groupIdx) return g;
+    return {
+      ...g,
+      gems: g.gems.map((gi, i) =>
+        i === gemIdx
+          ? { gem: picked!, level: nextLevel, quality: gi.quality, enabled: true }
+          : gi,
+      ),
+    };
+  });
+
+  const mainLinks = nextGroups.find((g) => g.includeInFullDps)?.gems.length ?? 6;
+  const { slotSockets, maxReq } = computeSkillsMeta(nextGroups, arch.mainSkill, mainLinks);
+
+  // Sync mana reservation if Aura group Enlighten support changed
+  let nextReserved = skills.manaReservedPct;
+  const auraGrp = nextGroups.find((g) => g.label.includes('Aura'));
+  if (auraGrp) {
+    const rawRes = auraGrp.gems
+      .filter((gi) => !gi.gem.support)
+      .reduce((acc, gi) => acc + (gi.gem.reservePct ?? (gi.gem.reserveFlat ? 10 : 25)), 0);
+    const hasEnlighten = auraGrp.gems.some((gi) => gi.gem.name.includes('Enlighten'));
+    nextReserved = Math.round(rawRes * (hasEnlighten ? 0.92 : 1));
+  }
+
+  return {
+    ...skills,
+    groups: nextGroups,
+    slotSockets,
+    manaReservedPct: nextReserved,
     maxReq,
   };
 }
