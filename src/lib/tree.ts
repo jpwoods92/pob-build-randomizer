@@ -123,7 +123,7 @@ function isMasteryAllowed(name: string, arch: BuildArchetype): boolean {
   }
 }
 
-function scoreStatsText(stats: string[] | undefined, arch: BuildArchetype): number {
+export function scoreStatsText(stats: string[] | undefined, arch: BuildArchetype): number {
   if (!stats || stats.length === 0) return 0;
   const text = stats.join(' | ').toLowerCase();
   const isHC = arch.options.leagueMode === 'hardcore';

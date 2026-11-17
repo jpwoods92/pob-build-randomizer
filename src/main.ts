@@ -6,6 +6,7 @@ import {
   evaluateBuildTargets,
   generateBuild,
   hasActiveTargets,
+  rerollBuildItem,
   type GeneratedBuild,
 } from './lib/generator.ts';
 import type {
@@ -278,6 +279,7 @@ async function main() {
   const navSavedPill = document.getElementById('nav-saved-pill')!;
   let savedBuilds: SavedBuildEntry[] = loadSavedBuilds();
   let editingSavedId: string | null = null;
+  const itemRerollCounts = new Map<number, number>();
 
   function applyTheme(pref: ThemePref) {
     themePref = pref;
@@ -484,6 +486,7 @@ async function main() {
 
   async function regenerate() {
     seedInput.value = options.seed;
+    itemRerollCounts.clear();
     const snapshot: BuildOptions = {
       ...options,
       targets: options.targets ? { ...options.targets } : undefined,
@@ -879,7 +882,16 @@ async function main() {
             <div class="item-name-${item.rarity}">${esc(item.name)}</div>
             <div class="item-base">${esc(item.baseName)}</div>
           </div>
-          <span class="gear-slot-tag">${esc(slotLabel ?? item.slot)}</span>
+          <div class="gear-item-head-top">
+            <span class="gear-slot-tag">${esc(slotLabel ?? item.slot)}</span>
+            <button
+              type="button"
+              class="gear-reroll-btn"
+              data-reroll-item="${item.id}"
+              title="Reroll ${esc(slotLabel ?? item.slot)} for this build"
+              aria-label="Reroll ${esc(slotLabel ?? item.slot)}"
+            >↻</button>
+          </div>
         </div>
         <div class="item-meta-line">
           <span>iLvl ${item.itemLevel}</span>
@@ -1437,6 +1449,36 @@ async function main() {
     link.download = `${currentBuild.archetype.ascendancy.name.toLowerCase()}-${currentBuild.archetype.options.seed}.xml`;
     link.click();
     URL.revokeObjectURL(url);
+  });
+
+  document.getElementById('view-gear')!.addEventListener('click', async (e) => {
+    const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-reroll-item]');
+    if (!btn || !currentBuild) return;
+    const itemId = Number(btn.dataset.rerollItem);
+    if (!Number.isFinite(itemId)) return;
+    const nextCount = (itemRerollCounts.get(itemId) ?? 0) + 1;
+    itemRerollCounts.set(itemId, nextCount);
+    btn.disabled = true;
+    try {
+      const next = await rerollBuildItem(
+        data,
+        currentBuild,
+        itemId,
+        `${currentBuild.archetype.options.seed}|item-${itemId}|reroll-${nextCount}`,
+      );
+      const ws = document.querySelector<HTMLElement>('.workspace');
+      const prevScroll = ws?.scrollTop ?? 0;
+      currentBuild = next;
+      updateSidebarMeta(next);
+      renderDashboard(next);
+      renderTreeSide(next);
+      renderGear(next);
+      renderExport(next);
+      treeCanvas?.setBuildTree(next.tree);
+      if (ws) ws.scrollTop = prevScroll;
+    } finally {
+      btn.disabled = false;
+    }
   });
 
   document.getElementById('league-seg')!.addEventListener('click', (e) => {

@@ -7,9 +7,16 @@ import {
   type BuildTargets,
   type TargetStatKey,
 } from './archetype.ts';
-import { generatePassiveTree, patchTreeAttributes, type GeneratedTree } from './tree.ts';
+import {
+  encodeTreeUrl,
+  generatePassiveTree,
+  patchTreeAttributes,
+  scoreStatsText,
+  type GeneratedTree,
+} from './tree.ts';
 import { generateSkills, type GeneratedSkills } from './skills.ts';
-import { generateGear, type GeneratedGear } from './items.ts';
+import { generateGear, rerollGearItem, type GeneratedGear, type GeneratedItem } from './items.ts';
+import { rerollClusterJewelSocket } from './cluster.ts';
 import { computeProjectedDefenses, computeProjectedOffense, type ProjectedDefenses, type ProjectedOffense } from './stats.ts';
 import { buildPobXml, encodePobCode } from './pob-export.ts';
 
@@ -322,4 +329,92 @@ export async function generateBuild(data: GameData, options: BuildOptions): Prom
   const xml = buildPobXml({ ...bestCandidate, data });
   const pobCode = await encodePobCode(xml);
   return { ...bestCandidate, xml, pobCode };
+}
+
+export async function rerollBuildItem(
+  data: GameData,
+  build: GeneratedBuild,
+  itemId: number,
+  rerollSeed: string,
+): Promise<GeneratedBuild> {
+  const rng = new Rng(rerollSeed);
+  const oldItem = build.gear.items.find((it) => it.id === itemId);
+  if (!oldItem) return build;
+
+  let nextTree = build.tree;
+  let clusterReplacement: GeneratedItem | undefined;
+
+  if (oldItem.base.subType === 'Cluster' && oldItem.jewelNodeId !== undefined && build.tree.clusterJewels) {
+    const cjRes = rerollClusterJewelSocket(
+      data,
+      build.archetype,
+      rng.fork('cluster'),
+      build.tree.clusterNodes ?? {},
+      build.tree.clusterJewels,
+      build.tree.nodes,
+      oldItem.jewelNodeId,
+      build.tree.pointsBudget,
+      build.tree.pointsUsed,
+      (s) => scoreStatsText(s, build.archetype),
+    );
+    if (cjRes) {
+      const nextNotables = cjRes.nodes
+        .map((id) => data.tree.nodes[id] ?? cjRes.clusterNodes[id])
+        .filter((n) => n && n.t === 'notable' && !n.a)
+        .map((n) => n.n);
+      nextTree = {
+        ...build.tree,
+        nodes: cjRes.nodes,
+        clusterNodes: cjRes.clusterNodes,
+        clusterJewels: cjRes.clusterJewels,
+        pointsUsed: cjRes.pointsUsed,
+        summary: {
+          ...build.tree.summary,
+          notables: nextNotables,
+        },
+        url: encodeTreeUrl(
+          data.tree.urlVersion,
+          build.tree.classId,
+          build.tree.ascendClassId,
+          cjRes.nodes,
+          build.tree.masteryEffects,
+          data.tree,
+        ),
+      };
+      clusterReplacement = {
+        ...oldItem,
+        name: cjRes.updatedJewel.name,
+        itemLevel: cjRes.updatedJewel.itemLevel,
+        implicits: cjRes.updatedJewel.implicits,
+        explicits: cjRes.updatedJewel.explicits,
+        prefixes: cjRes.updatedJewel.prefixes,
+        suffixes: cjRes.updatedJewel.suffixes,
+        rawText: cjRes.updatedJewel.rawText,
+      };
+    }
+  }
+
+  const nextGear = rerollGearItem(
+    data,
+    build.archetype,
+    nextTree,
+    build.skills,
+    build.gear,
+    itemId,
+    rng.fork('gear'),
+    clusterReplacement,
+  );
+  const defenses = computeProjectedDefenses(data, build.archetype, nextTree, build.skills, nextGear);
+  const offense = computeProjectedOffense(data, build.archetype, nextTree, build.skills, nextGear);
+  const nextCore = {
+    archetype: build.archetype,
+    tree: nextTree,
+    skills: build.skills,
+    gear: nextGear,
+    defenses,
+    offense,
+  };
+  const xml = buildPobXml({ ...nextCore, data });
+  const pobCode = await encodePobCode(xml);
+  return { ...nextCore, xml, pobCode };
 }

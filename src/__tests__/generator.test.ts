@@ -6,7 +6,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import type { GameData } from '../lib/types.ts';
-import { TARGET_STAT_DEFS, evaluateBuildTargets, generateBuild, serializeTargetsKey } from '../lib/generator.ts';
+import { TARGET_STAT_DEFS, evaluateBuildTargets, generateBuild, rerollBuildItem, serializeTargetsKey } from '../lib/generator.ts';
 import { canSupportSkill } from '../lib/skills.ts';
 import type { BuildOptions } from '../lib/archetype.ts';
 import { parseGameVersionsLua } from '../../scripts/pob-version.mjs';
@@ -785,4 +785,71 @@ test('totem builds and Ancestral Bond always use a native totem skill or link Sp
       assert.ok(hasNativeTotem || hasTotemSupport, 'Ancestral Bond allocated without any totem skill or support');
     }
   }
+});
+
+test('rerollBuildItem rerolls individual equipment, flask, base jewel, and cluster jewel items for the current build', async () => {
+  const b = await generateBuild(data, baseOptions({
+    seed: 'cluster-test-0',
+    level: 94,
+    economy: 'trade',
+  }));
+
+  // 1. Reroll an equipment slot (Ring 1 and Body Armour if present)
+  const ring = b.gear.items.find((it) => it.slot === 'Ring 1');
+  assert.ok(ring, 'Expected Ring 1 item');
+  const afterRing = await rerollBuildItem(data, b, ring.id, 'reroll-ring-1');
+  const rerolledRing = afterRing.gear.items.find((it) => it.id === ring.id);
+  assert.ok(rerolledRing);
+  assert.equal(rerolledRing.slot, 'Ring 1');
+  assert.notEqual(rerolledRing.rawText, ring.rawText);
+  assert.notEqual(afterRing.pobCode, b.pobCode);
+  assert.ok(afterRing.gear.resists.fire >= 75 && afterRing.gear.resists.cold >= 75 && afterRing.gear.resists.lightning >= 75);
+
+  const body = afterRing.gear.items.find((it) => it.slot === 'Body Armour');
+  if (body) {
+    const armourTypesBefore = new Set(
+      afterRing.gear.items
+        .filter((it) => ['Helmet', 'Body Armour', 'Gloves', 'Boots'].includes(it.slot) && it.rarity !== 'UNIQUE')
+        .map((it) => it.base.subType),
+    );
+    const afterBody = await rerollBuildItem(data, afterRing, body.id, 'reroll-body-1');
+    const rerolledBody = afterBody.gear.items.find((it) => it.id === body.id);
+    assert.ok(rerolledBody);
+    assert.equal(rerolledBody.slot, 'Body Armour');
+    if (rerolledBody.rarity !== 'UNIQUE' && armourTypesBefore.size === 1) {
+      assert.equal(rerolledBody.base.subType, [...armourTypesBefore][0]);
+    }
+  }
+
+  // 2. Reroll a utility Flask
+  const flask = afterRing.gear.items.find((it) => it.slot === 'Flask 3');
+  assert.ok(flask, 'Expected Flask 3 item');
+  const afterFlask = await rerollBuildItem(data, afterRing, flask.id, 'reroll-flask-1');
+  const rerolledFlask = afterFlask.gear.items.find((it) => it.id === flask.id);
+  assert.ok(rerolledFlask);
+  assert.equal(rerolledFlask.slot, 'Flask 3');
+  assert.equal(rerolledFlask.base.type, 'Flask');
+
+  // 3. Reroll a Base Jewel if present
+  const baseJewel = afterFlask.gear.items.find((it) => it.base.type === 'Jewel' && it.base.subType !== 'Cluster');
+  if (baseJewel) {
+    const afterJewel = await rerollBuildItem(data, afterFlask, baseJewel.id, 'reroll-jewel-1');
+    const rerolledJewel = afterJewel.gear.items.find((it) => it.id === baseJewel.id);
+    assert.ok(rerolledJewel);
+    assert.equal(rerolledJewel.base.type, 'Jewel');
+    assert.equal(rerolledJewel.jewelNodeId, baseJewel.jewelNodeId);
+  }
+
+  // 4. Reroll a Cluster Jewel if present
+  const clusterItem = afterFlask.gear.items.find((it) => it.base.subType === 'Cluster');
+  assert.ok(clusterItem, 'Expected cluster-test-0 at level 94 Trade to include a Cluster Jewel');
+  const afterCluster = await rerollBuildItem(data, afterFlask, clusterItem.id, 'reroll-cluster-1');
+  assert.ok(afterCluster.tree.pointsUsed <= afterCluster.tree.pointsBudget);
+  assert.ok(afterCluster.tree.clusterJewels && afterCluster.tree.clusterJewels.length > 0);
+  const matchingCluster = afterCluster.tree.clusterJewels.find((cj) => cj.socketNodeId === clusterItem.jewelNodeId);
+  assert.ok(matchingCluster, 'Cluster socket remains allocated after reroll');
+  const rerolledClusterItem = afterCluster.gear.items.find((it) => it.jewelNodeId === matchingCluster.socketNodeId);
+  assert.ok(rerolledClusterItem);
+  assert.ok(rerolledClusterItem.rawText.includes(`Cluster Jewel Skill: ${matchingCluster.skillId}`));
+  assert.ok(afterCluster.xml.includes(`<Socket nodeId="${matchingCluster.socketNodeId}" itemId="${rerolledClusterItem.id}"/>`));
 });

@@ -682,3 +682,105 @@ export function allocateClusterJewelsForTree(
 
   return { clusterNodes, allocatedNodeIds, jewelSockets, clusterJewels, pointsSpent };
 }
+
+export function rerollClusterJewelSocket(
+  data: GameData,
+  arch: BuildArchetype,
+  rng: Rng,
+  clusterNodes: Record<number, TreeNode>,
+  clusterJewels: GeneratedClusterJewel[],
+  allTreeNodes: number[],
+  socketNodeId: number,
+  pointsBudget: number,
+  currentPointsUsed: number,
+  scoreStats: (stats?: string[]) => number,
+): {
+  clusterNodes: Record<number, TreeNode>;
+  clusterJewels: GeneratedClusterJewel[];
+  nodes: number[];
+  pointsUsed: number;
+  updatedJewel: GeneratedClusterJewel;
+} | null {
+  const idx = clusterJewels.findIndex((c) => c.socketNodeId === socketNodeId);
+  if (idx < 0) return null;
+  const oldCj = clusterJewels[idx];
+  const socketMeta = data.clusters.sockets[String(socketNodeId)];
+  if (!socketMeta) return null;
+
+  // Determine exact parent idBits matching BuildSubgraph bit encoding
+  let parentIdBits = 0x10000;
+  if (socketMeta.size === 1 && socketMeta.parent) {
+    const parentMeta = data.clusters.sockets[String(socketMeta.parent)];
+    if (parentMeta?.size === 2) parentIdBits += parentMeta.index << 6;
+  } else if (socketMeta.size === 0 && socketMeta.parent) {
+    const medMeta = data.clusters.sockets[String(socketMeta.parent)];
+    const largeMeta = medMeta?.parent ? data.clusters.sockets[String(medMeta.parent)] : undefined;
+    if (largeMeta?.size === 2) parentIdBits += largeMeta.index << 6;
+    if (medMeta?.size === 1) parentIdBits += medMeta.index << 9;
+  }
+
+  const rolled = rollOneClusterJewel(
+    data,
+    arch,
+    rng,
+    scoreStats,
+    oldCj.baseName,
+    socketNodeId,
+    parentIdBits,
+    oldCj.socketCount,
+  );
+  if (!rolled) return null;
+
+  // Remove old subgraph synthetic nodes belonging to oldCj's nodeIdBase
+  const jewelDef = data.clusters.jewels[oldCj.baseName];
+  let ownIdBase = parentIdBits;
+  if (socketMeta.size === 2) ownIdBase += socketMeta.index << 6;
+  else if (socketMeta.size === 1) ownIdBase += socketMeta.index << 9;
+  const ownNodeBase = ownIdBase + (jewelDef.sizeIndex << 4);
+  const oldSubgraphIds = new Set<number>();
+  for (let i = 0; i < jewelDef.totalIndicies; i++) oldSubgraphIds.add(ownNodeBase + i);
+  oldSubgraphIds.add(ownNodeBase + 12);
+
+  const nextClusterNodes: Record<number, TreeNode> = {};
+  for (const [k, v] of Object.entries(clusterNodes)) {
+    if (!oldSubgraphIds.has(Number(k))) nextClusterNodes[Number(k)] = v;
+  }
+  for (const [k, v] of Object.entries(rolled.subgraph.nodes)) {
+    nextClusterNodes[Number(k)] = v;
+  }
+
+  // Re-allocate subgraph within old budget + available remaining points, keeping any child sockets that host another cluster jewel
+  const oldAllocatedSet = new Set(oldCj.allocatedNodeIds);
+  const baseNodes = allTreeNodes.filter((id) => !oldAllocatedSet.has(id) || data.clusters.sockets[String(id)]);
+  const removedNonSocketCount = oldCj.allocatedNodeIds.filter((id) => !data.clusters.sockets[String(id)]).length;
+  const maxSpend = (pointsBudget - currentPointsUsed) + removedNonSocketCount;
+
+  const subAlloc = new Set<number>([rolled.subgraph.entranceId]);
+  let spent = 1;
+  const occupiedChildSockets = rolled.subgraph.socketIds.filter((sid) =>
+    clusterJewels.some((c, ci) => ci !== idx && c.socketNodeId === sid) || allTreeNodes.includes(sid),
+  );
+  for (const sid of occupiedChildSockets) {
+    const path = shortestPathInSubgraph(rolled.subgraph.nodes, subAlloc, sid);
+    if (!path || spent + path.length > maxSpend) continue;
+    for (const pid of path) { subAlloc.add(pid); spent++; }
+  }
+  for (const nid of rolled.subgraph.notableIds) {
+    const path = shortestPathInSubgraph(rolled.subgraph.nodes, subAlloc, nid);
+    if (!path || path.length > 2 || spent + path.length > maxSpend) continue;
+    for (const pid of path) { subAlloc.add(pid); spent++; }
+  }
+
+  rolled.jewel.allocatedNodeIds = [...subAlloc];
+  const nextJewels = clusterJewels.map((c, ci) => (ci === idx ? rolled.jewel : c));
+  const nextNodes = [...new Set([...baseNodes, ...rolled.jewel.allocatedNodeIds])].sort((a, b) => a - b);
+  const nextPointsUsed = currentPointsUsed - removedNonSocketCount + spent;
+
+  return {
+    clusterNodes: nextClusterNodes,
+    clusterJewels: nextJewels,
+    nodes: nextNodes,
+    pointsUsed: nextPointsUsed,
+    updatedJewel: rolled.jewel,
+  };
+}

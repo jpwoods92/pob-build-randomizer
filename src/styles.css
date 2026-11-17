@@ -1494,6 +1494,41 @@ input[type="range"] {
   gap: 4px;
 }
 
+.gear-item-head-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  width: 100%;
+}
+
+.gear-reroll-btn {
+  border: 1px solid var(--border);
+  background: var(--surface-subtle);
+  color: var(--muted);
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.78rem;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.14s, color 0.14s, border-color 0.14s, transform 0.14s;
+}
+
+.gear-reroll-btn:hover {
+  background: var(--lime);
+  color: #0f172a;
+  border-color: var(--lime);
+}
+
+.gear-reroll-btn:active {
+  transform: rotate(90deg);
+}
+
 .gear-item-titles {
   min-width: 0;
   width: 100%;
