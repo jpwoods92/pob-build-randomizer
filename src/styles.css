@@ -1413,6 +1413,121 @@ input[type="range"] {
   font-weight: 600;
 }
 
+.btn.is-saved {
+  border-color: var(--lime);
+  background: var(--lime-soft);
+}
+
+.saved-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.saved-empty {
+  margin-top: 14px;
+  text-align: center;
+  padding: 36px 20px;
+}
+
+.saved-empty h3 {
+  margin: 0 0 6px;
+}
+
+.saved-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.saved-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.saved-card.is-active {
+  border-color: var(--lime);
+}
+
+.saved-title {
+  margin: 0 0 3px;
+  font-size: 0.98rem;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.saved-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.saved-stat {
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 7px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.saved-stat span {
+  font-size: 0.68rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.saved-stat strong {
+  font-size: 0.82rem;
+  color: var(--text);
+}
+
+.saved-card-foot {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.saved-date {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.saved-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.saved-rename-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.saved-rename-input {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-subtle);
+  color: var(--text);
+  font-size: 0.85rem;
+}
+
 @media (max-width: 900px) {
   .layout,
   .layout.sidebar-collapsed {

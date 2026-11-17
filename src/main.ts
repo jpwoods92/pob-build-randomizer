@@ -5,9 +5,18 @@ import { generateBuild, type GeneratedBuild } from './lib/generator.ts';
 import type { BuildOptions, DamageStyle, DefenseStyle, EconomyMode, LeagueMode } from './lib/archetype.ts';
 import type { GameData } from './lib/types.ts';
 import { TreeCanvas } from './components/TreeCanvas.ts';
+import {
+  buildOptionsSignature,
+  clearSavedBuilds,
+  deleteSavedBuild,
+  loadSavedBuilds,
+  renameSavedBuild,
+  saveBuildToStorage,
+  type SavedBuildEntry,
+} from './lib/storage.ts';
 
 type ThemePref = 'system' | 'light' | 'dark';
-type NavView = 'dashboard' | 'tree' | 'skills' | 'gear' | 'export';
+type NavView = 'dashboard' | 'tree' | 'skills' | 'gear' | 'export' | 'saved';
 
 const THEME_STORAGE_KEY = 'pob-randomizer-theme';
 
@@ -90,6 +99,11 @@ async function main() {
           <button type="button" class="nav-item" data-view="export">
             <span class="nav-icon">⇄</span>
             <span class="nav-label">PoB Export</span>
+          </button>
+          <button type="button" class="nav-item" data-view="saved">
+            <span class="nav-icon">★</span>
+            <span class="nav-label">Saved Builds</span>
+            <span class="nav-pill" id="nav-saved-pill">0</span>
           </button>
         </nav>
 
@@ -185,6 +199,7 @@ async function main() {
               <button type="button" data-theme-pref="light">Light</button>
               <button type="button" data-theme-pref="dark">Dark</button>
             </div>
+            <button type="button" class="btn" id="save-build-btn">Save Build</button>
             <button type="button" class="btn btn-cta" id="copy-pob-btn">Copy PoB Code</button>
             <button type="button" class="btn" id="download-xml-btn">Download .xml</button>
             <a class="btn" id="official-tree-link" href="#" target="_blank" rel="noreferrer">Official Tree</a>
@@ -203,6 +218,7 @@ async function main() {
         <section class="view-panel" id="view-skills"></section>
         <section class="view-panel" id="view-gear"></section>
         <section class="view-panel" id="view-export"></section>
+        <section class="view-panel" id="view-saved"></section>
       </main>
     </div>
   `;
@@ -221,6 +237,10 @@ async function main() {
   const seedInput = document.getElementById('seed-input') as HTMLInputElement;
   const knobSummaryEl = document.getElementById('sidebar-knob-summary')!;
   const officialTreeLink = document.getElementById('official-tree-link') as HTMLAnchorElement;
+  const saveBuildBtn = document.getElementById('save-build-btn') as HTMLButtonElement;
+  const navSavedPill = document.getElementById('nav-saved-pill')!;
+  let savedBuilds: SavedBuildEntry[] = loadSavedBuilds();
+  let editingSavedId: string | null = null;
 
   function applyTheme(pref: ThemePref) {
     themePref = pref;
@@ -281,16 +301,44 @@ async function main() {
     officialTreeLink.href = b.tree.url;
   }
 
+  function syncControlsFromOptions(next: BuildOptions) {
+    Object.assign(options, next);
+    document.querySelectorAll('#league-seg button').forEach((b) => {
+      b.classList.toggle('active', (b as HTMLElement).dataset.mode === options.leagueMode);
+    });
+    document.querySelectorAll('#eco-seg button').forEach((b) => {
+      b.classList.toggle('active', (b as HTMLElement).dataset.eco === options.economy);
+    });
+    classSel.value = String(options.classId);
+    syncAscDropdown();
+    if (options.ascendancyIndex !== 'random') ascSel.value = String(options.ascendancyIndex);
+    styleSel.value = String(options.damageStyle);
+    defSel.value = String(options.defenseStyle);
+    levelRange.value = String(options.level);
+    levelVal.textContent = String(options.level);
+    seedInput.value = options.seed;
+  }
+
+  function updateSavedUiState() {
+    navSavedPill.textContent = String(savedBuilds.length);
+    const sig = buildOptionsSignature(options);
+    const isSaved = savedBuilds.some((e) => e.id === sig);
+    saveBuildBtn.textContent = isSaved ? 'Saved ✓' : 'Save Build';
+    saveBuildBtn.classList.toggle('is-saved', isSaved);
+  }
+
   async function regenerate() {
     seedInput.value = options.seed;
     const build = await generateBuild(data, options);
     currentBuild = build;
     updateSidebarMeta(build);
+    updateSavedUiState();
     renderDashboard(build);
     renderTreeSide(build);
     renderSkills(build);
     renderGear(build);
     renderExport(build);
+    renderSavedBuilds();
     treeCanvas?.setBuildTree(build.tree);
   }
 
@@ -683,6 +731,87 @@ async function main() {
     });
   }
 
+  function formatSavedDate(iso: string): string {
+    try {
+      return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    } catch {
+      return iso;
+    }
+  }
+
+  function renderSavedBuilds() {
+    const viewSavedEl = document.getElementById('view-saved')!;
+    const activeSig = buildOptionsSignature(options);
+    viewSavedEl.innerHTML = `
+      <div class="bento-card">
+        <div class="card-head" style="margin-bottom:0;">
+          <div>
+            <h2>Saved Builds</h2>
+            <p class="card-sub">${savedBuilds.length} saved in browser localStorage · deterministic by seed &amp; knobs</p>
+          </div>
+          <div class="saved-header-actions">
+            <button type="button" class="btn btn-cta" id="saved-tab-save-btn">Save Current Build</button>
+            ${savedBuilds.length ? `<button type="button" class="btn" id="saved-clear-all-btn">Clear All</button>` : ''}
+          </div>
+        </div>
+      </div>
+      ${savedBuilds.length === 0
+        ? `
+          <div class="bento-card saved-empty">
+            <h3>No builds saved yet</h3>
+            <p class="card-sub">Click <strong>Save Build</strong> in the top bar (or <strong>Save Current Build</strong> above) to bookmark a build locally so you can reload it anytime.</p>
+          </div>
+        `
+        : `
+          <div class="saved-grid">
+            ${savedBuilds.map((entry) => {
+              const s = entry.summary;
+              const o = entry.options;
+              const isCurrent = entry.id === activeSig;
+              const isEditing = editingSavedId === entry.id;
+              return `
+                <div class="bento-card saved-card ${isCurrent ? 'is-active' : ''}" data-saved-id="${esc(entry.id)}">
+                  <div class="card-head" style="margin-bottom:8px;">
+                    <div style="min-width:0;flex:1;">
+                      ${isEditing
+                        ? `<div class="saved-rename-row">
+                            <input type="text" class="saved-rename-input" value="${esc(entry.name)}" data-rename-input="${esc(entry.id)}" aria-label="Build name" />
+                            <button type="button" class="btn btn-sm btn-cta" data-saved-action="save-rename" data-id="${esc(entry.id)}">Save</button>
+                            <button type="button" class="btn btn-sm" data-saved-action="cancel-rename" data-id="${esc(entry.id)}">Cancel</button>
+                          </div>`
+                        : `<h3 class="saved-title">${esc(entry.name)}${isCurrent ? ' <span class="badge">Active</span>' : ''}</h3>`}
+                      <p class="card-sub">${esc(s.className)} (${esc(s.ascendancyName)}) · ${esc(s.mainSkill)} · Lv ${o.level}</p>
+                    </div>
+                  </div>
+                  <div class="badges" style="margin-bottom:10px;">
+                    <span class="badge ${o.leagueMode === 'hardcore' ? 'badge-hc' : 'badge-sc'}">${esc(o.leagueMode)}</span>
+                    <span class="badge ${o.economy === 'ssf' ? 'badge-ssf' : 'badge-trade'}">${esc(o.economy)}</span>
+                    <span class="badge">${esc(s.damageStyle)}</span>
+                    <span class="badge">${esc(s.defenseStyle)}</span>
+                    <span class="badge">PoE ${esc(entry.treeVersion.replace('_', '.'))}</span>
+                  </div>
+                  <div class="saved-stats">
+                    <div class="saved-stat"><span>Offense</span><strong>${s.dpsMode === 'Support' ? 'Link Buff' : `${s.totalDps.toLocaleString()} DPS`}</strong></div>
+                    <div class="saved-stat"><span>Pool</span><strong>${s.maxLife.toLocaleString()} HP / ${s.maxEs.toLocaleString()} ES</strong></div>
+                    <div class="saved-stat"><span>Resists</span><strong>${s.effEleRes}% Ele / ${s.effChaosRes}% Chaos</strong></div>
+                    <div class="saved-stat"><span>Seed</span><strong><code>${esc(o.seed)}</code></strong></div>
+                  </div>
+                  <div class="saved-card-foot">
+                    <span class="saved-date">Saved ${esc(formatSavedDate(entry.savedAt))}</span>
+                    <div class="saved-actions">
+                      <button type="button" class="btn btn-sm btn-cta" data-saved-action="load" data-id="${esc(entry.id)}">Load</button>
+                      <button type="button" class="btn btn-sm" data-saved-action="rename" data-id="${esc(entry.id)}">Rename</button>
+                      <button type="button" class="btn btn-sm" data-saved-action="delete" data-id="${esc(entry.id)}">Delete</button>
+                    </div>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        `}
+    `;
+  }
+
   // Event wiring
   const gemTooltip = document.createElement('div');
   gemTooltip.className = 'gem-tooltip hidden';
@@ -947,6 +1076,84 @@ async function main() {
     const btn = (e.target as HTMLElement).closest('button[data-theme-pref]') as HTMLElement | null;
     if (!btn) return;
     applyTheme(btn.dataset.themePref as ThemePref);
+  });
+
+  function saveCurrentBuild() {
+    if (!currentBuild) return;
+    const res = saveBuildToStorage(currentBuild, data.tree.version);
+    savedBuilds = res.entries;
+    updateSavedUiState();
+    renderSavedBuilds();
+    const orig = saveBuildBtn.textContent;
+    saveBuildBtn.textContent = res.updated ? 'Updated!' : 'Saved!';
+    setTimeout(() => {
+      if (saveBuildBtn.textContent === 'Saved!' || saveBuildBtn.textContent === 'Updated!') {
+        updateSavedUiState();
+      } else {
+        saveBuildBtn.textContent = orig;
+      }
+    }, 1200);
+  }
+
+  saveBuildBtn.addEventListener('click', saveCurrentBuild);
+
+  const viewSavedEl = document.getElementById('view-saved')!;
+  viewSavedEl.addEventListener('click', async (e) => {
+    const target = e.target as HTMLElement;
+    if (target.closest('#saved-tab-save-btn')) {
+      saveCurrentBuild();
+      return;
+    }
+    if (target.closest('#saved-clear-all-btn')) {
+      savedBuilds = clearSavedBuilds();
+      editingSavedId = null;
+      updateSavedUiState();
+      renderSavedBuilds();
+      return;
+    }
+    const actionBtn = target.closest<HTMLElement>('[data-saved-action]');
+    if (!actionBtn) return;
+    const action = actionBtn.dataset.savedAction;
+    const id = actionBtn.dataset.id ?? '';
+    if (action === 'load') {
+      const found = savedBuilds.find((entry) => entry.id === id);
+      if (!found) return;
+      syncControlsFromOptions(found.options);
+      await regenerate();
+      switchView('dashboard');
+    } else if (action === 'delete') {
+      savedBuilds = deleteSavedBuild(id);
+      if (editingSavedId === id) editingSavedId = null;
+      updateSavedUiState();
+      renderSavedBuilds();
+    } else if (action === 'rename') {
+      editingSavedId = id;
+      renderSavedBuilds();
+      const inp = viewSavedEl.querySelector<HTMLInputElement>(`input[data-rename-input="${CSS.escape(id)}"]`);
+      inp?.focus();
+      inp?.select();
+    } else if (action === 'cancel-rename') {
+      editingSavedId = null;
+      renderSavedBuilds();
+    } else if (action === 'save-rename') {
+      const inp = viewSavedEl.querySelector<HTMLInputElement>(`input[data-rename-input="${CSS.escape(id)}"]`);
+      if (inp) savedBuilds = renameSavedBuild(id, inp.value);
+      editingSavedId = null;
+      renderSavedBuilds();
+    }
+  });
+  viewSavedEl.addEventListener('keydown', (e) => {
+    const inp = (e.target as HTMLElement).closest<HTMLInputElement>('input[data-rename-input]');
+    if (!inp) return;
+    if (e.key === 'Enter') {
+      const id = inp.dataset.renameInput ?? '';
+      savedBuilds = renameSavedBuild(id, inp.value);
+      editingSavedId = null;
+      renderSavedBuilds();
+    } else if (e.key === 'Escape') {
+      editingSavedId = null;
+      renderSavedBuilds();
+    }
   });
 
   document.getElementById('copy-pob-btn')!.addEventListener('click', async (e) => {

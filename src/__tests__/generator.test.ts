@@ -10,6 +10,15 @@ import { generateBuild } from '../lib/generator.ts';
 import { canSupportSkill } from '../lib/skills.ts';
 import type { BuildOptions } from '../lib/archetype.ts';
 import { parseGameVersionsLua } from '../../scripts/pob-version.mjs';
+import {
+  clearSavedBuilds,
+  deleteSavedBuild,
+  loadSavedBuilds,
+  renameSavedBuild,
+  SAVED_BUILDS_STORAGE_KEY,
+  saveBuildToStorage,
+  type StorageLike,
+} from '../lib/storage.ts';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '../..');
 const loadJson = <T>(name: string): T =>
@@ -515,4 +524,39 @@ test('parseGameVersionsLua detects future PoE/PoB versions dynamically', () => {
   `;
   const parsed = parseGameVersionsLua(sample);
   assert.deepEqual(parsed, { version: '3_31', display: '3.31', urlVersion: '3.31.0' });
+});
+
+test('localStorage build persistence saves, renames, reloads identically, and deletes cleanly', async () => {
+  const mem = new Map<string, string>();
+  const mockStorage: StorageLike = {
+    getItem: (k) => mem.get(k) ?? null,
+    setItem: (k, v) => { mem.set(k, v); },
+  };
+
+  mem.set(SAVED_BUILDS_STORAGE_KEY, '{corrupt-json');
+  assert.deepEqual(loadSavedBuilds(mockStorage), []);
+
+  const orig = await generateBuild(data, baseOptions({ seed: 'saved-build-1', classId: 2, leagueMode: 'hardcore' }));
+  const savedRes = saveBuildToStorage(orig, data.tree.version, undefined, mockStorage);
+  assert.equal(savedRes.entries.length, 1);
+  assert.equal(savedRes.updated, false);
+
+  const renamed = renameSavedBuild(savedRes.saved.id, 'HC League Starter', mockStorage);
+  assert.equal(renamed[0].name, 'HC League Starter');
+
+  // Re-saving same options deduplicates and preserves custom name unless overridden
+  const resaved = saveBuildToStorage(orig, data.tree.version, undefined, mockStorage);
+  assert.equal(resaved.entries.length, 1);
+  assert.equal(resaved.updated, true);
+  assert.equal(resaved.entries[0].name, 'HC League Starter');
+
+  // Loading saved options regenerates the exact same build and PoB code
+  const [loadedEntry] = loadSavedBuilds(mockStorage);
+  const reloaded = await generateBuild(data, loadedEntry.options);
+  assert.equal(reloaded.pobCode, orig.pobCode);
+
+  const afterDel = deleteSavedBuild(loadedEntry.id, mockStorage);
+  assert.equal(afterDel.length, 0);
+  saveBuildToStorage(orig, data.tree.version, 'Temp', mockStorage);
+  assert.equal(clearSavedBuilds(mockStorage).length, 0);
 });
