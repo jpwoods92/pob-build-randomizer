@@ -154,7 +154,10 @@ function scoreStatsText(stats: string[] | undefined, arch: BuildArchetype): numb
     if (/maximum energy shield/.test(text)) score += isHC ? 34 : 20;
     if (/energy shield recharge|faster start of energy shield/.test(text)) score += isHC ? 12 : 6;
   }
-  if (/suppress spell damage/.test(text)) score += isHC ? 24 : 11;
+  const isEvasionBuild = arch.primaryAttr === 'dex' && arch.defenseStyle !== 'es';
+  if (/suppress spell damage|chance to suppress spell damage is lucky|of suppressed spell damage/.test(text) && !/instead apply to chance to dodge/.test(text)) {
+    score += isEvasionBuild ? (isHC ? 65 : 22) : (isHC ? 28 : 11);
+  }
   if (/maximum (all )?(fire|cold|lightning|elemental) resistance/.test(text)) score += isHC ? 26 : 12;
   if (/maximum chaos resistance/.test(text)) score += arch.defenseStyle === 'es' ? -80 : (isHC ? 22 : 10);
   if (/to all elemental resistances|to (fire|cold|lightning) resistance/.test(text)) score += isHC ? 10 : 5;
@@ -337,6 +340,7 @@ const KEYSTONE_WEIGHT: Record<string, number> = {
   'Wicked Ward': 20,
   'Ghost Reaver': 20,
   'Ghost Dance': 20,
+  Acrobatics: -18,
 };
 
 function pureAttrKind(node: TreeNode): 'str' | 'dex' | 'int' | null {

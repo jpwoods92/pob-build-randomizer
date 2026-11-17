@@ -13,11 +13,18 @@ export interface ProjectedDefenses {
   maxMana: number;
   armour: number;
   evasion: number;
+  evadeChancePct: number;
+  spellSuppressPct: number;
+  spellSuppressPreventPct: number;
+  isSuppressLucky: boolean;
+  attackDodgePct: number;
+  spellDodgePct: number;
   maxEleRes: number;
   effEleRes: number;
   effChaosRes: number;
   physMaxHit: number;
   eleMaxHit: number;
+  spellEleMaxHit: number;
   chaosMaxHit: number | null; // null = Immune (Chaos Inoculation)
 }
 
@@ -59,6 +66,9 @@ export function computeProjectedDefenses(
   const hasEB = keystones.has('Eldritch Battery');
   const hasIR = keystones.has('Iron Reflexes');
   const hasBM = keystones.has('Blood Magic');
+  const hasUW = keystones.has('Unwavering Stance');
+  const hasAcro = keystones.has('Acrobatics');
+  const hasMagebane = keystones.has('Magebane');
 
   // 1. Gather passive tree modifiers
   let flatLife = arch.bandit === 'Oak' ? 40 : 0;
@@ -70,6 +80,11 @@ export function computeProjectedDefenses(
   let incMana = 0;
   let incArmour = 0;
   let incEvasion = 0;
+  let rawSuppress = hasMagebane ? Math.floor(gear.attributes.dex / 15) : 0;
+  let preventBonus = 0;
+  let isSuppressLucky = false;
+  let rawAttackDodge = 0;
+  let rawSpellDodge = 0;
   let maxFireBonus = 0;
   let maxColdBonus = 0;
   let maxLightBonus = 0;
@@ -151,6 +166,40 @@ export function computeProjectedDefenses(
 
       const mPdr = /(\d+)% additional Physical Damage Reduction/i.exec(l);
       if (mPdr) flatPdr += Number(mPdr[1]);
+
+      if (/Chance to Suppress Spell Damage is Lucky/i.test(l)) isSuppressLucky = true;
+      const mPrev = /Prevent \+(\d+)% of Suppressed Spell Damage\b(?! (?:while|per))/i.exec(l);
+      if (mPrev) preventBonus += Number(mPrev[1]);
+
+      const mSup = /^\+(\d+)% chance to Suppress Spell Damage\b(?! (?:while|if|for))/i.exec(l);
+      if (mSup) rawSuppress += Number(mSup[1]);
+      if (/if Equipped Helmet, Body Armour, Gloves, and Boots all have Evasion Rating/i.test(l)) {
+        const armourSlots = ['Helmet', 'Body Armour', 'Gloves', 'Boots'];
+        const allHaveEvasion = armourSlots.every((slot) => {
+          const id = gear.slotMap[slot];
+          const it = id ? gear.items.find((x) => x.id === id) : undefined;
+          return (it?.base.armour?.EvasionBaseMax ?? 0) > 0;
+        });
+        const mEvaMastery = /\+(\d+)% chance to Suppress Spell Damage/i.exec(l);
+        if (allHaveEvasion && mEvaMastery) rawSuppress += Number(mEvaMastery[1]);
+      } else if (/for each Dagger you're Wielding/i.test(l)) {
+        const daggerCount = [gear.slotMap['Weapon 1'], gear.slotMap['Weapon 2']]
+          .map((id) => (id ? gear.items.find((x) => x.id === id) : undefined))
+          .filter((it) => it && (it.base.type === 'Dagger' || it.base.type === 'Rune Dagger')).length;
+        const mDag = /\+(\d+)% chance to Suppress Spell Damage/i.exec(l);
+        if (mDag) rawSuppress += Number(mDag[1]) * daggerCount;
+      } else if (/if you've Hit an Enemy Recently/i.test(l) && (arch.damageStyle === 'attack' || arch.damageStyle === 'spell')) {
+        const mHit = /\+(\d+)% chance to Suppress Spell Damage/i.exec(l);
+        if (mHit) rawSuppress += Number(mHit[1]);
+      } else if (/while on Full Life/i.test(l) && hasCI) {
+        const mFl = /\+(\d+)% chance to Suppress Spell Damage/i.exec(l);
+        if (mFl) rawSuppress += Number(mFl[1]);
+      }
+
+      const mAtkDodge = /\+(\d+)% Chance to Dodge Attack Hits/i.exec(l);
+      if (mAtkDodge) rawAttackDodge += Number(mAtkDodge[1]);
+      const mSplDodge = /\+(\d+)% Chance to Dodge Spell Hits/i.exec(l);
+      if (mSplDodge) rawSpellDodge += Number(mSplDodge[1]);
 
       const mTaken = /(\d+)% of (.+?) Damage(?: from Hits)? taken as (Fire|Cold|Lightning|Chaos) Damage/i.exec(l);
       if (mTaken) {
@@ -288,13 +337,36 @@ export function computeProjectedDefenses(
   const intMana = Math.floor(gear.attributes.int / 2);
   const maxMana = hasBM ? 0 : Math.round((baseMana + intMana + flatMana) * (1 + incMana / 100));
 
-  // 5. Final Armour & Evasion
-  let totalEvasion = Math.round(gearEvasion * (1 + incEvasion / 100) * (hasGrace ? 1.29 : 1));
+  // 5. Final Armour, Evasion, Evade Chance, Spell Suppression & Dodge
+  const dexEvaBonus = hasMagebane ? 0 : Math.floor(gear.attributes.dex / 5);
+  let totalEvasion = Math.round(gearEvasion * (1 + (incEvasion + dexEvaBonus) / 100) * (hasGrace ? 1.29 : 1));
   let totalArmour = Math.round(gearArmour * (1 + incArmour / 100) * (hasDetermination ? 1.49 : 1));
   if (hasIR) {
     totalArmour += totalEvasion;
     totalEvasion = 0;
   }
+
+  // PoE Lv84 enemy accuracy (Misc.lua monsterAccuracyTable[84] = 538)
+  let evadeChancePct = 0;
+  if (!hasUW && totalEvasion > 0) {
+    const enemyAcc = 538;
+    const hitChance = (1.25 * enemyAcc) / (enemyAcc + Math.pow(0.2 * totalEvasion, 0.9));
+    evadeChancePct = Math.max(5, Math.min(95, Math.round((1 - hitChance) * 100)));
+  }
+
+  const attackDodgePct = Math.min(75, Math.max(0, rawAttackDodge));
+  let spellDodgePct = Math.min(75, Math.max(0, rawSpellDodge));
+  let spellSuppressPct = 0;
+  if (hasAcro) {
+    spellDodgePct = Math.min(75, spellDodgePct + Math.floor(rawSuppress * 0.5));
+    isSuppressLucky = false;
+  } else {
+    const baseSup = Math.min(100, Math.max(0, rawSuppress));
+    spellSuppressPct = isSuppressLucky && baseSup < 100
+      ? Math.round((1 - Math.pow(1 - baseSup / 100, 2)) * 100)
+      : baseSup;
+  }
+  const spellSuppressPreventPct = Math.min(75, 50 + preventBonus);
 
   // 6. Effective Resistances & Max Hits
   const capFire = Math.min(90, 75 + maxFireBonus);
@@ -359,6 +431,9 @@ export function computeProjectedDefenses(
   const coldMaxHit = hitPool / calcEleTakenFrac(effCold, coldToFire, 0, coldToLight, coldToChaos, 'c');
   const lightMaxHit = hitPool / calcEleTakenFrac(effLight, lightToFire, lightToCold, 0, lightToChaos, 'l');
   const eleMaxHit = Math.round(Math.min(fireMaxHit, coldMaxHit, lightMaxHit));
+  const spellEleMaxHit = spellSuppressPct >= 100
+    ? Math.round(eleMaxHit / Math.max(0.1, 1 - spellSuppressPreventPct / 100))
+    : eleMaxHit;
 
   let chaosMaxHit: number | null = null;
   if (!hasCI) {
@@ -375,11 +450,18 @@ export function computeProjectedDefenses(
     maxMana,
     armour: totalArmour,
     evasion: totalEvasion,
+    evadeChancePct,
+    spellSuppressPct,
+    spellSuppressPreventPct,
+    isSuppressLucky,
+    attackDodgePct,
+    spellDodgePct,
     maxEleRes,
     effEleRes,
     effChaosRes,
     physMaxHit,
     eleMaxHit,
+    spellEleMaxHit,
     chaosMaxHit,
   };
 }

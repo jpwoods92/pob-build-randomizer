@@ -121,10 +121,11 @@ function capWord(s: string): string {
 function scoreModForArchetype(
   mod: ModData,
   arch: BuildArchetype,
-  needs: { fire: number; cold: number; lightning: number; chaos: number; str: number; dex: number; int: number },
+  needs: { fire: number; cold: number; lightning: number; chaos: number; str: number; dex: number; int: number; suppress: number },
   isWeapon: boolean,
   hasCI: boolean,
   maxRes: { fire: number; cold: number; lightning: number; chaos: number },
+  isEvasionBuild: boolean,
 ): number {
   const txt = mod.lines.join(' ').toLowerCase();
   if (hasCI && /chaos resistance/.test(txt)) return 0;
@@ -151,7 +152,9 @@ function scoreModForArchetype(
     if (/energy shield/.test(txt)) w *= isHC ? 18 : 8;
   }
 
-  if (/suppress spell damage/.test(txt)) w *= isHC ? 22 : 7;
+  if (/suppress spell damage/.test(txt)) {
+    w *= needs.suppress > 0 ? (isEvasionBuild ? (isHC ? 75 : 18) : (isHC ? 28 : 8)) : 0.25;
+  }
   if (/additional physical damage reduction/.test(txt)) w *= isHC ? 28 : 4;
   if (/to (?:all )?maximum .* resistance/.test(txt)) w *= isHC ? 34 : 5;
   const mTaken = /taken as (fire|cold|lightning|chaos) damage/.exec(txt);
@@ -270,7 +273,7 @@ function pickBestBase(
   arch: BuildArchetype,
   hasCI: boolean,
   rng: Rng,
-  opts: { allowedTypes?: string[]; preferSubType?: string; preferTags?: string[]; needs?: { str: number; dex: number; int: number } } = {},
+  opts: { allowedTypes?: string[]; preferSubType?: string; preferTags?: string[]; needs?: { str: number; dex: number; int: number; suppress?: number }; isEvasionBuild?: boolean } = {},
 ): [string, BaseData] {
   const isTrade = arch.options.economy === 'trade';
   const candidates = Object.entries(data.bases).filter(([name, b]) => {
@@ -292,13 +295,18 @@ function pickBestBase(
 
     // Match defensive attribute profile on armour pieces
     if (['Body Armour', 'Helmet', 'Gloves', 'Boots', 'Shield'].includes(b.type)) {
-      const wantArmour = arch.primaryAttr === 'str' || arch.options.leagueMode === 'hardcore';
-      const wantEvasion = arch.primaryAttr === 'dex';
+      const evasionFocus = opts.isEvasionBuild ?? (arch.primaryAttr === 'dex' && arch.defenseStyle !== 'es');
+      const wantArmour = arch.primaryAttr === 'str' || (arch.options.leagueMode === 'hardcore' && !evasionFocus);
+      const wantEvasion = evasionFocus || arch.primaryAttr === 'dex';
       const wantES = arch.defenseStyle === 'es' || arch.defenseStyle === 'hybrid' || arch.primaryAttr === 'int';
       if (arch.defenseStyle === 'es') {
         if (b.subType === 'Energy Shield') w *= 14;
         else if (b.subType?.includes('Energy Shield')) w *= 4;
         else w *= 0.2;
+      } else if (evasionFocus) {
+        if (b.subType === 'Evasion') w *= (opts.needs?.suppress ?? 0) > 0 ? (arch.options.leagueMode === 'hardcore' ? 14 : 9) : 8;
+        else if (b.subType?.includes('Evasion')) w *= arch.options.leagueMode === 'hardcore' ? 10 : 5;
+        else w *= arch.options.leagueMode === 'hardcore' ? 0.15 : 0.35;
       } else {
         if (wantArmour && b.subType?.includes('Armour')) w *= 4;
         if (wantEvasion && b.subType?.includes('Evasion')) w *= 4;
@@ -388,7 +396,13 @@ function scoreUniqueForArchetype(
   if (arch.defenseStyle === 'life' && /maximum life/.test(txt)) s += isHC ? 14 : 4;
   if (arch.defenseStyle === 'es' && /maximum energy shield/.test(txt)) s += isHC ? 16 : 5;
   if (/to all elemental resistances|resistance/.test(txt)) s += isHC ? 12 : 4;
-  if (/suppress spell/.test(txt)) s += isHC ? 18 : 4;
+  const isEvasionArch = arch.primaryAttr === 'dex' && arch.defenseStyle !== 'es';
+  if (isEvasionArch && ['Body Armour', 'Helmet', 'Gloves', 'Boots'].includes(u.type)) {
+    const hasEvaBase = Boolean(base?.armour?.EvasionBaseMax);
+    if (!hasEvaBase && !/suppress spell/.test(txt)) s *= isHC ? 0.08 : 0.25;
+    if (hasEvaBase) s *= isHC ? 1.8 : 1.3;
+  }
+  if (/suppress spell/.test(txt)) s += isEvasionArch ? (isHC ? 45 : 14) : (isHC ? 18 : 4);
 
   // Hardcore max-hit, max-res & damage-taken conversion prioritization
   if (isHC) {
@@ -505,11 +519,11 @@ function buildRareItem(
   sockets: string | undefined,
   data: GameData,
   arch: BuildArchetype,
-  needs: { fire: number; cold: number; lightning: number; chaos: number; str: number; dex: number; int: number },
+  needs: { fire: number; cold: number; lightning: number; chaos: number; str: number; dex: number; int: number; suppress: number },
   hasCI: boolean,
   maxRes: { fire: number; cold: number; lightning: number; chaos: number },
   rng: Rng,
-  opts: { isJewel?: boolean; jewelNodeId?: number } = {},
+  opts: { isJewel?: boolean; jewelNodeId?: number; isEvasionBuild?: boolean } = {},
 ): GeneratedItem {
   const isTrade = arch.options.economy === 'trade';
   const isHC = arch.options.leagueMode === 'hardcore';
@@ -538,7 +552,7 @@ function buildRareItem(
     );
     const chosen = rng.weighted(pool, (m) => {
       const baseW = getModWeightForTags(m, itemTags);
-      const archW = scoreModForArchetype(m, arch, needs, isWeapon, hasCI, maxRes);
+      const archW = scoreModForArchetype(m, arch, needs, isWeapon, hasCI, maxRes, Boolean(opts.isEvasionBuild));
       return Math.sqrt(baseW) * archW;
     });
     if (!chosen) return;
@@ -599,7 +613,7 @@ function buildRareItem(
         } else {
           craftedMod = `+50 to ${labelMap[missing[0]]}`;
         }
-      } else if (isHC && (base.type === 'Boots' || base.type === 'Gloves' || base.type === 'Helmet')) {
+      } else if (needs.suppress > 0 && (isHC || opts.isEvasionBuild) && (base.type === 'Boots' || base.type === 'Gloves' || base.type === 'Helmet') && !usedGroups.has('ChanceToSuppressSpells')) {
         craftedMod = '+10% chance to Suppress Spell Damage';
       } else if (wantScDamageBench && arch.critMode === 'crit') {
         craftedMod = isTrade ? '+25% to Global Critical Strike Multiplier' : '+18% to Global Critical Strike Multiplier';
@@ -834,14 +848,39 @@ export function generateGear(
   const attrs = { ...tree.attributes };
   const maxRes = { fire: 75, cold: 75, lightning: 75, chaos: hasCI ? 100 : 75 };
   const dummyAttrs = { str: 0, dex: 0, int: 0 };
+  const hasGrace = skills.groups.some((grp) => grp.gems.some((gi) => gi.gem.name === 'Grace'));
+  const isEvasionBuild = (arch.primaryAttr === 'dex' || hasGrace) && arch.defenseStyle !== 'es';
+  const hasAcrobatics = tree.summary.keystones.includes('Acrobatics');
+  const hasMagebane = tree.summary.keystones.includes('Magebane');
+
+  const countSuppressLines = (lines: string[]) => {
+    let sum = 0;
+    for (const raw of lines) {
+      const m = /\+(\d+)% chance to Suppress Spell Damage\b(?! (?:while|if|for))/i.exec(raw);
+      if (m) sum += Number(m[1]);
+    }
+    return sum;
+  };
+
+  let currentSuppress = hasMagebane ? Math.floor(attrs.dex / 15) : 0;
   for (const id of tree.nodes) {
     const n = data.tree.nodes[id];
-    if (n?.s) tallyModsStats(n.s, resists, dummyAttrs, maxRes);
+    if (n?.s) {
+      tallyModsStats(n.s, resists, dummyAttrs, maxRes);
+      currentSuppress += countSuppressLines(n.s);
+    }
     if (n?.t === 'mastery' && tree.masteryEffects[id]) {
       const eff = n.me?.find((m) => m.e === tree.masteryEffects[id]);
-      if (eff) tallyModsStats(eff.s, resists, dummyAttrs, maxRes);
+      if (eff) {
+        tallyModsStats(eff.s, resists, dummyAttrs, maxRes);
+        currentSuppress += countSuppressLines(eff.s);
+        if (isEvasionBuild && eff.s.some((s) => /if Equipped Helmet, Body Armour, Gloves, and Boots all have Evasion Rating/i.test(s))) {
+          currentSuppress += 15;
+        }
+      }
     }
   }
+  const suppressTarget = hasAcrobatics ? 150 : (isEvasionBuild || isHC ? 100 : 0);
   for (const grp of skills.groups) {
     for (const gi of grp.gems) {
       if (gi.gem.name === 'Purity of Elements') {
@@ -867,6 +906,7 @@ export function generateGear(
     str: Math.max(0, reqAttrs.str - attrs.str),
     dex: Math.max(0, reqAttrs.dex - attrs.dex),
     int: Math.max(0, reqAttrs.int - attrs.int),
+    suppress: Math.max(0, suppressTarget - currentSuppress),
   });
 
   // Determine how many uniques to aim for (Trade: 1-3, SSF: 0-2, HC SSF leans toward defensive rares)
@@ -945,11 +985,12 @@ export function generateGear(
 
     if (!item) {
       const needs = currentNeeds();
-      const [baseName, base] = pickBestBase(data, def.types[0], arch, hasCI, rng, { allowedTypes: def.types, needs });
-      item = buildRareItem(id, def.slot, baseName, base, sockets, data, arch, needs, hasCI, maxRes, rng);
+      const [baseName, base] = pickBestBase(data, def.types[0], arch, hasCI, rng, { allowedTypes: def.types, needs, isEvasionBuild });
+      item = buildRareItem(id, def.slot, baseName, base, sockets, data, arch, needs, hasCI, maxRes, rng, { isEvasionBuild });
     }
 
     tallyModsStats([...item.implicits, ...item.explicits], resists, attrs, maxRes);
+    currentSuppress += countSuppressLines([...item.implicits, ...item.explicits]);
     if (item.base.req.str) reqAttrs.str = Math.max(reqAttrs.str, item.base.req.str);
     if (item.base.req.dex) reqAttrs.dex = Math.max(reqAttrs.dex, item.base.req.dex);
     if (item.base.req.int) reqAttrs.int = Math.max(reqAttrs.int, item.base.req.int);
@@ -971,8 +1012,8 @@ export function generateGear(
     : [
         { slot: 'Flask 1', bases: ['Divine Life Flask', 'Eternal Life Flask'] },
         { slot: 'Flask 2', bases: ['Quicksilver Flask'] },
-        { slot: 'Flask 3', bases: isHC ? ['Granite Flask', 'Basalt Flask'] : [arch.critMode === 'crit' ? 'Diamond Flask' : 'Silver Flask', 'Sulphur Flask'] },
-        { slot: 'Flask 4', bases: isHC ? ['Jade Flask', bestEleFlask, 'Basalt Flask'] : ['Silver Flask', 'Jade Flask', 'Quartz Flask'] },
+        { slot: 'Flask 3', bases: isEvasionBuild ? ['Jade Flask', 'Quartz Flask'] : (isHC ? ['Granite Flask', 'Basalt Flask'] : [arch.critMode === 'crit' ? 'Diamond Flask' : 'Silver Flask', 'Sulphur Flask']) },
+        { slot: 'Flask 4', bases: isEvasionBuild ? (isHC ? ['Basalt Flask', bestEleFlask, 'Quartz Flask'] : ['Diamond Flask', 'Silver Flask', 'Quartz Flask']) : (isHC ? ['Jade Flask', bestEleFlask, 'Basalt Flask'] : ['Silver Flask', 'Jade Flask', 'Quartz Flask']) },
         { slot: 'Flask 5', bases: isHC ? ['Amethyst Flask', bestEleFlask] : ['Diamond Flask', 'Sulphur Flask', 'Amethyst Flask'] },
       ];
 
@@ -1231,6 +1272,73 @@ export function generateGear(
       break;
     }
     if (!patched) break;
+  }
+
+  // Evasion build Spell Suppression patch pass (never violating HC ele caps or attribute requirements)
+  if (isEvasionBuild && currentSuppress < suppressTarget) {
+    const safeForAttrsAndRes = (lines: string[]) => {
+      const safe = canSafelyRemoveLines(lines);
+      if (!safe) return false;
+      for (const k of attrList) {
+        if (safe.attrDelta[k] > 0 && attrs[k] - safe.attrDelta[k] < reqAttrs[k]) return false;
+      }
+      return safe;
+    };
+
+    for (let pass = 0; pass < 6 && currentSuppress < suppressTarget; pass++) {
+      let upgraded = false;
+      for (const it of items) {
+        if (it.rarity !== 'RARE' || it.jewelNodeId || it.base.type === 'Flask') continue;
+        const itemTags = new Set(it.base.tags);
+        const suppMod = data.mods.item
+          .filter((m) =>
+            m.t === 'S'
+            && m.lvl <= it.itemLevel
+            && getModWeightForTags(m, itemTags) > 0
+            && !it.suffixes.some((s) => s.mod.group === m.group)
+            && /chance to Suppress Spell Damage$/i.test(m.lines.join(' ')),
+          )
+          .sort((a, b) => b.lvl - a.lvl)[0];
+
+        if (suppMod) {
+          const replaceIdx = it.suffixes.findIndex((s) => {
+            const sl = s.resolvedLines.join(' ').toLowerCase();
+            if (/suppress|maximum .* resistance|physical damage reduction/.test(sl)) return false;
+            return Boolean(safeForAttrsAndRes(s.resolvedLines));
+          });
+          if (replaceIdx >= 0) {
+            const safe = safeForAttrsAndRes(it.suffixes[replaceIdx].resolvedLines);
+            if (safe) {
+              resists.fire -= safe.delta.fire; resists.cold -= safe.delta.cold; resists.lightning -= safe.delta.lightning; resists.chaos -= safe.delta.chaos;
+              attrs.str -= safe.attrDelta.str; attrs.dex -= safe.attrDelta.dex; attrs.int -= safe.attrDelta.int;
+              const r = isTrade ? 0.85 : 0.65;
+              const added: RolledAffix = { mod: suppMod, range: r, resolvedLines: suppMod.lines.map((l) => applyRange(l, r)) };
+              it.suffixes[replaceIdx] = added;
+              tallyModsStats(added.resolvedLines, resists, attrs);
+              currentSuppress += countSuppressLines(added.resolvedLines);
+              rebuildRare(it);
+              upgraded = true;
+              break;
+            }
+          }
+        }
+
+        if (['Boots', 'Gloves', 'Helmet'].includes(it.base.type) && it.suffixes.length < 3) {
+          if (it.suffixes.some((s) => s.mod.group === 'ChanceToSuppressSpells')) continue;
+          if (it.craftedMod && /suppress|maximum life|taken as/i.test(it.craftedMod)) continue;
+          const safe = it.craftedMod ? safeForAttrsAndRes([it.craftedMod]) : { delta: { fire: 0, cold: 0, lightning: 0, chaos: 0 }, attrDelta: { str: 0, dex: 0, int: 0 } };
+          if (!safe) continue;
+          resists.fire -= safe.delta.fire; resists.cold -= safe.delta.cold; resists.lightning -= safe.delta.lightning; resists.chaos -= safe.delta.chaos;
+          attrs.str -= safe.attrDelta.str; attrs.dex -= safe.attrDelta.dex; attrs.int -= safe.attrDelta.int;
+          it.craftedMod = '+10% chance to Suppress Spell Damage';
+          currentSuppress += 10;
+          rebuildRare(it);
+          upgraded = true;
+          break;
+        }
+      }
+      if (!upgraded) break;
+    }
   }
 
   return { items, slotMap, jewelMap, resists, attributes: attrs, requiredAttributes: reqAttrs };

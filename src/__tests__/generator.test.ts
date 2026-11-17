@@ -458,3 +458,35 @@ test('attribute requirements (gems + gear) are satisfied globally across classes
     assert.ok(at.int >= req.int, `Int deficit ${at.int}/${req.int} on ${b.archetype.title}`);
   }
 });
+
+test('defenses report evasion, dodge, spell suppression and prioritize suppress on HC evasion builds', async () => {
+  let hcSuppSum = 0;
+  let hcCappedCount = 0;
+  const hcN = 14;
+  for (let i = 0; i < hcN; i++) {
+    const b = await generateBuild(data, baseOptions({
+      seed: `hc-evasion-supp-${i}`,
+      classId: i % 2 === 0 ? 2 : 6, // Ranger / Shadow
+      leagueMode: 'hardcore',
+      economy: i % 2 === 0 ? 'trade' : 'ssf',
+      defenseStyle: 'life',
+      level: 92,
+    }));
+    const d = b.defenses;
+    assert.ok(d.evasion > 0, `Expected positive evasion on HC dex build ${b.archetype.title}`);
+    assert.ok(d.evadeChancePct >= 5 && d.evadeChancePct <= 95);
+    assert.ok(d.spellSuppressPct >= 0 && d.spellSuppressPct <= 100);
+    assert.ok(d.spellSuppressPreventPct >= 50 && d.spellSuppressPreventPct <= 75);
+    assert.ok(d.attackDodgePct >= 0 && d.attackDodgePct <= 75);
+    assert.ok(d.spellDodgePct >= 0 && d.spellDodgePct <= 75);
+    if (d.spellSuppressPct >= 100) {
+      hcCappedCount++;
+      assert.ok(d.spellEleMaxHit > d.eleMaxHit, 'Capped spell suppression should increase spellEleMaxHit');
+    } else {
+      assert.equal(d.spellEleMaxHit, d.eleMaxHit);
+    }
+    hcSuppSum += d.spellSuppressPct;
+  }
+  assert.ok(hcSuppSum / hcN >= 60, `Expected HC evasion avg suppression >= 60%, got ${(hcSuppSum / hcN).toFixed(1)}%`);
+  assert.ok(hcCappedCount >= 4, `Expected multiple HC evasion builds at 100% suppress, got ${hcCappedCount}/${hcN}`);
+});

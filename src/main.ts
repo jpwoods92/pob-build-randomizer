@@ -481,13 +481,28 @@ async function main() {
             </div>
             <div class="def-hit-row">
               <span class="def-hit-name">Ele Max Hit</span>
-              <span class="def-hit-meta">${d.effEleRes}% Res</span>
+              <span class="def-hit-meta">${d.spellSuppressPct >= 100 ? `${d.effEleRes}% Res · Spell ${d.spellEleMaxHit.toLocaleString()}` : `${d.effEleRes}% Res`}</span>
               <span class="def-hit-val">${d.eleMaxHit.toLocaleString()}</span>
             </div>
             <div class="def-hit-row">
               <span class="def-hit-name">Chaos Max Hit</span>
               <span class="def-hit-meta">${d.chaosMaxHit === null ? 'CI' : `${d.effChaosRes}% Res`}</span>
               <span class="def-hit-val ${d.chaosMaxHit === null ? 'def-immune' : ''}">${d.chaosMaxHit === null ? 'Immune' : d.chaosMaxHit.toLocaleString()}</span>
+            </div>
+            <div class="def-hit-row">
+              <span class="def-hit-name">Evasion</span>
+              <span class="def-hit-meta">${d.evadeChancePct}% Evade</span>
+              <span class="def-hit-val">${d.evasion.toLocaleString()}</span>
+            </div>
+            <div class="def-hit-row">
+              <span class="def-hit-name">Spell Suppression</span>
+              <span class="def-hit-meta">${d.spellSuppressPct > 0 ? `${d.spellSuppressPreventPct}% Prev${d.isSuppressLucky ? ' · Lucky' : ''}` : (d.spellDodgePct > 0 ? 'Acrobatics' : '0% Prev')}</span>
+              <span class="def-hit-val">${d.spellSuppressPct}%</span>
+            </div>
+            <div class="def-hit-row">
+              <span class="def-hit-name">Dodge (Atk / Spell)</span>
+              <span class="def-hit-meta">Cap 75%</span>
+              <span class="def-hit-val">${d.attackDodgePct}% / ${d.spellDodgePct}%</span>
             </div>
           </div>
         </div>

@@ -289,9 +289,10 @@ export function generateSkills(data: GameData, arch: BuildArchetype, rng: Rng): 
   });
 
   // 2. Auras & Reservation (Helmet)
+  const isDexEvasion = arch.primaryAttr === 'dex' && arch.defenseStyle !== 'es';
   const auraCandidates: { name: string; w: number }[] = [
-    { name: 'Determination', w: isHC ? 36 : 8 },
-    { name: 'Grace', w: isHC ? 34 : 10 },
+    { name: 'Determination', w: isHC ? (isDexEvasion ? 14 : 38) : (isDexEvasion ? 4 : 8) },
+    { name: 'Grace', w: isHC ? (isDexEvasion ? 48 : 30) : (isDexEvasion ? 14 : 8) },
     { name: 'Purity of Elements', w: isHC ? 24 : (arch.options.economy === 'ssf' ? 14 : 4) },
     { name: 'Purity of Fire', w: isHC ? (arch.ascendancy.internal === 'Chieftain' || arch.elements.includes('fire') ? 26 : 10) : 0 },
     { name: 'Purity of Ice', w: isHC ? (arch.defenseStyle === 'es' || arch.elements.includes('cold') ? 14 : 6) : 0 },
