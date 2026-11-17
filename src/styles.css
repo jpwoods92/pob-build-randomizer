@@ -647,6 +647,35 @@ input[type="range"] {
   gap: 10px;
 }
 
+.hero-dps-val {
+  font-size: 1.18rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.hero-dps-meta {
+  font-size: 0.74rem;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.hero-scaling-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding-top: 7px;
+  margin-top: auto;
+  border-top: 1px solid var(--border);
+}
+
+.hero-scaling-nums {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+}
+
 .def-pool-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

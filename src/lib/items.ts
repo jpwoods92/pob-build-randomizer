@@ -107,12 +107,23 @@ function getModWeightForTags(mod: ModData, itemTags: Set<string>): number {
   return 0;
 }
 
+function bestEleTarget(maxRes: { fire: number; cold: number; lightning: number }): 'fire' | 'cold' | 'lightning' {
+  if (maxRes.fire >= maxRes.cold && maxRes.fire >= maxRes.lightning) return 'fire';
+  if (maxRes.cold >= maxRes.lightning) return 'cold';
+  return 'lightning';
+}
+
+function capWord(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
 function scoreModForArchetype(
   mod: ModData,
   arch: BuildArchetype,
   needs: { fire: number; cold: number; lightning: number; chaos: number; str: number; dex: number; int: number },
   isWeapon: boolean,
   hasCI: boolean,
+  maxRes: { fire: number; cold: number; lightning: number; chaos: number },
 ): number {
   const txt = mod.lines.join(' ').toLowerCase();
   if (hasCI && /chaos resistance/.test(txt)) return 0;
@@ -120,6 +131,7 @@ function scoreModForArchetype(
     return 0;
   }
   const isHC = arch.options.leagueMode === 'hardcore';
+  const dpsBoost = isHC ? 1.0 : 2.3;
   const tags = new Set(mod.tags ?? []);
   let w = 1;
 
@@ -128,25 +140,37 @@ function scoreModForArchetype(
   w *= tierFactor;
 
   if (arch.defenseStyle === 'life' || arch.defenseStyle === 'hybrid') {
-    if (/to maximum life/.test(txt)) w *= isHC ? 22 : 14;
-    if (/regenerate .* life/.test(txt)) w *= isHC ? 4 : 1.5;
+    if (/to maximum life/.test(txt)) w *= isHC ? 26 : 10;
+    if (/regenerate .* life/.test(txt)) w *= isHC ? 5 : 1.2;
   } else if (/to maximum life/.test(txt)) {
     w *= 0.05; // CI/ES build doesn't want flat life
   }
 
   if (arch.defenseStyle === 'es' || arch.defenseStyle === 'hybrid') {
-    if (/energy shield/.test(txt)) w *= isHC ? 14 : 10;
+    if (/energy shield/.test(txt)) w *= isHC ? 18 : 8;
   }
 
-  if (/suppress spell damage/.test(txt)) w *= isHC ? 20 : 9;
+  if (/suppress spell damage/.test(txt)) w *= isHC ? 22 : 7;
+  if (/additional physical damage reduction/.test(txt)) w *= isHC ? 28 : 4;
+  if (/to (?:all )?maximum .* resistance/.test(txt)) w *= isHC ? 34 : 5;
+  const mTaken = /taken as (fire|cold|lightning|chaos) damage/.exec(txt);
+  if (mTaken) {
+    const dst = mTaken[1] as 'fire' | 'cold' | 'lightning' | 'chaos';
+    if (dst === 'chaos') {
+      w *= hasCI ? (isHC ? 45 : 10) : 0.05;
+    } else {
+      const excess = Math.max(0, maxRes[dst] - 75);
+      w *= isHC ? 26 + excess * 4 : 4;
+    }
+  }
   if (/movement speed/.test(txt)) w *= 24;
 
   // Resistances weighted dynamically by current deficit
-  if (/fire resistance/.test(txt) && needs.fire > 0) w *= (isHC ? 28 : 22) + needs.fire * 0.25;
-  if (/cold resistance/.test(txt) && needs.cold > 0) w *= (isHC ? 28 : 22) + needs.cold * 0.25;
-  if (/lightning resistance/.test(txt) && needs.lightning > 0) w *= (isHC ? 28 : 22) + needs.lightning * 0.25;
-  if (/all elemental resistances/.test(txt) && (needs.fire > 0 || needs.cold > 0 || needs.lightning > 0)) w *= isHC ? 32 : 24;
-  if (/chaos resistance/.test(txt) && needs.chaos > 0) w *= isHC ? 24 : 9;
+  if (/fire resistance/.test(txt) && needs.fire > 0) w *= (isHC ? 28 : 20) + needs.fire * 0.25;
+  if (/cold resistance/.test(txt) && needs.cold > 0) w *= (isHC ? 28 : 20) + needs.cold * 0.25;
+  if (/lightning resistance/.test(txt) && needs.lightning > 0) w *= (isHC ? 28 : 20) + needs.lightning * 0.25;
+  if (/all elemental resistances/.test(txt) && (needs.fire > 0 || needs.cold > 0 || needs.lightning > 0)) w *= isHC ? 32 : 22;
+  if (/chaos resistance/.test(txt) && needs.chaos > 0) w *= isHC ? 26 : 7;
 
   // Attributes weighted dynamically by gem/gear deficit
   if (/to strength/.test(txt) && needs.str > 0) w *= 10;
@@ -157,23 +181,23 @@ function scoreModForArchetype(
   // Weapon, jewel & jewelry offensive mods
   if (isWeapon) {
     if (arch.damageStyle === 'attack') {
-      if (arch.elements.includes('physical') && /physical damage|attack speed/.test(txt)) w *= 14;
-      if (arch.elements.includes('fire') && /fire damage to attacks|elemental damage with attacks|attack speed/.test(txt)) w *= 12;
-      if (arch.elements.includes('cold') && /cold damage to attacks|elemental damage with attacks|attack speed/.test(txt)) w *= 12;
-      if (arch.elements.includes('lightning') && /lightning damage to attacks|elemental damage with attacks|attack speed/.test(txt)) w *= 12;
-      if (arch.elements.includes('chaos') && /chaos damage|attack speed|damage over time/.test(txt)) w *= 10;
+      if (arch.elements.includes('physical') && /physical damage|attack speed/.test(txt)) w *= 14 * dpsBoost;
+      if (arch.elements.includes('fire') && /fire damage to attacks|elemental damage with attacks|attack speed/.test(txt)) w *= 12 * dpsBoost;
+      if (arch.elements.includes('cold') && /cold damage to attacks|elemental damage with attacks|attack speed/.test(txt)) w *= 12 * dpsBoost;
+      if (arch.elements.includes('lightning') && /lightning damage to attacks|elemental damage with attacks|attack speed/.test(txt)) w *= 12 * dpsBoost;
+      if (arch.elements.includes('chaos') && /chaos damage|attack speed|damage over time/.test(txt)) w *= 10 * dpsBoost;
       if (/spell damage|to level of all .* spell/.test(txt)) w *= 0.01;
     } else {
-      if (/spell damage|cast speed|to level of all/.test(txt)) w *= 14;
-      if (arch.damageStyle === 'minion' && /minion/.test(txt)) w *= 22;
-      if (arch.damageStyle === 'dot' && /damage over time multiplier/.test(txt)) w *= 18;
-      if (arch.elements.includes('fire') && /fire damage|fire skill/.test(txt)) w *= 10;
-      if (arch.elements.includes('cold') && /cold damage|cold skill/.test(txt)) w *= 10;
-      if (arch.elements.includes('lightning') && /lightning damage|lightning skill/.test(txt)) w *= 10;
-      if (arch.elements.includes('chaos') && /chaos damage|chaos skill/.test(txt)) w *= 10;
+      if (/spell damage|cast speed|to level of all/.test(txt)) w *= 14 * dpsBoost;
+      if (arch.damageStyle === 'minion' && /minion/.test(txt)) w *= 22 * dpsBoost;
+      if (arch.damageStyle === 'dot' && /damage over time multiplier/.test(txt)) w *= 18 * dpsBoost;
+      if (arch.elements.includes('fire') && /fire damage|fire skill/.test(txt)) w *= 10 * dpsBoost;
+      if (arch.elements.includes('cold') && /cold damage|cold skill/.test(txt)) w *= 10 * dpsBoost;
+      if (arch.elements.includes('lightning') && /lightning damage|lightning skill/.test(txt)) w *= 10 * dpsBoost;
+      if (arch.elements.includes('chaos') && /chaos damage|chaos skill/.test(txt)) w *= 10 * dpsBoost;
       if (/physical damage|adds .* to attacks/.test(txt) && !tags.has('caster')) w *= 0.01;
     }
-    if (arch.critMode === 'crit' && /critical strike/.test(txt)) w *= 9;
+    if (arch.critMode === 'crit' && /critical strike/.test(txt)) w *= 9 * dpsBoost;
     if (arch.critMode !== 'crit' && /critical strike/.test(txt)) w *= 0.05;
   } else {
     // Reject off-weapon / off-setup jewel mods cleanly
@@ -205,10 +229,10 @@ function scoreModForArchetype(
     if (/trap/.test(txt) && arch.trapOrMine !== 'trap') return 0;
     if (/mine/.test(txt) && arch.trapOrMine !== 'mine') return 0;
 
-    if (arch.damageStyle === 'attack' && /elemental damage with attacks|adds .* to attacks|attack speed/.test(txt)) w *= 6;
-    if (arch.damageStyle === 'spell' && /spell damage|cast speed|to level of all/.test(txt)) w *= 7;
-    if (arch.damageStyle === 'dot' && /damage over time multiplier/.test(txt)) w *= 12;
-    if (arch.critMode === 'crit' && /critical strike multiplier|critical strike chance/.test(txt)) w *= 7;
+    if (arch.damageStyle === 'attack' && /elemental damage with attacks|adds .* to attacks|attack speed/.test(txt)) w *= 6 * dpsBoost;
+    if (arch.damageStyle === 'spell' && /spell damage|cast speed|to level of all/.test(txt)) w *= 7 * dpsBoost;
+    if (arch.damageStyle === 'dot' && /damage over time multiplier/.test(txt)) w *= 12 * dpsBoost;
+    if (arch.critMode === 'crit' && /critical strike multiplier|critical strike chance/.test(txt)) w *= 7 * dpsBoost;
     if (arch.critMode !== 'crit' && /critical strike/.test(txt)) w *= 0.05;
   }
 
@@ -296,7 +320,11 @@ function isUniqueSuitable(u: UniqueData, arch: BuildArchetype, slotTypes: string
       return false;
     }
   }
-  if (arch.options.leagueMode === 'hardcore' && HC_RISKY_UNIQUE.test(u.name)) return false;
+  if (arch.options.leagueMode === 'hardcore') {
+    if (HC_RISKY_UNIQUE.test(u.name)) return false;
+    const rawTxt = [...u.implicits, ...u.explicits].join(' ').toLowerCase();
+    if (/damage(?: from hits)? taken as physical/.test(rawTxt) || /-\d+% to maximum .* resistance/.test(rawTxt)) return false;
+  }
   if (u.extra?.some((e) => /Limited to:/i.test(e))) return false;
   const fullTxt = [...u.implicits, ...u.explicits].join(' ').toLowerCase();
   if (arch.defenseStyle === 'es' && /cannot have energy shield|blood magic/.test(fullTxt)) return false;
@@ -310,27 +338,63 @@ function isUniqueSuitable(u: UniqueData, arch: BuildArchetype, slotTypes: string
   return true;
 }
 
-function scoreUniqueForArchetype(u: UniqueData, arch: BuildArchetype, base: BaseData | undefined): number {
+function scoreUniqueForArchetype(
+  u: UniqueData,
+  arch: BuildArchetype,
+  base: BaseData | undefined,
+  hasCI: boolean,
+  maxRes: { fire: number; cold: number; lightning: number; chaos: number },
+): number {
   const txt = [...u.implicits, ...u.explicits].join(' ').toLowerCase();
+  const isHC = arch.options.leagueMode === 'hardcore';
+  const isTrade = arch.options.economy === 'trade';
   const reqLvl = u.levelReq ?? base?.req.level ?? 1;
   let s = reqLvl >= 50 ? 12 : reqLvl >= 30 ? 5 : 0.6;
-  // Leveling weapons without endgame scaling are weak at lvl 90
-  if (base?.weapon && reqLvl < 40 && !/spell|minion|gems|aura/i.test(txt)) s *= 0.15;
-  if (arch.defenseStyle === 'life' && /maximum life/.test(txt)) s += 8;
-  if (arch.defenseStyle === 'es' && /maximum energy shield/.test(txt)) s += 10;
-  if (/to all elemental resistances|resistance/.test(txt)) s += arch.options.leagueMode === 'hardcore' ? 11 : 5;
-  if (/suppress spell/.test(txt)) s += arch.options.leagueMode === 'hardcore' ? 14 : 6;
-  if (arch.damageStyle === 'attack' && /attack|weapon|physical/.test(txt)) s += 8;
-  if (arch.damageStyle === 'spell' && /spell|cast speed/.test(txt)) s += 8;
-  if (arch.damageStyle === 'minion' && /minion/.test(txt)) s += 18;
-  if (arch.damageStyle === 'totem' && /totem/.test(txt)) s += 15;
-  if (arch.damageStyle === 'trap_mine' && /trap|mine/.test(txt)) s += 15;
-  if (arch.damageStyle === 'dot' && /damage over time|ignite|poison|bleed/.test(txt)) s += 14;
-  if (arch.critMode === 'crit' && /critical/.test(txt)) s += 8;
-  for (const el of arch.elements) {
-    if (txt.includes(el)) s += 6;
+  // Leveling weapons without endgame scaling are weak at lvl 90 (unless high-value conversion/max-res chest like Cloak of Flame in HC)
+  const hasConversionOrMaxRes = /taken as (fire|cold|lightning|chaos) damage|to (?:all )?maximum .* resistance/.test(txt);
+  if (base?.weapon && reqLvl < 40 && !/spell|minion|gems|aura/i.test(txt) && !(isHC && hasConversionOrMaxRes)) s *= 0.15;
+
+  const offMult = isHC ? 0.7 : 2.1;
+  if (arch.defenseStyle === 'es' && ['Body Armour', 'Shield', 'Helmet'].includes(u.type)) {
+    const hasEsBase = Boolean(base?.armour?.EnergyShieldBaseMax) || /maximum energy shield|% increased.*energy shield/.test(txt);
+    if (!hasEsBase) s *= 0.04;
   }
-  if (/level of all .* gems|movement speed/.test(txt)) s += 9;
+  if (arch.defenseStyle === 'life' && /maximum life/.test(txt)) s += isHC ? 14 : 4;
+  if (arch.defenseStyle === 'es' && /maximum energy shield/.test(txt)) s += isHC ? 16 : 5;
+  if (/to all elemental resistances|resistance/.test(txt)) s += isHC ? 12 : 4;
+  if (/suppress spell/.test(txt)) s += isHC ? 18 : 4;
+
+  // Hardcore max-hit, max-res & damage-taken conversion prioritization
+  if (isHC) {
+    if (/to all maximum elemental resistances/.test(txt)) s += isTrade ? 65 : 42;
+    else if (/to maximum (fire|cold|lightning|chaos) resistance/.test(txt)) s += isTrade ? 42 : 28;
+    if (/additional physical damage reduction/.test(txt)) s += 32;
+
+    const takenMatches = txt.matchAll(/(\d+(?:-\d+)?\)?)% of (.+?) damage(?: from hits)? taken as (fire|cold|lightning|chaos) damage/g);
+    for (const m of takenMatches) {
+      const dst = m[3] as 'fire' | 'cold' | 'lightning' | 'chaos';
+      if (dst === 'chaos') {
+        if (hasCI) s += isTrade ? 130 : 75;
+        else s *= 0.2;
+      } else {
+        const excess = Math.max(0, maxRes[dst] - 75);
+        s += (isTrade ? 40 : 24) + excess * 12;
+      }
+    }
+    if (/damage(?: from hits)? taken as physical/.test(txt)) return 0.01;
+  }
+
+  if (arch.damageStyle === 'attack' && /attack|weapon|physical/.test(txt)) s += 8 * offMult;
+  if (arch.damageStyle === 'spell' && /spell|cast speed/.test(txt)) s += 8 * offMult;
+  if (arch.damageStyle === 'minion' && /minion/.test(txt)) s += 18 * offMult;
+  if (arch.damageStyle === 'totem' && /totem/.test(txt)) s += 15 * offMult;
+  if (arch.damageStyle === 'trap_mine' && /trap|mine/.test(txt)) s += 15 * offMult;
+  if (arch.damageStyle === 'dot' && /damage over time|ignite|poison|bleed/.test(txt)) s += 14 * offMult;
+  if (arch.critMode === 'crit' && /critical/.test(txt)) s += 8 * offMult;
+  for (const el of arch.elements) {
+    if (txt.includes(el)) s += 6 * offMult;
+  }
+  if (/level of all .* gems|movement speed/.test(txt)) s += 9 * (isHC ? 1 : 1.4);
   return s;
 }
 
@@ -417,6 +481,7 @@ function buildRareItem(
   arch: BuildArchetype,
   needs: { fire: number; cold: number; lightning: number; chaos: number; str: number; dex: number; int: number },
   hasCI: boolean,
+  maxRes: { fire: number; cold: number; lightning: number; chaos: number },
   rng: Rng,
   opts: { isJewel?: boolean; jewelNodeId?: number } = {},
 ): GeneratedItem {
@@ -447,7 +512,7 @@ function buildRareItem(
     );
     const chosen = rng.weighted(pool, (m) => {
       const baseW = getModWeightForTags(m, itemTags);
-      const archW = scoreModForArchetype(m, arch, needs, isWeapon, hasCI);
+      const archW = scoreModForArchetype(m, arch, needs, isWeapon, hasCI, maxRes);
       return Math.sqrt(baseW) * archW;
     });
     if (!chosen) return;
@@ -462,12 +527,16 @@ function buildRareItem(
     else suffixes.push(rolled);
   };
 
-  // Reserve 1 slot for a deterministic crafting bench mod when non-jewel so life/res is reliable
+  // Reserve 1 slot for a deterministic crafting bench mod when non-jewel so life/max-hit/DPS/res is reliable
   const useBenchCraft = !opts.isJewel;
   const maxEleNeed = Math.max(needs.fire, needs.cold, needs.lightning);
-  const benchIsPrefix = maxEleNeed <= 30
+  const wantLifeBench = maxEleNeed <= 30
     && (arch.defenseStyle === 'life' || arch.defenseStyle === 'hybrid')
     && !prefixes.some((p) => p.mod.group === 'IncreasedLife');
+  const wantHcConversionBench = isHC && (base.type === 'Helmet' || base.type === 'Body Armour')
+    && (hasCI || !wantLifeBench);
+  const wantScDamageBench = !isHC && (isWeapon || base.type === 'Amulet' || base.type === 'Gloves' || base.type === 'Ring');
+  const benchIsPrefix = wantLifeBench || wantHcConversionBench || (!isHC && maxEleNeed <= 25 && isWeapon);
 
   const rollPrefixCount = useBenchCraft && benchIsPrefix ? Math.min(maxAffix - 1, targetPrefixes) : targetPrefixes;
   const rollSuffixCount = useBenchCraft && !benchIsPrefix ? Math.min(maxAffix - 1, targetSuffixes) : targetSuffixes;
@@ -478,7 +547,11 @@ function buildRareItem(
   // Crafting bench mod
   let craftedMod: string | undefined;
   if (useBenchCraft) {
-    if (benchIsPrefix && prefixes.length < maxAffix && !usedGroups.has('IncreasedLife')) {
+    if (wantHcConversionBench && prefixes.length < maxAffix) {
+      const targetEl = capWord(bestEleTarget(maxRes));
+      const pct = isTrade ? 8 : 6;
+      craftedMod = `${pct}% of Physical Damage from Hits taken as ${targetEl} Damage`;
+    } else if (benchIsPrefix && prefixes.length < maxAffix && !usedGroups.has('IncreasedLife')) {
       if (['Body Armour', 'Helmet', 'Gloves', 'Boots', 'Shield', 'Ring', 'Amulet', 'Belt'].includes(base.type)) {
         const lifeVal = base.type === 'Body Armour' ? (isTrade ? 95 : 75) : (isTrade ? 70 : 55);
         craftedMod = `+${lifeVal} to maximum Life`;
@@ -493,11 +566,27 @@ function buildRareItem(
         craftedMod = isHC && !hasCI ? '+18% to Lightning and Chaos Resistances' : '+32% to Lightning Resistance';
       } else if (isHC && (base.type === 'Boots' || base.type === 'Gloves' || base.type === 'Helmet')) {
         craftedMod = '+10% chance to Suppress Spell Damage';
+      } else if (wantScDamageBench && arch.critMode === 'crit') {
+        craftedMod = isTrade ? '+25% to Global Critical Strike Multiplier' : '+18% to Global Critical Strike Multiplier';
+      } else if (wantScDamageBench && arch.damageStyle === 'dot') {
+        craftedMod = isTrade ? '+20% to Damage over Time Multiplier' : '+14% to Damage over Time Multiplier';
       } else if (isWeapon) {
         craftedMod = arch.damageStyle === 'attack'
           ? (isTrade ? '27% increased Attack Speed' : '18% increased Attack Speed')
           : (isTrade ? '25% increased Cast Speed' : '17% increased Cast Speed');
+      } else if (!isHC && (base.type === 'Amulet' || base.type === 'Ring' || base.type === 'Gloves')) {
+        if (arch.damageStyle === 'minion') {
+          craftedMod = isTrade ? 'Minions deal 32% increased Damage' : 'Minions deal 22% increased Damage';
+        } else if (arch.damageStyle === 'attack') {
+          craftedMod = isTrade ? '25% increased Elemental Damage with Attack Skills' : '18% increased Elemental Damage with Attack Skills';
+        } else {
+          craftedMod = isTrade ? '30% increased Spell Damage' : '22% increased Spell Damage';
+        }
       }
+    }
+    if (!craftedMod && isHC && prefixes.length < maxAffix && (base.type === 'Helmet' || base.type === 'Body Armour')) {
+      const targetEl = capWord(bestEleTarget(maxRes));
+      craftedMod = `${isTrade ? 8 : 6}% of Physical Damage from Hits taken as ${targetEl} Damage`;
     }
   }
 
@@ -615,9 +704,27 @@ function tallyModsStats(
   lines: string[],
   resists: { fire: number; cold: number; lightning: number; chaos: number },
   attrs: { str: number; dex: number; int: number },
+  maxRes?: { fire: number; cold: number; lightning: number; chaos: number },
 ) {
   for (const rawLine of lines) {
     const l = rawLine.replace(/\{[^}]+\}/g, '');
+    if (maxRes) {
+      const mAllMax = /\+(\d+)% to all maximum Elemental Resistances/i.exec(l);
+      if (mAllMax) {
+        const v = Number(mAllMax[1]);
+        maxRes.fire = Math.min(90, maxRes.fire + v);
+        maxRes.cold = Math.min(90, maxRes.cold + v);
+        maxRes.lightning = Math.min(90, maxRes.lightning + v);
+      }
+      const mMaxF = /\+(\d+)% to maximum Fire Resistance/i.exec(l);
+      if (mMaxF) maxRes.fire = Math.min(90, maxRes.fire + Number(mMaxF[1]));
+      const mMaxC = /\+(\d+)% to maximum Cold Resistance/i.exec(l);
+      if (mMaxC) maxRes.cold = Math.min(90, maxRes.cold + Number(mMaxC[1]));
+      const mMaxL = /\+(\d+)% to maximum Lightning Resistance/i.exec(l);
+      if (mMaxL) maxRes.lightning = Math.min(90, maxRes.lightning + Number(mMaxL[1]));
+      const mMaxCh = /\+(\d+)% to maximum Chaos Resistance/i.exec(l);
+      if (mMaxCh) maxRes.chaos = Math.min(90, maxRes.chaos + Number(mMaxCh[1]));
+    }
     const mAllRes = /\+(-?\d+)% to all Elemental Resistances/i.exec(l);
     if (mAllRes) {
       const v = Number(mAllRes[1]);
@@ -683,9 +790,27 @@ export function generateGear(
   const targetEleRes = isHC ? 165 : 135; // Accounts for -60% Kitava penalty (135 - 60 = 75%)
   const targetChaosRes = hasCI ? -999 : (isHC ? 95 : 40);
 
-  // Baseline resistances & attributes from tree + Kitava (-60%)
+  // Baseline resistances & attributes from tree + Kitava (-60%) + max res from tree & purity auras
   const resists = { fire: -60, cold: -60, lightning: -60, chaos: -60 };
   const attrs = { ...tree.attributes };
+  const maxRes = { fire: 75, cold: 75, lightning: 75, chaos: hasCI ? 100 : 75 };
+  const dummyRes = { fire: 0, cold: 0, lightning: 0, chaos: 0 };
+  const dummyAttrs = { str: 0, dex: 0, int: 0 };
+  for (const id of tree.nodes) {
+    const n = data.tree.nodes[id];
+    if (n?.s) tallyModsStats(n.s, dummyRes, dummyAttrs, maxRes);
+    if (n?.t === 'mastery' && tree.masteryEffects[id]) {
+      const eff = n.me?.find((m) => m.e === tree.masteryEffects[id]);
+      if (eff) tallyModsStats(eff.s, dummyRes, dummyAttrs, maxRes);
+    }
+  }
+  for (const grp of skills.groups) {
+    for (const gi of grp.gems) {
+      if (gi.gem.name === 'Purity of Fire') maxRes.fire = Math.min(90, maxRes.fire + 4);
+      if (gi.gem.name === 'Purity of Ice') maxRes.cold = Math.min(90, maxRes.cold + 4);
+      if (gi.gem.name === 'Purity of Lightning') maxRes.lightning = Math.min(90, maxRes.lightning + 4);
+    }
+  }
   const items: GeneratedItem[] = [];
   const slotMap: Record<string, number> = {};
   const jewelMap: Record<number, number> = {};
@@ -701,12 +826,24 @@ export function generateGear(
     int: Math.max(0, skills.maxReq.int - attrs.int),
   });
 
-  // Determine how many uniques to aim for (Trade: 1-3, SSF: 0-2)
-  const targetUniques = isTrade ? rng.int(1, 3) : rng.int(0, 2);
-  const candidateUniqueSlots: ItemSlotName[] = rng.shuffle([
-    'Weapon 1', 'Weapon 2', 'Helmet', 'Body Armour', 'Gloves', 'Boots', 'Amulet', 'Ring 1', 'Belt',
-  ]);
+  // Determine how many uniques to aim for (Trade: 1-3, SSF: 0-2, HC SSF leans toward defensive rares)
+  const targetUniques = isTrade
+    ? (isHC ? rng.int(2, 3) : rng.int(1, 3))
+    : (isHC ? (rng.chance(0.45) ? 1 : 0) : rng.int(0, 2));
+  const candidateUniqueSlots: ItemSlotName[] = rng.shuffle(
+    isHC
+      ? ['Body Armour', 'Weapon 2', 'Helmet', 'Boots', 'Gloves', 'Amulet', 'Belt', 'Ring 1', 'Weapon 1']
+      : ['Weapon 1', 'Weapon 2', 'Helmet', 'Body Armour', 'Gloves', 'Boots', 'Amulet', 'Ring 1', 'Belt'],
+  );
   const uniqueSlots = new Set<string>(candidateUniqueSlots.slice(0, targetUniques));
+  if (isHC && isTrade) {
+    const hasHighMaxRes = maxRes.fire > 75 || maxRes.cold > 75 || maxRes.lightning > 75;
+    if (hasCI || hasHighMaxRes) {
+      uniqueSlots.add('Body Armour');
+      if (arch.weaponSetup.includes('shield') && hasHighMaxRes) uniqueSlots.add('Weapon 2');
+      if (hasCI && arch.allowedWeaponTypes.includes('Bow')) uniqueSlots.add('Weapon 1');
+    }
+  }
   if (arch.signatureUnique) uniqueSlots.add('Weapon 1');
   const usedUniqueNames = new Set<string>();
 
@@ -749,11 +886,13 @@ export function generateGear(
     }
 
     if (!item && uniqueSlots.has(def.slot)) {
-      const pool = data.uniques.filter(
-        (u) => !usedUniqueNames.has(u.name) && isUniqueSuitable(u, arch, def.types),
-      );
+      const pool = data.uniques
+        .filter((u) => !usedUniqueNames.has(u.name) && isUniqueSuitable(u, arch, def.types))
+        .map((u) => ({ u, score: scoreUniqueForArchetype(u, arch, data.bases[u.base], hasCI, maxRes) }))
+        .sort((a, b) => b.score - a.score)
+        .slice(0, isHC ? 8 : 12);
       if (pool.length > 0) {
-        const picked = rng.weighted(pool, (u) => scoreUniqueForArchetype(u, arch, data.bases[u.base]));
+        const picked = rng.weighted(pool, (entry) => entry.score * entry.score)?.u;
         if (picked && data.bases[picked.base]) {
           usedUniqueNames.add(picked.name);
           item = buildUniqueItem(id, def.slot, picked, data.bases[picked.base], sockets, arch, rng);
@@ -763,29 +902,31 @@ export function generateGear(
 
     if (!item) {
       const [baseName, base] = pickBestBase(data, def.types[0], arch, hasCI, rng, { allowedTypes: def.types });
-      item = buildRareItem(id, def.slot, baseName, base, sockets, data, arch, currentNeeds(), hasCI, rng);
+      item = buildRareItem(id, def.slot, baseName, base, sockets, data, arch, currentNeeds(), hasCI, maxRes, rng);
     }
 
-    tallyModsStats([...item.implicits, ...item.explicits], resists, attrs);
+    tallyModsStats([...item.implicits, ...item.explicits], resists, attrs, maxRes);
     items.push(item);
     slotMap[def.slot] = id;
   }
 
   // Flasks (Flask 1..5)
+  const bestEle = bestEleTarget(maxRes);
+  const bestEleFlask = bestEle === 'fire' ? 'Ruby Flask' : bestEle === 'cold' ? 'Sapphire Flask' : 'Topaz Flask';
   const flaskSpecs: { slot: ItemSlotName; bases: string[] }[] = arch.defenseStyle === 'es'
     ? [
         { slot: 'Flask 1', bases: ['Quicksilver Flask'] },
-        { slot: 'Flask 2', bases: isHC ? ['Granite Flask', 'Jade Flask'] : ['Diamond Flask', 'Silver Flask'] },
+        { slot: 'Flask 2', bases: isHC ? ['Granite Flask', 'Basalt Flask'] : ['Diamond Flask', 'Silver Flask'] },
         { slot: 'Flask 3', bases: ['Granite Flask', 'Basalt Flask'] },
-        { slot: 'Flask 4', bases: ['Jade Flask', 'Quartz Flask'] },
-        { slot: 'Flask 5', bases: hasCI ? ['Ruby Flask', 'Sapphire Flask', 'Topaz Flask', 'Silver Flask'] : ['Amethyst Flask', 'Ruby Flask', 'Sapphire Flask', 'Topaz Flask'] },
+        { slot: 'Flask 4', bases: isHC ? ['Jade Flask', bestEleFlask] : ['Jade Flask', 'Quartz Flask', 'Sulphur Flask'] },
+        { slot: 'Flask 5', bases: hasCI ? [bestEleFlask, 'Ruby Flask', 'Sapphire Flask', 'Topaz Flask'] : ['Amethyst Flask', bestEleFlask] },
       ]
     : [
         { slot: 'Flask 1', bases: ['Divine Life Flask', 'Eternal Life Flask'] },
         { slot: 'Flask 2', bases: ['Quicksilver Flask'] },
-        { slot: 'Flask 3', bases: isHC ? ['Granite Flask'] : ['Diamond Flask', 'Granite Flask', 'Silver Flask'] },
-        { slot: 'Flask 4', bases: ['Jade Flask', 'Quartz Flask', 'Basalt Flask'] },
-        { slot: 'Flask 5', bases: ['Amethyst Flask', 'Silver Flask', 'Ruby Flask', 'Sulphur Flask'] },
+        { slot: 'Flask 3', bases: isHC ? ['Granite Flask', 'Basalt Flask'] : [arch.critMode === 'crit' ? 'Diamond Flask' : 'Silver Flask', 'Sulphur Flask'] },
+        { slot: 'Flask 4', bases: isHC ? ['Jade Flask', bestEleFlask, 'Basalt Flask'] : ['Silver Flask', 'Jade Flask', 'Quartz Flask'] },
+        { slot: 'Flask 5', bases: isHC ? ['Amethyst Flask', bestEleFlask] : ['Diamond Flask', 'Sulphur Flask', 'Amethyst Flask'] },
       ];
 
   for (const fs of flaskSpecs) {
@@ -819,6 +960,7 @@ export function generateGear(
         arch,
         currentNeeds(),
         hasCI,
+        maxRes,
         rng,
         { isJewel: true, jewelNodeId: nodeId },
       );

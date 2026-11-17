@@ -309,3 +309,34 @@ test('keystones are only allocated when directly beneficial to the build', async
     }
   }
 });
+
+test('hardcore prioritizes max-hit conversion/max-res while softcore prioritizes DPS and reports offense', async () => {
+  let hcCiChaosConv = 0;
+  let hcTotalPhysConvOrMaxRes = 0;
+  for (let i = 0; i < 8; i++) {
+    const hcCi = await generateBuild(data, baseOptions({
+      seed: `hc-ci-${i}`,
+      classId: 3, // Witch
+      defenseStyle: 'es',
+      leagueMode: 'hardcore',
+      economy: 'trade',
+    }));
+    const gearText = hcCi.gear.items.flatMap((it) => [...it.implicits, ...it.explicits]).join('\n');
+    if (/taken as chaos/i.test(gearText)) hcCiChaosConv++;
+    if (/taken as (fire|cold|lightning|chaos)/i.test(gearText) || /maximum .* resistance/i.test(gearText)) {
+      hcTotalPhysConvOrMaxRes++;
+    }
+    assert.ok(hcCi.offense.totalDps > 0 || hcCi.offense.dpsMode === 'Support');
+  }
+  assert.ok(hcCiChaosConv >= 2, `Expected Trade HC CI builds to prioritize damage taken as Chaos, got ${hcCiChaosConv}/8`);
+  assert.ok(hcTotalPhysConvOrMaxRes >= 6, `Expected HC builds to include max-res or damage-taken conversion, got ${hcTotalPhysConvOrMaxRes}/8`);
+
+  const sc = await generateBuild(data, baseOptions({
+    seed: 'sc-dps-1',
+    classId: 4, // Duelist
+    leagueMode: 'softcore',
+    economy: 'trade',
+    damageStyle: 'attack',
+  }));
+  assert.ok(sc.offense.totalDps > 10000, `Expected meaningful SC attack DPS, got ${sc.offense.totalDps}`);
+});

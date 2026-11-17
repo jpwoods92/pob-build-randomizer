@@ -271,27 +271,31 @@ export function generateSkills(data: GameData, arch: BuildArchetype, rng: Rng): 
 
   // 2. Auras & Reservation (Helmet)
   const auraCandidates: { name: string; w: number }[] = [
-    { name: 'Determination', w: isHC ? 30 : 12 },
-    { name: 'Grace', w: isHC ? 28 : 14 },
-    { name: 'Purity of Elements', w: isHC ? 22 : (arch.options.economy === 'ssf' ? 18 : 6) },
+    { name: 'Determination', w: isHC ? 36 : 8 },
+    { name: 'Grace', w: isHC ? 34 : 10 },
+    { name: 'Purity of Elements', w: isHC ? 24 : (arch.options.economy === 'ssf' ? 14 : 4) },
+    { name: 'Purity of Fire', w: isHC ? (arch.ascendancy.internal === 'Chieftain' || arch.elements.includes('fire') ? 26 : 10) : 0 },
+    { name: 'Purity of Ice', w: isHC ? (arch.defenseStyle === 'es' || arch.elements.includes('cold') ? 14 : 6) : 0 },
+    { name: 'Purity of Lightning', w: isHC ? (arch.elements.includes('lightning') ? 16 : 6) : 0 },
     { name: 'Discipline', w: arch.defenseStyle === 'es' || arch.defenseStyle === 'hybrid' ? 28 : 1 },
-    { name: 'Tempest Shield', w: arch.weaponSetup.includes('shield') ? 22 : 2 },
-    { name: 'Arctic Armour', w: isHC ? 14 : 4 },
-    { name: 'Defiance Banner', w: isHC ? 16 : 6 },
-    { name: 'Vitality', w: arch.defenseStyle === 'es' ? 0 : (isHC ? 12 : 4) },
-    { name: 'Precision', w: arch.critMode === 'crit' || arch.damageStyle === 'attack' ? 18 : 2 },
-    { name: 'Clarity', w: arch.damageStyle === 'spell' ? 10 : 2 },
+    { name: 'Tempest Shield', w: arch.weaponSetup.includes('shield') ? (isHC ? 26 : 16) : 2 },
+    { name: 'Arctic Armour', w: isHC ? 18 : 3 },
+    { name: 'Defiance Banner', w: isHC ? 20 : 4 },
+    { name: 'Vitality', w: arch.defenseStyle === 'es' ? 0 : (isHC ? 12 : 2) },
+    { name: 'Precision', w: arch.critMode === 'crit' || arch.damageStyle === 'attack' ? (isHC ? 14 : 24) : 2 },
+    { name: 'Clarity', w: arch.damageStyle === 'spell' ? 8 : 2 },
   ];
 
-  if (arch.elements.includes('fire')) auraCandidates.push({ name: 'Anger', w: 18 }, { name: 'Herald of Ash', w: 15 });
-  if (arch.elements.includes('cold')) auraCandidates.push({ name: 'Hatred', w: 22 }, { name: 'Herald of Ice', w: 16 });
-  if (arch.elements.includes('lightning')) auraCandidates.push({ name: 'Wrath', w: 20 }, { name: 'Herald of Thunder', w: 15 });
-  if (arch.elements.includes('physical')) auraCandidates.push({ name: 'Pride', w: 20 }, { name: 'Herald of Purity', w: 14 }, { name: 'War Banner', w: 12 });
-  if (arch.elements.includes('chaos')) auraCandidates.push({ name: 'Malevolence', w: 24 }, { name: 'Herald of Agony', w: 10 });
-  if (arch.damageStyle === 'spell') auraCandidates.push({ name: 'Zealotry', w: 20 });
-  if (arch.damageStyle === 'dot') auraCandidates.push({ name: 'Malevolence', w: 24 });
-  if (arch.damageStyle === 'minion') auraCandidates.push({ name: 'Haste', w: 18 }, { name: 'Hatred', w: 16 });
-  if (arch.damageStyle === 'trap_mine') auraCandidates.push({ name: 'Summon Skitterbots', w: 24 });
+  const offMult = isHC ? 1 : 1.7;
+  if (arch.elements.includes('fire')) auraCandidates.push({ name: 'Anger', w: 18 * offMult }, { name: 'Herald of Ash', w: 15 * offMult });
+  if (arch.elements.includes('cold')) auraCandidates.push({ name: 'Hatred', w: 22 * offMult }, { name: 'Herald of Ice', w: 16 * offMult });
+  if (arch.elements.includes('lightning')) auraCandidates.push({ name: 'Wrath', w: 20 * offMult }, { name: 'Herald of Thunder', w: 15 * offMult });
+  if (arch.elements.includes('physical')) auraCandidates.push({ name: 'Pride', w: 20 * offMult }, { name: 'Herald of Purity', w: 14 * offMult }, { name: 'War Banner', w: 12 * offMult });
+  if (arch.elements.includes('chaos')) auraCandidates.push({ name: 'Malevolence', w: 24 * offMult }, { name: 'Herald of Agony', w: 10 * offMult });
+  if (arch.damageStyle === 'spell') auraCandidates.push({ name: 'Zealotry', w: 20 * offMult });
+  if (arch.damageStyle === 'dot') auraCandidates.push({ name: 'Malevolence', w: 24 * offMult });
+  if (arch.damageStyle === 'minion') auraCandidates.push({ name: 'Haste', w: 18 * offMult }, { name: 'Hatred', w: 16 * offMult });
+  if (arch.damageStyle === 'trap_mine') auraCandidates.push({ name: 'Summon Skitterbots', w: 24 * offMult });
 
   const chosenAuras: GemData[] = [];
   const usedAuraNames = new Set<string>();

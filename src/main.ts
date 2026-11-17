@@ -320,6 +320,7 @@ async function main() {
     const pantheonMin = data.pantheons.minor.find((p) => p.id === a.pantheonMinor)?.name ?? a.pantheonMinor;
 
     const d = b.defenses;
+    const o = b.offense;
     const reserved = Math.min(100, b.skills.manaReservedPct);
     const unreservedMana = d.maxMana === 0 ? 0 : Math.max(0, d.maxMana - Math.ceil((d.maxMana * reserved) / 100));
     const uniques = b.gear.items.filter((i) => i.rarity === 'UNIQUE');
@@ -354,10 +355,22 @@ async function main() {
         </div>
 
         <div class="hero-metrics">
-          <div class="hero-metric">
-            <div>
-              <div class="kpi-label">Passives &amp; Scaling</div>
-              <div class="kpi-value">${d.lifePct}% Life · ${d.esPct}% ES</div>
+          <div class="hero-metric hero-metric-col">
+            <div class="hero-metric-top">
+              <div>
+                <div class="kpi-label">Projected ${esc(o.dpsMode)}</div>
+                <div class="kpi-value hero-dps-val">${o.dpsMode === 'Support' ? 'Link Buff' : `${o.totalDps.toLocaleString()} DPS`}</div>
+              </div>
+              <span class="kpi-tag">Lv ${o.skillLevel}</span>
+            </div>
+            <div class="hero-dps-meta">
+              ${o.dpsMode === 'Support'
+                ? 'Buffs linked ally'
+                : `${o.hitDmg.toLocaleString()} avg dmg · ${esc(o.rateLabel)}${o.critChancePct > 0 ? ` · ${o.critChancePct}% crit (${o.critMultiPct}%)` : ''}`}
+            </div>
+            <div class="hero-scaling-foot">
+              <span class="kpi-label">Passives &amp; Scaling</span>
+              <span class="hero-scaling-nums">${d.lifePct}% Life · ${d.esPct}% ES</span>
             </div>
           </div>
           <div class="hero-metric hero-metric-col">

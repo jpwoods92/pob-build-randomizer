@@ -20,6 +20,17 @@ export interface ProjectedDefenses {
   chaosMaxHit: number | null; // null = Immune (Chaos Inoculation)
 }
 
+export interface ProjectedOffense {
+  totalDps: number;
+  hitDmg: number;
+  rateLabel: string;
+  incDamagePct: number;
+  critChancePct: number;
+  critMultiPct: number;
+  skillLevel: number;
+  dpsMode: 'Hit DPS' | 'DoT DPS' | 'Totem DPS' | 'Minion DPS' | 'Trap/Mine DPS' | 'Support';
+}
+
 function collectTreeLines(data: GameData, tree: GeneratedTree): string[] {
   const lines: string[] = [];
   for (const id of tree.nodes) {
@@ -64,6 +75,19 @@ export function computeProjectedDefenses(
   let maxChaosBonus = 0;
   let flatPdr = arch.pantheonMajor === 'Solaris' ? 6 : 0;
   let noStrLife = false;
+  let physToFire = 0;
+  let physToCold = 0;
+  let physToLight = 0;
+  let physToChaos = 0;
+  let fireToCold = 0;
+  let fireToLight = 0;
+  let fireToChaos = 0;
+  let coldToFire = 0;
+  let coldToLight = 0;
+  let coldToChaos = 0;
+  let lightToFire = 0;
+  let lightToCold = 0;
+  let lightToChaos = 0;
 
   const parseGlobalLines = (lines: string[], isTree: boolean) => {
     for (const raw of lines) {
@@ -126,6 +150,41 @@ export function computeProjectedDefenses(
 
       const mPdr = /(\d+)% additional Physical Damage Reduction/i.exec(l);
       if (mPdr) flatPdr += Number(mPdr[1]);
+
+      const mTaken = /(\d+)% of (.+?) Damage(?: from Hits)? taken as (Fire|Cold|Lightning|Chaos) Damage/i.exec(l);
+      if (mTaken) {
+        const pct = Number(mTaken[1]) / 100;
+        const src = mTaken[2].toLowerCase();
+        const dst = mTaken[3].toLowerCase();
+        if (src.includes('physical')) {
+          if (dst === 'fire') physToFire += pct;
+          else if (dst === 'cold') physToCold += pct;
+          else if (dst === 'lightning') physToLight += pct;
+          else if (dst === 'chaos') physToChaos += pct;
+        }
+        if (src.includes('elemental')) {
+          if (dst === 'chaos') { fireToChaos += pct; coldToChaos += pct; lightToChaos += pct; }
+          else if (dst === 'fire') { coldToFire += pct; lightToFire += pct; }
+          else if (dst === 'cold') { fireToCold += pct; lightToCold += pct; }
+          else if (dst === 'lightning') { fireToLight += pct; coldToLight += pct; }
+        } else {
+          if (src.includes('fire')) {
+            if (dst === 'cold') fireToCold += pct;
+            else if (dst === 'lightning') fireToLight += pct;
+            else if (dst === 'chaos') fireToChaos += pct;
+          }
+          if (src.includes('cold')) {
+            if (dst === 'fire') coldToFire += pct;
+            else if (dst === 'lightning') coldToLight += pct;
+            else if (dst === 'chaos') coldToChaos += pct;
+          }
+          if (src.includes('lightning')) {
+            if (dst === 'fire') lightToFire += pct;
+            else if (dst === 'cold') lightToCold += pct;
+            else if (dst === 'chaos') lightToChaos += pct;
+          }
+        }
+      }
     }
   };
 
@@ -210,6 +269,9 @@ export function computeProjectedDefenses(
   if (hasDetermination) gearArmour += 2042;
   if (hasGrace) gearEvasion += 2575;
   if (hasDiscipline) flatEs += 217;
+  if (activeGemNames.has('Purity of Fire')) maxFireBonus += 4;
+  if (activeGemNames.has('Purity of Ice')) maxColdBonus += 4;
+  if (activeGemNames.has('Purity of Lightning')) maxLightBonus += 4;
 
   // 4. Final Life & ES pools
   const baseLife = 38 + 12 * arch.options.level;
@@ -251,21 +313,51 @@ export function computeProjectedDefenses(
   const physMult = fortifyMult * (hasArcticArmour ? 0.8 : 1.0);
   const pdrFrac = Math.min(0.75, flatPdr / 100);
 
-  // Solve M * (1 - min(0.90, pdrFrac + A / (A + 5*M))) * physMult = hitPool
+  // Normalize damage-taken conversions (PoE caps each incoming damage type's conversion at 100%)
+  const normTaken = (parts: number[]): [number, number, number, number] => {
+    const sum = parts.reduce((a, b) => a + b, 0);
+    if (sum <= 1) return [parts[0], parts[1], parts[2], parts[3]];
+    return [parts[0] / sum, parts[1] / sum, parts[2] / sum, parts[3] / sum];
+  };
+  const [p2f, p2c, p2l, p2ch] = normTaken([physToFire, physToCold, physToLight, physToChaos]);
+  const pRem = Math.max(0, 1 - (p2f + p2c + p2l + p2ch));
+
+  // Solve converted Phys + remaining Armour-mitigated Phys = hitPool
   let lo = 0;
-  let hi = 500000;
-  for (let i = 0; i < 32; i++) {
+  let hi = 1000000;
+  for (let i = 0; i < 36; i++) {
     const mid = (lo + hi) / 2;
-    const armMit = totalArmour > 0 ? totalArmour / (totalArmour + 5 * mid) : 0;
+    const rawPhys = mid * pRem;
+    const armMit = totalArmour > 0 && rawPhys > 0 ? totalArmour / (totalArmour + 5 * rawPhys) : 0;
     const totalMit = Math.min(0.9, pdrFrac + armMit);
-    const dmgTaken = mid * (1 - totalMit) * physMult;
-    if (dmgTaken <= hitPool) lo = mid;
+    const physDmgTaken = rawPhys * (1 - totalMit) * physMult;
+    const convDmgTaken = mid * fortifyMult * (
+      p2f * (1 - effFire / 100) +
+      p2c * (1 - effCold / 100) +
+      p2l * (1 - effLight / 100) +
+      p2ch * (1 - effChaosRes / 100)
+    );
+    if (physDmgTaken + convDmgTaken <= hitPool) lo = mid;
     else hi = mid;
   }
   const physMaxHit = Math.round(lo);
 
-  const eleTakenFrac = Math.max(0.05, (1 - effEleRes / 100) * fortifyMult);
-  const eleMaxHit = Math.round(hitPool / eleTakenFrac);
+  const calcEleTakenFrac = (selfEff: number, toF: number, toC: number, toL: number, toCh: number, isSelf: 'f' | 'c' | 'l') => {
+    const sum = toF + toC + toL + toCh;
+    const scale = sum > 1 ? 1 / sum : 1;
+    const f = toF * scale, c = toC * scale, l = toL * scale, ch = toCh * scale;
+    const rem = Math.max(0, 1 - (f + c + l + ch));
+    const taken = rem * (1 - selfEff / 100)
+      + (isSelf === 'f' ? 0 : f * (1 - effFire / 100))
+      + (isSelf === 'c' ? 0 : c * (1 - effCold / 100))
+      + (isSelf === 'l' ? 0 : l * (1 - effLight / 100))
+      + ch * (1 - effChaosRes / 100);
+    return Math.max(0.05, taken * fortifyMult);
+  };
+  const fireMaxHit = hitPool / calcEleTakenFrac(effFire, 0, fireToCold, fireToLight, fireToChaos, 'f');
+  const coldMaxHit = hitPool / calcEleTakenFrac(effCold, coldToFire, 0, coldToLight, coldToChaos, 'c');
+  const lightMaxHit = hitPool / calcEleTakenFrac(effLight, lightToFire, lightToCold, 0, lightToChaos, 'l');
+  const eleMaxHit = Math.round(Math.min(fireMaxHit, coldMaxHit, lightMaxHit));
 
   let chaosMaxHit: number | null = null;
   if (!hasCI) {
@@ -287,5 +379,271 @@ export function computeProjectedDefenses(
     physMaxHit,
     eleMaxHit,
     chaosMaxHit,
+  };
+}
+
+export function computeProjectedOffense(
+  data: GameData,
+  arch: BuildArchetype,
+  tree: GeneratedTree,
+  skills: GeneratedSkills,
+  gear: GeneratedGear,
+): ProjectedOffense {
+  if (arch.damageStyle === 'link_support') {
+    return {
+      totalDps: 0,
+      hitDmg: 0,
+      rateLabel: 'Link Buff',
+      incDamagePct: 0,
+      critChancePct: 0,
+      critMultiPct: 150,
+      skillLevel: skills.groups[0]?.gems[0]?.level ?? 20,
+      dpsMode: 'Support',
+    };
+  }
+
+  const mainGroup = skills.groups[0];
+  const mainGem = mainGroup?.gems[0];
+  const supports = mainGroup ? mainGroup.gems.slice(1) : [];
+  let skillLevel = mainGem?.level ?? 20;
+
+  const treeLines = collectTreeLines(data, tree);
+  const gearLines: string[] = [];
+  for (const item of gear.items) {
+    if (item.base.type === 'Flask') continue;
+    gearLines.push(...item.implicits, ...item.explicits);
+  }
+  const allLines = [...treeLines, ...gearLines];
+
+  const keystones = new Set(tree.summary.keystones);
+  const activeGemNames = new Set<string>();
+  for (const grp of skills.groups) {
+    for (const gi of grp.gems) activeGemNames.add(gi.gem.name);
+  }
+
+  let incDamage = 0;
+  let incAtkSpeed = 0;
+  let incCastSpeed = 0;
+  let incCrit = 0;
+  let critMultiBonus = 0;
+  let dotMultiBonus = 0;
+  let addedFlatSpell = 0;
+  let addedFlatAttack = 0;
+  let globalWeaponCritBase = 0;
+  let maxTotems = arch.damageStyle === 'totem' ? (keystones.has('Ancestral Bond') ? 2 : 1) + (supports.some((s) => s.gem.name.includes('Multiple Totems')) ? 2 : 0) : 1;
+
+  for (const raw of allLines) {
+    const l = raw.replace(/\{[^}]+\}/g, '');
+    const tl = l.toLowerCase();
+
+    const mGemLvl = /\+(\d+) to level of all (.+?) skill gems/i.exec(l);
+    if (mGemLvl) {
+      const tag = mGemLvl[2].toLowerCase();
+      const hitsSkill =
+        tag === 'skill' ||
+        (tag === 'spell' && arch.damageStyle !== 'attack') ||
+        (tag === 'minion' && arch.damageStyle === 'minion') ||
+        arch.elements.some((el) => tag.includes(el));
+      if (hitsSkill) skillLevel += Number(mGemLvl[1]);
+    }
+
+    const mIncDmg = /(\d+)% increased ([^.]+?damage[^.]*)/i.exec(l);
+    if (mIncDmg) {
+      const val = Number(mIncDmg[1]);
+      const kind = mIncDmg[2].toLowerCase();
+      if (/taken|reflected|with ailments/.test(kind) && arch.damageStyle !== 'dot') {
+        // Skip ailments-only for pure hit unless dot
+      } else if (/minion/.test(kind)) {
+        if (arch.damageStyle === 'minion') incDamage += val;
+      } else if (/totem/.test(kind)) {
+        if (arch.damageStyle === 'totem') incDamage += val;
+      } else if (/trap|mine/.test(kind)) {
+        if (arch.damageStyle === 'trap_mine') incDamage += val;
+      } else if (/spell/.test(kind)) {
+        if (arch.damageStyle !== 'attack' && arch.damageStyle !== 'minion') incDamage += val;
+      } else if (/attack/.test(kind)) {
+        if (arch.damageStyle === 'attack') incDamage += val;
+      } else if (/damage over time|burning/.test(kind)) {
+        if (arch.damageStyle === 'dot') incDamage += val;
+      } else if (/physical|fire|cold|lightning|chaos|elemental|projectile|area|melee|wand|bow|sword|axe|mace|staff|claw|dagger/.test(kind)) {
+        const eleHit = arch.elements.some((e) => kind.includes(e)) || (kind.includes('elemental') && arch.elements.some((e) => e === 'fire' || e === 'cold' || e === 'lightning'));
+        const kwHit = arch.statKeywords.some((kw) => kind.includes(kw)) || (kind.includes(arch.weaponClass));
+        if ((eleHit || kwHit || kind === 'damage') && arch.damageStyle !== 'minion') incDamage += val;
+      } else if (kind === 'damage' && arch.damageStyle !== 'minion') {
+        incDamage += val;
+      }
+    }
+
+    const mAtkSpd = /(\d+)% increased attack speed/i.exec(l);
+    if (mAtkSpd && !/minion/.test(tl)) incAtkSpeed += Number(mAtkSpd[1]);
+
+    const mCastSpd = /(\d+)% increased cast speed/i.exec(l);
+    if (mCastSpd) incCastSpeed += Number(mCastSpd[1]);
+
+    const mCrit = /(\d+)% increased (?:global )?critical strike chance/i.exec(l);
+    if (mCrit && !/minion/.test(tl)) incCrit += Number(mCrit[1]);
+
+    const mMulti = /\+(\d+)% to (?:global )?critical strike multiplier/i.exec(l);
+    if (mMulti) critMultiBonus += Number(mMulti[1]);
+
+    const mDotMulti = /\+(\d+)% to .*damage over time multiplier/i.exec(l);
+    if (mDotMulti) dotMultiBonus += Number(mDotMulti[1]);
+
+    const mAdds = /adds (\d+) to (\d+) (fire|cold|lightning|physical|chaos) damage(?: to (spells|attacks))?/i.exec(l);
+    if (mAdds) {
+      const avg = (Number(mAdds[1]) + Number(mAdds[2])) / 2;
+      const elem = mAdds[3].toLowerCase();
+      const target = mAdds[4]?.toLowerCase();
+      if (arch.elements.includes(elem as BuildArchetype['elements'][number]) || elem === 'physical') {
+        if (target === 'spells' && arch.damageStyle !== 'attack') addedFlatSpell += avg;
+        else if (target === 'attacks' && arch.damageStyle === 'attack') addedFlatAttack += avg;
+      }
+    }
+  }
+
+  // Account for Strength melee / Iron Grip / Iron Will
+  const strPctBonus = Math.floor(gear.attributes.str / 5);
+  if (arch.damageStyle === 'attack' && (!arch.statKeywords.includes('projectile') || keystones.has('Iron Grip'))) {
+    incDamage += strPctBonus;
+  } else if (keystones.has('Iron Will') && arch.damageStyle === 'spell') {
+    incDamage += strPctBonus;
+  }
+
+  // Weapon base DPS for attacks (or Weapon 1 + Weapon 2 average for dual_wield)
+  const w1 = gear.items[gear.slotMap['Weapon 1']];
+  const w2 = gear.slotMap['Weapon 2'] ? gear.items[gear.slotMap['Weapon 2']] : undefined;
+  const computeWeaponProfile = (item: typeof w1) => {
+    if (!item?.base.weapon) return { avgDmg: 85, aps: 1.5, crit: 6.0 };
+    const wb = item.base.weapon;
+    const avgPhys = ((wb.PhysicalMin ?? 0) + (wb.PhysicalMax ?? 0)) / 2;
+    let locIncPhys = (item.quality ?? 0);
+    let locFlatPhys = 0;
+    let locFlatEle = 0;
+    let locIncAps = 0;
+    let locIncCrit = 0;
+    for (const raw of [...item.implicits, ...item.explicits]) {
+      const l = raw.replace(/\{[^}]+\}/g, '');
+      const mIncP = /^(\d+)% increased physical damage$/i.exec(l);
+      if (mIncP) locIncPhys += Number(mIncP[1]);
+      const mFlP = /^adds (\d+) to (\d+) physical damage$/i.exec(l);
+      if (mFlP) locFlatPhys += (Number(mFlP[1]) + Number(mFlP[2])) / 2;
+      const mFlE = /^adds (\d+) to (\d+) (fire|cold|lightning|chaos) damage$/i.exec(l);
+      if (mFlE) locFlatEle += (Number(mFlE[1]) + Number(mFlE[2])) / 2;
+      const mAps = /^(\d+)% increased attack speed$/i.exec(l);
+      if (mAps) locIncAps += Number(mAps[1]);
+      const mCr = /^(\d+)% increased critical strike chance$/i.exec(l);
+      if (mCr) locIncCrit += Number(mCr[1]);
+    }
+    const scaledPhys = (avgPhys + locFlatPhys) * (1 + locIncPhys / 100);
+    return {
+      avgDmg: scaledPhys + locFlatEle,
+      aps: (wb.AttackRateBase ?? 1.4) * (1 + locIncAps / 100),
+      crit: (wb.CritChanceBase ?? 5) * (1 + locIncCrit / 100),
+    };
+  };
+
+  let baseHit = 0;
+  let hitsPerSec = 1;
+  if (arch.damageStyle === 'attack') {
+    const p1 = computeWeaponProfile(w1);
+    const p2 = arch.weaponSetup === 'dual_wield' && w2?.base.weapon ? computeWeaponProfile(w2) : undefined;
+    const wpAvg = p2 ? (p1.avgDmg + p2.avgDmg) / 2 : p1.avgDmg;
+    const wpAps = p2 ? ((p1.aps + p2.aps) / 2) * 1.1 : p1.aps;
+    globalWeaponCritBase = p2 ? (p1.crit + p2.crit) / 2 : p1.crit;
+    baseHit = (wpAvg + addedFlatAttack) * 1.75; // ~175% average attack effectiveness
+    hitsPerSec = wpAps * (1 + incAtkSpeed / 100);
+  } else {
+    // Spell / Totem / Trap / Mine / Minion / DoT base scaling by effective gem level
+    const lvlScale = Math.pow(1.105, skillLevel - 20);
+    const rawSpellBase = (arch.damageStyle === 'dot' ? 1450 : 1150) * lvlScale;
+    baseHit = rawSpellBase + addedFlatSpell * 1.15;
+    globalWeaponCritBase = 6.0;
+    const baseCastRate = arch.damageStyle === 'trap_mine' ? 2.1 : 1.45;
+    hitsPerSec = baseCastRate * (1 + incCastSpeed / 100);
+    if (arch.damageStyle === 'minion') {
+      baseHit = 1600 * lvlScale;
+      hitsPerSec = 1.65 * (1 + (activeGemNames.has('Haste') ? 0.18 : 0));
+      incDamage = Math.max(incDamage, 80); // base minion tree + bone/spirit baseline
+    }
+  }
+
+  // Support gem More multiplier
+  let moreMult = 1;
+  for (const sg of supports) {
+    const sn = sg.gem.name;
+    const isAwk = sg.gem.tags.includes('awakened');
+    if (sn === 'Spell Echo' || sn === 'Multistrike') moreMult *= 1.38;
+    else if (sn === 'Empower') {
+      baseHit *= Math.pow(1.105, Math.min(4, Math.max(1, sg.level - 1)));
+    } else if (/Multiple Projectiles|Volley|Chain|Fork|Pierce|Increased Area/.test(sn)) {
+      moreMult *= isAwk ? 1.18 : 1.06;
+    } else if (/Lifetap|Inspiration|Fortify/.test(sn)) {
+      moreMult *= 1.24;
+    } else {
+      moreMult *= isAwk ? 1.42 : 1.33;
+    }
+  }
+
+  // Aura More multipliers
+  if (activeGemNames.has('Hatred')) moreMult *= 1.25;
+  if (activeGemNames.has('Anger')) moreMult *= 1.18;
+  if (activeGemNames.has('Wrath')) moreMult *= 1.21;
+  if (activeGemNames.has('Pride')) moreMult *= 1.28;
+  if (activeGemNames.has('Zealotry')) moreMult *= 1.18;
+  if (activeGemNames.has('Malevolence')) moreMult *= 1.21;
+  if (activeGemNames.has('Haste')) hitsPerSec *= 1.14;
+  if (activeGemNames.has('Precision')) incCrit += 55;
+  if (activeGemNames.has('Summon Skitterbots')) moreMult *= 1.16;
+  if (activeGemNames.has('Herald of Ash') || activeGemNames.has('Herald of Ice') || activeGemNames.has('Herald of Thunder') || activeGemNames.has('Herald of Purity')) {
+    moreMult *= 1.10;
+  }
+
+  // Keystones
+  if (keystones.has('Elemental Overload')) moreMult *= 1.40;
+  if (keystones.has('Precise Technique')) moreMult *= 1.40;
+  if (keystones.has('Point Blank')) moreMult *= 1.20;
+
+  // Crit vs DoT multi
+  let critChancePct = 0;
+  let critMultiPct = 150;
+  let critExpectedMult = 1.0;
+  if (arch.critMode === 'crit') {
+    critChancePct = Math.min(100, Math.round(globalWeaponCritBase * (1 + incCrit / 100)));
+    critMultiPct = 150 + critMultiBonus;
+    if (arch.damageStyle === 'dot' && keystones.has('Perfect Agony')) {
+      dotMultiBonus += critMultiBonus;
+    } else {
+      critExpectedMult = 1 + (critChancePct / 100) * ((critMultiPct - 100) / 100);
+    }
+  }
+
+  const dotMult = arch.damageStyle === 'dot' ? 1 + dotMultiBonus / 100 : 1;
+  const avgHit = Math.round(baseHit * (1 + incDamage / 100) * moreMult * critExpectedMult * dotMult);
+  const rawDps = arch.damageStyle === 'dot'
+    ? avgHit
+    : Math.round(avgHit * hitsPerSec * (arch.damageStyle === 'totem' ? maxTotems : arch.damageStyle === 'minion' ? 4 : 1));
+
+  const dpsMode: ProjectedOffense['dpsMode'] =
+    arch.damageStyle === 'dot' ? 'DoT DPS'
+      : arch.damageStyle === 'totem' ? 'Totem DPS'
+        : arch.damageStyle === 'minion' ? 'Minion DPS'
+          : arch.damageStyle === 'trap_mine' ? 'Trap/Mine DPS'
+            : 'Hit DPS';
+
+  const rateLabel = arch.damageStyle === 'dot'
+    ? `+${dotMultiBonus}% DoT Multi`
+    : arch.damageStyle === 'totem'
+      ? `${maxTotems} Totems · ${hitsPerSec.toFixed(2)}/s`
+      : `${hitsPerSec.toFixed(2)}/s`;
+
+  return {
+    totalDps: rawDps,
+    hitDmg: avgHit,
+    rateLabel,
+    incDamagePct: incDamage,
+    critChancePct,
+    critMultiPct,
+    skillLevel,
+    dpsMode,
   };
 }
