@@ -146,8 +146,12 @@ function scoreStatsText(stats: string[] | undefined, arch: BuildArchetype): numb
 
   const targets = arch.options.targets;
   const hpBoost = (targets?.minHp ?? 0) > 0 ? 28 : 0;
-  const physHitBoost = (targets?.minPhysMaxHit ?? 0) > 0 ? 24 : 0;
-  const eleHitBoost = (targets?.minEleMaxHit ?? 0) > 0 ? 32 : 0;
+  const physHitBoost = (targets?.minPhysMaxHit ?? 0) > 0 || (targets?.minArmour ?? 0) > 0 ? 24 : 0;
+  const eleHitBoost = (targets?.minEleMaxHit ?? 0) > 0 || (targets?.minMaxFireRes ?? 0) > 75 ? 36 : 0;
+  const evaBoost = (targets?.minEvasion ?? 0) > 0 || (targets?.minEvadePct ?? 0) > 0 ? 28 : 0;
+  const suppBoost = (targets?.minSuppressPct ?? 0) > 0 || (targets?.minDodgePct ?? 0) > 0 ? 35 : 0;
+  const chaosBoost = (targets?.minChaosMaxHit ?? 0) > 0 ? 28 : 0;
+  const critChanceBoost = (targets?.minCritChancePct ?? 0) > 0 ? 22 : 0;
   const dpsTargetMult = (targets?.minDps ?? 0) > 0 ? 1.45 : 1;
 
   // Defenses
@@ -162,14 +166,14 @@ function scoreStatsText(stats: string[] | undefined, arch: BuildArchetype): numb
   }
   const isEvasionBuild = arch.primaryAttr === 'dex' && arch.defenseStyle !== 'es';
   if (/suppress spell damage|chance to suppress spell damage is lucky|of suppressed spell damage/.test(text) && !/instead apply to chance to dodge/.test(text)) {
-    score += isEvasionBuild ? (isHC ? 65 : 22) : (isHC ? 28 : 11);
+    score += (isEvasionBuild ? (isHC ? 65 : 22) : (isHC ? 28 : 11)) + suppBoost;
   }
   if (/maximum (all )?(fire|cold|lightning|elemental) resistance/.test(text)) score += (isHC ? 26 : 12) + eleHitBoost;
-  if (/maximum chaos resistance/.test(text)) score += arch.defenseStyle === 'es' ? -80 : (isHC ? 22 : 10);
+  if (/maximum chaos resistance/.test(text)) score += arch.defenseStyle === 'es' ? -80 : (isHC ? 22 : 10) + chaosBoost;
   if (/to all elemental resistances|to (fire|cold|lightning) resistance/.test(text)) score += isHC ? 10 : 5;
-  if (/chaos resistance/.test(text)) score += arch.defenseStyle === 'es' ? -80 : (isHC ? 28 : 4);
+  if (/chaos resistance/.test(text)) score += arch.defenseStyle === 'es' ? -80 : (isHC ? 28 : 4) + chaosBoost;
   if (/armour/.test(text) && (arch.primaryAttr === 'str' || isHC || physHitBoost > 0)) score += (isHC ? 10 : 4) + (physHitBoost > 0 ? 18 : 0);
-  if (/evasion/.test(text) && (arch.primaryAttr === 'dex' || isHC)) score += isHC ? 9 : 4;
+  if (/evasion/.test(text) && (arch.primaryAttr === 'dex' || isHC || evaBoost > 0)) score += (isHC ? 9 : 4) + evaBoost;
   if (/chance to block/.test(text) && arch.weaponSetup.includes('shield')) score += isHC ? 15 : 7;
   if (/reservation efficiency/.test(text)) score += isHC ? 20 : 15;
   if (/fortif/.test(text) && arch.damageStyle === 'attack') score += (isHC ? 18 : 8) + physHitBoost;
@@ -212,7 +216,7 @@ function scoreStatsText(stats: string[] | undefined, arch: BuildArchetype): numb
   // Crit vs non-crit
   if (arch.critMode === 'crit') {
     if (/critical strike multiplier/.test(text)) offScore += isHC ? 14 : 21;
-    if (/critical strike chance/.test(text)) offScore += isHC ? 11 : 16;
+    if (/critical strike chance/.test(text)) offScore += (isHC ? 11 : 16) + critChanceBoost;
   } else {
     if (/critical strike/.test(text)) score -= 35;
   }
@@ -290,8 +294,12 @@ function isKeystoneAllowed(
     case 'Eternal Youth':
       return false;
     case 'Acrobatics':
+      if ((arch.options.targets?.minDodgePct ?? 0) > 0 && !isHC) return true;
+      if ((arch.options.targets?.minSuppressPct ?? 0) > 0) return false;
       return arch.defenseStyle === 'life' && arch.primaryAttr === 'dex' && !isHC;
     case 'Iron Reflexes':
+      if ((arch.options.targets?.minEvasion ?? 0) > 0 || (arch.options.targets?.minEvadePct ?? 0) > 0) return false;
+      if ((arch.options.targets?.minArmour ?? 0) > 0 && arch.defenseStyle === 'life') return true;
       return arch.defenseStyle === 'life' && isHC && (arch.primaryAttr === 'str' || arch.classData.name === 'Duelist');
     case 'Magebane':
       return arch.defenseStyle === 'life' && isHC && arch.primaryAttr === 'dex';
@@ -376,7 +384,9 @@ function scoreNode(id: number, node: TreeNode, arch: BuildArchetype, manaReserve
     score += arch.options.economy === 'trade' ? 34 : 20;
   } else if (node.t === 'keystone') {
     if (!isKeystoneAllowed(node, arch, manaReservedPct)) return -9999;
-    score += KEYSTONE_WEIGHT[node.n] ?? 12;
+    let kw = KEYSTONE_WEIGHT[node.n] ?? 12;
+    if (node.n === 'Acrobatics' && (arch.options.targets?.minDodgePct ?? 0) > 0) kw = 85;
+    score += kw;
   }
   // Small bonus for life/ES cluster travel nodes
   if (node.t === 'normal' && score <= 0) score = 0.5;

@@ -1,5 +1,5 @@
 import type { BuildOptions } from './archetype.ts';
-import type { GeneratedBuild } from './generator.ts';
+import { serializeTargetsKey, type GeneratedBuild } from './generator.ts';
 
 export const SAVED_BUILDS_STORAGE_KEY = 'pob-randomizer-saved-builds';
 const MAX_SAVED_BUILDS = 50;
@@ -50,9 +50,7 @@ export function buildOptionsSignature(opts: BuildOptions): string {
     opts.damageStyle,
     opts.defenseStyle,
   ].join('|');
-  const t = opts.targets;
-  if (!t || (!t.minHp && !t.minPhysMaxHit && !t.minEleMaxHit && !t.minDps)) return base;
-  return `${base}|${t.minHp ?? ''}|${t.minPhysMaxHit ?? ''}|${t.minEleMaxHit ?? ''}|${t.minDps ?? ''}`;
+  return `${base}${serializeTargetsKey(opts.targets)}`;
 }
 
 export function loadSavedBuilds(storage: StorageLike | null = defaultStorage()): SavedBuildEntry[] {

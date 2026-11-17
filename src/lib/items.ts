@@ -135,8 +135,10 @@ function scoreModForArchetype(
   const isHC = arch.options.leagueMode === 'hardcore';
   const targets = arch.options.targets;
   const wantHpTarget = (targets?.minHp ?? 0) > 0;
-  const wantPhysTarget = (targets?.minPhysMaxHit ?? 0) > 0;
-  const wantEleTarget = (targets?.minEleMaxHit ?? 0) > 0;
+  const wantPhysTarget = (targets?.minPhysMaxHit ?? 0) > 0 || (targets?.minArmour ?? 0) > 0;
+  const wantEleTarget = (targets?.minEleMaxHit ?? 0) > 0 || (targets?.minMaxFireRes ?? 0) > 75;
+  const wantEvaTarget = (targets?.minEvasion ?? 0) > 0 || (targets?.minEvadePct ?? 0) > 0;
+  const wantCritTarget = (targets?.minCritChancePct ?? 0) > 0;
   const dpsBoost = (isHC ? 1.0 : 2.3) * ((targets?.minDps ?? 0) > 0 ? 1.8 : 1);
   const tags = new Set(mod.tags ?? []);
   let w = 1;
@@ -155,6 +157,9 @@ function scoreModForArchetype(
   if (arch.defenseStyle === 'es' || arch.defenseStyle === 'hybrid') {
     if (/energy shield/.test(txt)) w *= (isHC ? 18 : 8) * (wantHpTarget ? 2.0 : 1);
   }
+  if (wantEvaTarget && /evasion rating/.test(txt)) w *= 14;
+  if ((targets?.minArmour ?? 0) > 0 && /armour/.test(txt)) w *= 14;
+  if (wantCritTarget && /critical strike chance/.test(txt)) w *= 14;
 
   if (/suppress spell damage/.test(txt)) {
     w *= needs.suppress > 0 ? (isEvasionBuild ? (isHC ? 75 : 18) : (isHC ? 28 : 8)) : 0.25;
@@ -300,19 +305,23 @@ function resolveTargetArmourSubType(
   const hasArmourMastery = masteryTexts.some((t) => t.includes('all have armour'));
   const hasEvaSuppressMastery = masteryTexts.some((t) => t.includes('all have evasion rating'));
   const cls = arch.classData.name;
+  const t = arch.options.targets;
+  const wantEvaTarget = (t?.minEvasion ?? 0) > 0 || (t?.minEvadePct ?? 0) > 0 || (t?.minSuppressPct ?? 0) > 0 || (t?.minDodgePct ?? 0) > 0;
+  const wantArmTarget = (t?.minArmour ?? 0) > 0;
 
   if (arch.defenseStyle === 'hybrid') {
-    if (hasGhostDance || (hasGrace && !hasDet) || cls === 'Ranger' || cls === 'Shadow') {
+    if (wantArmTarget && !wantEvaTarget) return 'Armour/Energy Shield';
+    if (hasGhostDance || wantEvaTarget || (hasGrace && !hasDet) || cls === 'Ranger' || cls === 'Shadow') {
       return 'Evasion/Energy Shield';
     }
     return 'Armour/Energy Shield';
   }
 
   if (arch.defenseStyle === 'es') {
-    if (hasIR || hasDivineShield || hasArmourMastery || (hasDet && !hasGrace) || cls === 'Marauder' || cls === 'Duelist') {
+    if (hasIR || hasDivineShield || hasArmourMastery || wantArmTarget || (hasDet && !hasGrace) || cls === 'Marauder' || cls === 'Duelist') {
       return 'Armour/Energy Shield';
     }
-    if (hasGhostDance || hasEvaSuppressMastery || (hasGrace && !hasDet) || cls === 'Ranger') {
+    if (hasGhostDance || hasEvaSuppressMastery || wantEvaTarget || (hasGrace && !hasDet) || cls === 'Ranger') {
       return 'Evasion/Energy Shield';
     }
     if (cls === 'Shadow') return rng.chance(0.55) ? 'Evasion/Energy Shield' : 'Energy Shield';
@@ -321,7 +330,9 @@ function resolveTargetArmourSubType(
   }
 
   // Life builds: align HP + Evasion -> Armour/Evasion, otherwise pick one consistent pure profile
-  if (hasIR) return 'Armour';
+  if (hasIR || (wantArmTarget && !wantEvaTarget)) return 'Armour';
+  if (wantArmTarget && wantEvaTarget) return 'Armour/Evasion';
+  if (wantEvaTarget) return arch.classData.name === 'Duelist' || hasDet ? 'Armour/Evasion' : 'Evasion';
   if (hasArmourMastery && hasEvaSuppressMastery) return 'Armour/Evasion';
   if (hasGrace && hasDet) return 'Armour/Evasion';
   if (cls === 'Duelist' && (hasGrace || arch.primaryAttr === 'dex')) return 'Armour/Evasion';
@@ -945,7 +956,8 @@ export function generateGear(
   const isTrade = arch.options.economy === 'trade';
   const isHC = arch.options.leagueMode === 'hardcore';
   const hasCI = tree.summary.keystones.includes('Chaos Inoculation');
-  const targetChaosRes = hasCI ? -999 : (isHC ? 75 : 0);
+  const wantChaosCap = isHC || (arch.options.targets?.minChaosMaxHit ?? 0) > 0;
+  const targetChaosRes = hasCI ? -999 : (wantChaosCap ? 75 : 0);
 
   // Baseline resistances & attributes from tree + Alira + Purity of Elements + Kitava (-60%)
   const resists = {
@@ -958,7 +970,8 @@ export function generateGear(
   const maxRes = { fire: 75, cold: 75, lightning: 75, chaos: hasCI ? 100 : 75 };
   const dummyAttrs = { str: 0, dex: 0, int: 0 };
   const targetArmourSubType = resolveTargetArmourSubType(arch, tree, skills, rng);
-  const isEvasionBuild = targetArmourSubType.includes('Evasion') && arch.defenseStyle !== 'es';
+  const wantSuppTarget = (arch.options.targets?.minSuppressPct ?? 0) > 0 || (arch.options.targets?.minDodgePct ?? 0) > 0;
+  const isEvasionBuild = (targetArmourSubType.includes('Evasion') || wantSuppTarget) && arch.defenseStyle !== 'es';
   const hasAcrobatics = tree.summary.keystones.includes('Acrobatics');
   const hasMagebane = tree.summary.keystones.includes('Magebane');
 
@@ -997,7 +1010,9 @@ export function generateGear(
       }
     }
   }
-  const suppressTarget = hasAcrobatics ? 150 : (isEvasionBuild || isHC ? 100 : 0);
+  const suppressTarget = hasAcrobatics
+    ? Math.max(150, (arch.options.targets?.minDodgePct ?? 0) * 2)
+    : Math.max(isEvasionBuild || isHC ? 100 : 0, arch.options.targets?.minSuppressPct ?? 0);
   for (const grp of skills.groups) {
     for (const gi of grp.gems) {
       if (gi.gem.name === 'Purity of Elements') {
@@ -1131,20 +1146,24 @@ export function generateGear(
   // Flasks (Flask 1..5)
   const bestEle = bestEleTarget(maxRes);
   const bestEleFlask = bestEle === 'fire' ? 'Ruby Flask' : bestEle === 'cold' ? 'Sapphire Flask' : 'Topaz Flask';
+  const t = arch.options.targets;
+  const wantEvaFlask = (t?.minEvasion ?? 0) > 0 || (t?.minEvadePct ?? 0) > 0 || (t?.minDodgePct ?? 0) > 0;
+  const wantArmFlask = (t?.minArmour ?? 0) > 0;
+  const wantCritFlask = (t?.minCritChancePct ?? 0) > 0;
   const flaskSpecs: { slot: ItemSlotName; bases: string[] }[] = arch.defenseStyle === 'es'
     ? [
         { slot: 'Flask 1', bases: ['Quicksilver Flask'] },
-        { slot: 'Flask 2', bases: isHC ? ['Granite Flask', 'Basalt Flask'] : ['Diamond Flask', 'Silver Flask'] },
-        { slot: 'Flask 3', bases: ['Granite Flask', 'Basalt Flask'] },
-        { slot: 'Flask 4', bases: isHC ? ['Jade Flask', bestEleFlask] : ['Jade Flask', 'Quartz Flask', 'Sulphur Flask'] },
+        { slot: 'Flask 2', bases: wantCritFlask ? ['Diamond Flask'] : wantArmFlask ? ['Granite Flask'] : (isHC ? ['Granite Flask', 'Basalt Flask'] : ['Diamond Flask', 'Silver Flask']) },
+        { slot: 'Flask 3', bases: wantArmFlask ? ['Granite Flask', 'Basalt Flask'] : wantEvaFlask ? ['Jade Flask'] : ['Granite Flask', 'Basalt Flask'] },
+        { slot: 'Flask 4', bases: wantEvaFlask ? ['Jade Flask'] : (isHC ? ['Jade Flask', bestEleFlask] : ['Jade Flask', 'Quartz Flask', 'Sulphur Flask']) },
         { slot: 'Flask 5', bases: hasCI ? [bestEleFlask, 'Ruby Flask', 'Sapphire Flask', 'Topaz Flask'] : ['Amethyst Flask', bestEleFlask] },
       ]
     : [
         { slot: 'Flask 1', bases: ['Divine Life Flask', 'Eternal Life Flask'] },
         { slot: 'Flask 2', bases: ['Quicksilver Flask'] },
-        { slot: 'Flask 3', bases: isEvasionBuild ? ['Jade Flask', 'Quartz Flask'] : (isHC ? ['Granite Flask', 'Basalt Flask'] : [arch.critMode === 'crit' ? 'Diamond Flask' : 'Silver Flask', 'Sulphur Flask']) },
-        { slot: 'Flask 4', bases: isEvasionBuild ? (isHC ? ['Basalt Flask', bestEleFlask, 'Quartz Flask'] : ['Diamond Flask', 'Silver Flask', 'Quartz Flask']) : (isHC ? ['Jade Flask', bestEleFlask, 'Basalt Flask'] : ['Silver Flask', 'Jade Flask', 'Quartz Flask']) },
-        { slot: 'Flask 5', bases: isHC ? ['Amethyst Flask', bestEleFlask] : ['Diamond Flask', 'Sulphur Flask', 'Amethyst Flask'] },
+        { slot: 'Flask 3', bases: wantEvaFlask ? ['Jade Flask'] : wantArmFlask ? ['Granite Flask'] : isEvasionBuild ? ['Jade Flask', 'Quartz Flask'] : (isHC ? ['Granite Flask', 'Basalt Flask'] : [arch.critMode === 'crit' || wantCritFlask ? 'Diamond Flask' : 'Silver Flask', 'Sulphur Flask']) },
+        { slot: 'Flask 4', bases: wantCritFlask ? ['Diamond Flask'] : isEvasionBuild ? (isHC ? ['Basalt Flask', bestEleFlask, 'Quartz Flask'] : ['Diamond Flask', 'Silver Flask', 'Quartz Flask']) : (isHC ? ['Jade Flask', bestEleFlask, 'Basalt Flask'] : ['Silver Flask', 'Jade Flask', 'Quartz Flask']) },
+        { slot: 'Flask 5', bases: wantArmFlask && !wantEvaFlask ? ['Granite Flask', 'Basalt Flask'] : isHC || wantChaosCap ? ['Amethyst Flask', bestEleFlask] : ['Diamond Flask', 'Sulphur Flask', 'Amethyst Flask'] },
       ];
 
   for (const fs of flaskSpecs) {
@@ -1241,7 +1260,7 @@ export function generateGear(
     maxRes.lightning = Math.min(90, Math.max(maxRes.lightning, maxRes.fire));
   }
 
-  // Global guarantee: cap Fire, Cold, Lightning everywhere, AND cap Chaos in Hardcore (unless CI)
+  // Global guarantee: cap Fire, Cold, Lightning everywhere, AND cap Chaos when Hardcore or Chaos target set (unless CI)
   const canSafelyRemoveLines = (lines: string[]) => {
     const delta = { fire: 0, cold: 0, lightning: 0, chaos: 0 };
     const attrDelta = { str: 0, dex: 0, int: 0 };
@@ -1249,12 +1268,12 @@ export function generateGear(
     if (resists.fire - delta.fire < maxRes.fire) return false;
     if (resists.cold - delta.cold < maxRes.cold) return false;
     if (resists.lightning - delta.lightning < maxRes.lightning) return false;
-    if (isHC && !hasCI && resists.chaos - delta.chaos < maxRes.chaos) return false;
+    if (wantChaosCap && !hasCI && resists.chaos - delta.chaos < maxRes.chaos) return false;
     return { delta, attrDelta };
   };
 
   {
-    const capTargets: ('fire' | 'cold' | 'lightning' | 'chaos')[] = isHC && !hasCI
+    const capTargets: ('fire' | 'cold' | 'lightning' | 'chaos')[] = wantChaosCap && !hasCI
       ? ['fire', 'cold', 'lightning', 'chaos']
       : ['fire', 'cold', 'lightning'];
     const untally = (lines: string[]) => {
@@ -1278,7 +1297,7 @@ export function generateGear(
       if (missing !== 'fire' && delta.fire > 0 && resists.fire - delta.fire < maxRes.fire) return false;
       if (missing !== 'cold' && delta.cold > 0 && resists.cold - delta.cold < maxRes.cold) return false;
       if (missing !== 'lightning' && delta.lightning > 0 && resists.lightning - delta.lightning < maxRes.lightning) return false;
-      if (missing !== 'chaos' && isHC && !hasCI && delta.chaos > 0 && resists.chaos - delta.chaos < maxRes.chaos) return false;
+      if (missing !== 'chaos' && wantChaosCap && !hasCI && delta.chaos > 0 && resists.chaos - delta.chaos < maxRes.chaos) return false;
       return true;
     };
 
@@ -1338,7 +1357,7 @@ export function generateGear(
             if (delta.fire > 0 && resists.fire - delta.fire < maxRes.fire) return false;
             if (delta.cold > 0 && resists.cold - delta.cold < maxRes.cold) return false;
             if (delta.lightning > 0 && resists.lightning - delta.lightning < maxRes.lightning) return false;
-            if (isHC && !hasCI && delta.chaos > 0 && resists.chaos - delta.chaos < maxRes.chaos) return false;
+            if (wantChaosCap && !hasCI && delta.chaos > 0 && resists.chaos - delta.chaos < maxRes.chaos) return false;
             if (preserveCombat && /suppress|maximum .* resistance|physical damage reduction|critical strike|attack speed|cast speed/i.test(sl)) {
               return false;
             }

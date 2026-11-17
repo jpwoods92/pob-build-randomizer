@@ -1,6 +1,12 @@
 import type { GameData } from './types.ts';
 import { Rng } from './rng.ts';
-import { pickArchetype, type BuildArchetype, type BuildOptions, type BuildTargets } from './archetype.ts';
+import {
+  pickArchetype,
+  type BuildArchetype,
+  type BuildOptions,
+  type BuildTargets,
+  type TargetStatKey,
+} from './archetype.ts';
 import { generatePassiveTree, patchTreeAttributes, type GeneratedTree } from './tree.ts';
 import { generateSkills, type GeneratedSkills } from './skills.ts';
 import { generateGear, type GeneratedGear } from './items.ts';
@@ -18,65 +24,241 @@ export interface GeneratedBuild {
   pobCode: string;
 }
 
+export interface TargetStatDef {
+  key: TargetStatKey;
+  label: string;
+  shortLabel: string;
+  unit: '' | '%';
+  min: number;
+  max?: number;
+  step: number;
+  defaultValue: number;
+  placeholder: string;
+  getActual: (build: Pick<GeneratedBuild, 'archetype' | 'defenses' | 'offense'>) => number;
+  isMet?: (build: Pick<GeneratedBuild, 'archetype' | 'defenses' | 'offense'>, target: number) => boolean;
+}
+
+export const TARGET_STAT_DEFS: readonly TargetStatDef[] = [
+  {
+    key: 'minHp',
+    label: 'HP / ES Pool',
+    shortLabel: 'Pool',
+    unit: '',
+    min: 100,
+    step: 500,
+    defaultValue: 5000,
+    placeholder: '5000',
+    getActual: (b) =>
+      b.archetype.defenseStyle === 'es'
+        ? b.defenses.maxEs
+        : b.archetype.defenseStyle === 'hybrid'
+          ? b.defenses.maxLife + b.defenses.maxEs
+          : b.defenses.maxLife,
+  },
+  {
+    key: 'minDps',
+    label: 'Projected DPS',
+    shortLabel: 'DPS',
+    unit: '',
+    min: 1000,
+    step: 50000,
+    defaultValue: 500000,
+    placeholder: '500000',
+    getActual: (b) => (b.offense.dpsMode === 'Support' ? 0 : b.offense.totalDps),
+    isMet: (b, tgt) => b.offense.dpsMode !== 'Support' && b.offense.totalDps >= tgt,
+  },
+  {
+    key: 'minPhysMaxHit',
+    label: 'Phys Max Hit',
+    shortLabel: 'Phys Hit',
+    unit: '',
+    min: 500,
+    step: 2500,
+    defaultValue: 15000,
+    placeholder: '15000',
+    getActual: (b) => b.defenses.physMaxHit,
+  },
+  {
+    key: 'minEleMaxHit',
+    label: 'Ele Max Hit',
+    shortLabel: 'Ele Hit',
+    unit: '',
+    min: 1000,
+    step: 5000,
+    defaultValue: 40000,
+    placeholder: '40000',
+    getActual: (b) => b.defenses.eleMaxHit,
+  },
+  {
+    key: 'minChaosMaxHit',
+    label: 'Chaos Max Hit',
+    shortLabel: 'Chaos Hit',
+    unit: '',
+    min: 500,
+    step: 2500,
+    defaultValue: 15000,
+    placeholder: '15000',
+    getActual: (b) => (b.defenses.chaosMaxHit === null ? Infinity : b.defenses.chaosMaxHit),
+  },
+  {
+    key: 'minArmour',
+    label: 'Armour',
+    shortLabel: 'Armour',
+    unit: '',
+    min: 100,
+    step: 2000,
+    defaultValue: 15000,
+    placeholder: '15000',
+    getActual: (b) => b.defenses.armour,
+  },
+  {
+    key: 'minEvasion',
+    label: 'Evasion Rating',
+    shortLabel: 'Evasion',
+    unit: '',
+    min: 100,
+    step: 2000,
+    defaultValue: 15000,
+    placeholder: '15000',
+    getActual: (b) => b.defenses.evasion,
+  },
+  {
+    key: 'minEvadePct',
+    label: 'Evade Chance %',
+    shortLabel: 'Evade %',
+    unit: '%',
+    min: 5,
+    max: 95,
+    step: 5,
+    defaultValue: 65,
+    placeholder: '65',
+    getActual: (b) => b.defenses.evadeChancePct,
+  },
+  {
+    key: 'minSuppressPct',
+    label: 'Spell Suppression %',
+    shortLabel: 'Suppress %',
+    unit: '%',
+    min: 1,
+    max: 100,
+    step: 10,
+    defaultValue: 100,
+    placeholder: '100',
+    getActual: (b) => b.defenses.spellSuppressPct,
+  },
+  {
+    key: 'minDodgePct',
+    label: 'Spell Dodge %',
+    shortLabel: 'Dodge %',
+    unit: '%',
+    min: 1,
+    max: 75,
+    step: 5,
+    defaultValue: 50,
+    placeholder: '50',
+    getActual: (b) => Math.max(b.defenses.spellDodgePct, b.defenses.attackDodgePct),
+  },
+  {
+    key: 'minMaxFireRes',
+    label: 'Max Ele Res %',
+    shortLabel: 'Max Res %',
+    unit: '%',
+    min: 76,
+    max: 90,
+    step: 1,
+    defaultValue: 78,
+    placeholder: '78',
+    getActual: (b) => b.defenses.maxEleRes,
+  },
+  {
+    key: 'minCritChancePct',
+    label: 'Crit Chance %',
+    shortLabel: 'Crit %',
+    unit: '%',
+    min: 5,
+    max: 100,
+    step: 5,
+    defaultValue: 50,
+    placeholder: '50',
+    getActual: (b) => b.offense.critChancePct,
+  },
+];
+
+export interface TargetEvalItem {
+  key: TargetStatKey;
+  label: string;
+  shortLabel: string;
+  unit: '' | '%';
+  target: number;
+  actual: number;
+  met: boolean;
+}
+
 export interface TargetEvaluation {
   active: boolean;
   metAll: boolean;
+  metCount: number;
+  totalCount: number;
   totalDeficit: number;
-  hp: { target?: number; actual: number; met: boolean };
-  physMaxHit: { target?: number; actual: number; met: boolean };
-  eleMaxHit: { target?: number; actual: number; met: boolean };
-  dps: { target?: number; actual: number; met: boolean };
+  items: TargetEvalItem[];
+}
+
+export function serializeTargetsKey(t?: BuildTargets): string {
+  if (!t) return '';
+  const parts: string[] = [];
+  for (const def of TARGET_STAT_DEFS) {
+    const v = t[def.key];
+    if (typeof v === 'number' && Number.isFinite(v) && v > 0) {
+      parts.push(`${def.key}=${v}`);
+    }
+  }
+  return parts.length > 0 ? `|${parts.join('|')}` : '';
 }
 
 export function hasActiveTargets(t?: BuildTargets): boolean {
   if (!t) return false;
-  return Boolean(
-    (t.minHp && t.minHp > 0) ||
-    (t.minPhysMaxHit && t.minPhysMaxHit > 0) ||
-    (t.minEleMaxHit && t.minEleMaxHit > 0) ||
-    (t.minDps && t.minDps > 0),
-  );
+  return TARGET_STAT_DEFS.some((def) => {
+    const v = t[def.key];
+    return typeof v === 'number' && Number.isFinite(v) && v > 0;
+  });
 }
 
 export function evaluateBuildTargets(
   build: Pick<GeneratedBuild, 'archetype' | 'defenses' | 'offense'>,
 ): TargetEvaluation {
   const t = build.archetype.options.targets;
-  const active = hasActiveTargets(t);
-  const hpActual = build.archetype.defenseStyle === 'es'
-    ? build.defenses.maxEs
-    : build.archetype.defenseStyle === 'hybrid'
-      ? build.defenses.maxLife + build.defenses.maxEs
-      : build.defenses.maxLife;
-  const physActual = build.defenses.physMaxHit;
-  const eleActual = build.defenses.eleMaxHit;
-  const dpsActual = build.offense.totalDps;
-
-  const hpMet = !(t?.minHp && t.minHp > 0) || hpActual >= t.minHp;
-  const physMet = !(t?.minPhysMaxHit && t.minPhysMaxHit > 0) || physActual >= t.minPhysMaxHit;
-  const eleMet = !(t?.minEleMaxHit && t.minEleMaxHit > 0) || eleActual >= t.minEleMaxHit;
-  const dpsMet = !(t?.minDps && t.minDps > 0) || (build.offense.dpsMode !== 'Support' && dpsActual >= t.minDps);
-
+  const items: TargetEvalItem[] = [];
   let totalDeficit = 0;
-  if (t?.minHp && t.minHp > 0 && hpActual < t.minHp) totalDeficit += (t.minHp - hpActual) / t.minHp;
-  if (t?.minPhysMaxHit && t.minPhysMaxHit > 0 && physActual < t.minPhysMaxHit) {
-    totalDeficit += (t.minPhysMaxHit - physActual) / t.minPhysMaxHit;
-  }
-  if (t?.minEleMaxHit && t.minEleMaxHit > 0 && eleActual < t.minEleMaxHit) {
-    totalDeficit += (t.minEleMaxHit - eleActual) / t.minEleMaxHit;
-  }
-  if (t?.minDps && t.minDps > 0 && !dpsMet) {
-    totalDeficit += build.offense.dpsMode === 'Support' ? 1 : (t.minDps - dpsActual) / t.minDps;
+
+  for (const def of TARGET_STAT_DEFS) {
+    const target = t?.[def.key];
+    if (typeof target !== 'number' || !Number.isFinite(target) || target <= 0) continue;
+    const actual = def.getActual(build);
+    const met = def.isMet ? def.isMet(build, target) : actual >= target;
+    if (!met) {
+      totalDeficit += def.key === 'minDps' && build.offense.dpsMode === 'Support'
+        ? 1
+        : (target - actual) / target;
+    }
+    items.push({
+      key: def.key,
+      label: def.label,
+      shortLabel: def.shortLabel,
+      unit: def.unit,
+      target,
+      actual,
+      met,
+    });
   }
 
+  const metCount = items.filter((item) => item.met).length;
   return {
-    active,
-    metAll: hpMet && physMet && eleMet && dpsMet,
+    active: items.length > 0,
+    metAll: items.every((item) => item.met),
+    metCount,
+    totalCount: items.length,
     totalDeficit,
-    hp: { target: t?.minHp, actual: hpActual, met: hpMet },
-    physMaxHit: { target: t?.minPhysMaxHit, actual: physActual, met: physMet },
-    eleMaxHit: { target: t?.minEleMaxHit, actual: eleActual, met: eleMet },
-    dps: { target: t?.minDps, actual: dpsActual, met: dpsMet },
+    items,
   };
 }
 
@@ -96,9 +278,7 @@ function buildCoreCandidate(data: GameData, options: BuildOptions, rng: Rng) {
 
 export async function generateBuild(data: GameData, options: BuildOptions): Promise<GeneratedBuild> {
   const t = options.targets;
-  const targetKey = hasActiveTargets(t)
-    ? `|${t?.minHp ?? ''}|${t?.minPhysMaxHit ?? ''}|${t?.minEleMaxHit ?? ''}|${t?.minDps ?? ''}`
-    : '';
+  const targetKey = serializeTargetsKey(t);
   const baseSeedKey =
     `${options.seed}|${options.leagueMode}|${options.economy}|${options.classId}|${options.ascendancyIndex}|${options.level}|${options.damageStyle}|${options.defenseStyle}${targetKey}`;
 

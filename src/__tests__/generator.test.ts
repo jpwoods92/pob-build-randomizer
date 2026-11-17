@@ -6,11 +6,12 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import type { GameData } from '../lib/types.ts';
-import { evaluateBuildTargets, generateBuild } from '../lib/generator.ts';
+import { TARGET_STAT_DEFS, evaluateBuildTargets, generateBuild, serializeTargetsKey } from '../lib/generator.ts';
 import { canSupportSkill } from '../lib/skills.ts';
 import type { BuildOptions } from '../lib/archetype.ts';
 import { parseGameVersionsLua } from '../../scripts/pob-version.mjs';
 import {
+  buildOptionsSignature,
   clearSavedBuilds,
   deleteSavedBuild,
   loadSavedBuilds,
@@ -645,4 +646,64 @@ test('build targets (HP, Phys/Ele Max Hit, Projected DPS) steer randomization de
   const ev = evaluateBuildTargets(b1);
   assert.equal(ev.active, true);
   assert.equal(ev.metAll, true, `Expected targets met, got ${JSON.stringify(ev)}`);
+});
+
+test('dynamic targets catalog is unique and steers suppression, evasion, chaos hit, dodge, and storage', async () => {
+  const keys = TARGET_STAT_DEFS.map((d) => d.key);
+  assert.equal(new Set(keys).size, keys.length, 'Target stat definitions must not contain duplicate keys');
+
+  // Evasion / Suppression / Chaos Hit targets in Softcore
+  const evaSuppressBuild = await generateBuild(data, baseOptions({
+    seed: 'target-eva-supp-1',
+    leagueMode: 'softcore',
+    economy: 'trade',
+    targets: {
+      minEvasion: 15000,
+      minEvadePct: 60,
+      minSuppressPct: 100,
+      minChaosMaxHit: 12000,
+    },
+  }));
+  const ev1 = evaluateBuildTargets(evaSuppressBuild);
+  assert.equal(ev1.totalCount, 4);
+  assert.equal(ev1.metAll, true, `Expected evasion/suppress/chaos targets met, got ${JSON.stringify(ev1.items)}`);
+
+  // Dodge target pushes Acrobatics / evasion & meets Dodge %
+  const dodgeBuild = await generateBuild(data, baseOptions({
+    seed: 'target-dodge-1',
+    leagueMode: 'softcore',
+    economy: 'trade',
+    targets: {
+      minDodgePct: 45,
+    },
+  }));
+  const evDodge = evaluateBuildTargets(dodgeBuild);
+  assert.equal(evDodge.metAll, true, `Expected dodge target met, got ${JSON.stringify(evDodge.items)}`);
+
+  // Storage & signature serialization preserves custom target keys in canonical order
+  const optsA = baseOptions({
+    seed: 'sig-test',
+    targets: { minSuppressPct: 100, minChaosMaxHit: 12000 },
+  });
+  const optsB = baseOptions({
+    seed: 'sig-test',
+    targets: { minChaosMaxHit: 12000, minSuppressPct: 100 },
+  });
+  const optsC = baseOptions({
+    seed: 'sig-test',
+    targets: { minSuppressPct: 90, minChaosMaxHit: 12000 },
+  });
+  assert.equal(serializeTargetsKey(optsA.targets), serializeTargetsKey(optsB.targets));
+  assert.equal(buildOptionsSignature(optsA), buildOptionsSignature(optsB));
+  assert.notEqual(buildOptionsSignature(optsA), buildOptionsSignature(optsC));
+
+  const mem = new Map<string, string>();
+  const storage: StorageLike = {
+    getItem: (k) => mem.get(k) ?? null,
+    setItem: (k, v) => { mem.set(k, v); },
+  };
+  saveBuildToStorage(evaSuppressBuild, data.tree.version, undefined, storage);
+  const loaded = loadSavedBuilds(storage);
+  assert.equal(loaded.length, 1);
+  assert.deepEqual(loaded[0].options.targets, evaSuppressBuild.archetype.options.targets);
 });

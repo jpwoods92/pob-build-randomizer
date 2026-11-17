@@ -292,23 +292,25 @@ export function generateSkills(data: GameData, arch: BuildArchetype, rng: Rng): 
 
   // 2. Auras & Reservation (Helmet)
   const targets = arch.options.targets;
-  const wantPhysHit = (targets?.minPhysMaxHit ?? 0) > 0;
-  const wantEleHit = (targets?.minEleMaxHit ?? 0) > 0;
+  const wantPhysHit = (targets?.minPhysMaxHit ?? 0) > 0 || (targets?.minArmour ?? 0) > 0;
+  const wantEleHit = (targets?.minEleMaxHit ?? 0) > 0 || (targets?.minMaxFireRes ?? 0) > 75;
+  const wantEvaTarget = (targets?.minEvasion ?? 0) > 0 || (targets?.minEvadePct ?? 0) > 0;
   const wantDpsTarget = (targets?.minDps ?? 0) > 0;
+  const wantCritTarget = (targets?.minCritChancePct ?? 0) > 0;
   const isDexEvasion = arch.primaryAttr === 'dex' && arch.defenseStyle !== 'es';
   const auraCandidates: { name: string; w: number }[] = [
-    { name: 'Determination', w: (isHC ? (isDexEvasion ? 14 : 38) : (isDexEvasion ? 4 : 8)) * (wantPhysHit ? 2.5 : 1) },
-    { name: 'Grace', w: isHC ? (isDexEvasion ? 48 : 30) : (isDexEvasion ? 14 : 8) },
+    { name: 'Determination', w: (isHC ? (isDexEvasion ? 14 : 38) : (isDexEvasion ? 4 : 8)) * (wantPhysHit ? 2.8 : 1) },
+    { name: 'Grace', w: (isHC ? (isDexEvasion ? 48 : 30) : (isDexEvasion ? 14 : 8)) * (wantEvaTarget ? 3.5 : 1) },
     { name: 'Purity of Elements', w: isHC ? 24 : (arch.options.economy === 'ssf' ? 14 : 4) },
-    { name: 'Purity of Fire', w: (isHC ? (arch.ascendancy.internal === 'Chieftain' || arch.elements.includes('fire') ? 26 : 10) : 0) + (wantEleHit ? 22 : 0) },
-    { name: 'Purity of Ice', w: (isHC ? (arch.defenseStyle === 'es' || arch.elements.includes('cold') ? 14 : 6) : 0) + (wantEleHit ? 18 : 0) },
-    { name: 'Purity of Lightning', w: (isHC ? (arch.elements.includes('lightning') ? 16 : 6) : 0) + (wantEleHit ? 18 : 0) },
+    { name: 'Purity of Fire', w: (isHC ? (arch.ascendancy.internal === 'Chieftain' || arch.elements.includes('fire') ? 26 : 10) : 0) + (wantEleHit ? 26 : 0) },
+    { name: 'Purity of Ice', w: (isHC ? (arch.defenseStyle === 'es' || arch.elements.includes('cold') ? 14 : 6) : 0) + (wantEleHit ? 20 : 0) },
+    { name: 'Purity of Lightning', w: (isHC ? (arch.elements.includes('lightning') ? 16 : 6) : 0) + (wantEleHit ? 20 : 0) },
     { name: 'Discipline', w: (arch.defenseStyle === 'es' || arch.defenseStyle === 'hybrid' ? 28 : 1) * ((targets?.minHp ?? 0) > 0 && arch.defenseStyle !== 'life' ? 2.0 : 1) },
     { name: 'Tempest Shield', w: arch.weaponSetup.includes('shield') ? (isHC ? 26 : 16) : 2 },
     { name: 'Arctic Armour', w: (isHC ? 18 : 3) * (wantPhysHit ? 2.4 : 1) },
-    { name: 'Defiance Banner', w: isHC ? 20 : 4 },
+    { name: 'Defiance Banner', w: (isHC ? 20 : 4) * (wantPhysHit || wantEvaTarget ? 1.8 : 1) },
     { name: 'Vitality', w: arch.defenseStyle === 'es' ? 0 : (isHC ? 12 : 2) },
-    { name: 'Precision', w: arch.critMode === 'crit' || arch.damageStyle === 'attack' ? (isHC ? 14 : 24) : 2 },
+    { name: 'Precision', w: (arch.critMode === 'crit' || arch.damageStyle === 'attack' ? (isHC ? 14 : 24) : 2) * (wantCritTarget ? 3.0 : 1) },
     { name: 'Clarity', w: arch.damageStyle === 'spell' ? 8 : 2 },
   ];
 

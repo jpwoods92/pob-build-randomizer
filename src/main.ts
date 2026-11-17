@@ -1,8 +1,22 @@
 import './styles.css';
 import { loadGameData } from './lib/data.ts';
 import { randomSeed } from './lib/rng.ts';
-import { evaluateBuildTargets, generateBuild, hasActiveTargets, type GeneratedBuild } from './lib/generator.ts';
-import type { BuildOptions, BuildTargets, DamageStyle, DefenseStyle, EconomyMode, LeagueMode } from './lib/archetype.ts';
+import {
+  TARGET_STAT_DEFS,
+  evaluateBuildTargets,
+  generateBuild,
+  hasActiveTargets,
+  type GeneratedBuild,
+} from './lib/generator.ts';
+import type {
+  BuildOptions,
+  BuildTargets,
+  DamageStyle,
+  DefenseStyle,
+  EconomyMode,
+  LeagueMode,
+  TargetStatKey,
+} from './lib/archetype.ts';
 import type { GameData } from './lib/types.ts';
 import { TreeCanvas } from './components/TreeCanvas.ts';
 import {
@@ -174,28 +188,17 @@ async function main() {
 
           <div class="knob-targets-head">
             <span class="section-caption" style="padding:0;">Targets (Optional)</span>
-            <button type="button" class="target-clear-btn" id="clear-targets-btn" hidden>Clear</button>
-          </div>
-          <div class="knob-row">
-            <div class="knob">
-              <label for="target-hp">Min HP / Pool</label>
-              <input type="number" id="target-hp" min="0" step="500" placeholder="e.g. 5000" />
-            </div>
-            <div class="knob">
-              <label for="target-dps">Min DPS</label>
-              <input type="number" id="target-dps" min="0" step="100000" placeholder="e.g. 1500000" />
+            <div class="target-head-actions">
+              <button type="button" class="target-clear-btn" id="clear-targets-btn" hidden>Clear</button>
+              <button type="button" class="target-add-btn" id="add-target-btn">+ Add</button>
             </div>
           </div>
-          <div class="knob-row">
-            <div class="knob">
-              <label for="target-phys">Min Phys Hit</label>
-              <input type="number" id="target-phys" min="0" step="1000" placeholder="e.g. 15000" />
-            </div>
-            <div class="knob">
-              <label for="target-ele">Min Ele Hit</label>
-              <input type="number" id="target-ele" min="0" step="2500" placeholder="e.g. 40000" />
-            </div>
+          <div class="target-picker-row" id="target-picker-row" hidden>
+            <select id="target-stat-picker" aria-label="Choose target stat"></select>
+            <button type="button" class="target-picker-cancel" id="cancel-target-picker-btn" title="Cancel">×</button>
           </div>
+          <div class="target-rows" id="target-rows"></div>
+          <div class="target-empty-hint" id="target-empty-hint">No targets set — click + Add to steer stats.</div>
         </div>
 
         <div class="promo-card">
@@ -259,11 +262,14 @@ async function main() {
   const defSel = document.getElementById('def-select') as HTMLSelectElement;
   const levelRange = document.getElementById('level-range') as HTMLInputElement;
   const levelVal = document.getElementById('level-val')!;
-  const targetHpInput = document.getElementById('target-hp') as HTMLInputElement;
-  const targetDpsInput = document.getElementById('target-dps') as HTMLInputElement;
-  const targetPhysInput = document.getElementById('target-phys') as HTMLInputElement;
-  const targetEleInput = document.getElementById('target-ele') as HTMLInputElement;
+  const targetRowsEl = document.getElementById('target-rows')!;
+  const targetPickerRow = document.getElementById('target-picker-row')!;
+  const targetStatPicker = document.getElementById('target-stat-picker') as HTMLSelectElement;
+  const addTargetBtn = document.getElementById('add-target-btn') as HTMLButtonElement;
+  const cancelTargetPickerBtn = document.getElementById('cancel-target-picker-btn') as HTMLButtonElement;
+  const targetEmptyHint = document.getElementById('target-empty-hint')!;
   const clearTargetsBtn = document.getElementById('clear-targets-btn') as HTMLButtonElement;
+  let activeTargetKeys: TargetStatKey[] = [];
   const seedInput = document.getElementById('seed-input') as HTMLInputElement;
   const knobSummaryEl = document.getElementById('sidebar-knob-summary')!;
   const officialTreeLink = document.getElementById('official-tree-link') as HTMLAnchorElement;
@@ -321,20 +327,100 @@ async function main() {
     if (options.ascendancyIndex !== 'random') ascSel.value = String(options.ascendancyIndex);
   }
 
-  function parseTargetVal(inp: HTMLInputElement): number | undefined {
-    const n = Number(inp.value);
-    return Number.isFinite(n) && n > 0 ? Math.round(n) : undefined;
+  const TARGET_DEF_BY_KEY = new Map(TARGET_STAT_DEFS.map((d) => [d.key, d]));
+
+  function renderTargetPickerOptions() {
+    const remaining = TARGET_STAT_DEFS.filter((d) => !activeTargetKeys.includes(d.key));
+    targetStatPicker.innerHTML = [
+      '<option value="">Select stat to add…</option>',
+      ...remaining.map((d) => `<option value="${d.key}">${esc(d.label)}</option>`),
+    ].join('');
+    addTargetBtn.disabled = remaining.length === 0;
+    if (remaining.length === 0) targetPickerRow.hidden = true;
   }
 
-  function syncTargetsFromInputs() {
-    const next: BuildTargets = {
-      minHp: parseTargetVal(targetHpInput),
-      minDps: parseTargetVal(targetDpsInput),
-      minPhysMaxHit: parseTargetVal(targetPhysInput),
-      minEleMaxHit: parseTargetVal(targetEleInput),
+  function renderTargetRows() {
+    targetRowsEl.innerHTML = activeTargetKeys
+      .map((key) => {
+        const def = TARGET_DEF_BY_KEY.get(key);
+        if (!def) return '';
+        const val = options.targets?.[key];
+        const maxAttr = def.max !== undefined ? ` max="${def.max}"` : '';
+        return `
+          <div class="target-row" data-target-row="${key}">
+            <label class="target-row-label" for="target-input-${key}">${esc(def.label)}</label>
+            <div class="target-row-input-wrap">
+              <input
+                type="number"
+                id="target-input-${key}"
+                data-target-key="${key}"
+                min="${def.min}"${maxAttr}
+                step="${def.step}"
+                placeholder="${esc(def.placeholder)}"
+                value="${val && val > 0 ? val : ''}"
+              />
+              ${def.unit ? `<span class="target-row-unit">${def.unit}</span>` : ''}
+            </div>
+            <button type="button" class="target-remove-btn" data-remove-target="${key}" title="Remove ${esc(def.label)}">×</button>
+          </div>
+        `;
+      })
+      .join('');
+    targetEmptyHint.hidden = activeTargetKeys.length > 0;
+    clearTargetsBtn.hidden = activeTargetKeys.length === 0;
+    renderTargetPickerOptions();
+  }
+
+  function syncTargetControls() {
+    activeTargetKeys = TARGET_STAT_DEFS
+      .filter((d) => {
+        const v = options.targets?.[d.key];
+        return typeof v === 'number' && Number.isFinite(v) && v > 0;
+      })
+      .map((d) => d.key);
+    targetPickerRow.hidden = true;
+    renderTargetRows();
+  }
+
+  function addTargetStat(key: TargetStatKey) {
+    if (activeTargetKeys.includes(key)) return;
+    const def = TARGET_DEF_BY_KEY.get(key);
+    if (!def) return;
+    activeTargetKeys.push(key);
+    options.targets = {
+      ...(options.targets ?? {}),
+      [key]: def.defaultValue,
     };
+    targetPickerRow.hidden = true;
+    renderTargetRows();
+    const inp = targetRowsEl.querySelector<HTMLInputElement>(`input[data-target-key="${key}"]`);
+    inp?.focus();
+    inp?.select();
+    void regenerate();
+  }
+
+  function removeTargetStat(key: TargetStatKey) {
+    activeTargetKeys = activeTargetKeys.filter((k) => k !== key);
+    if (options.targets) {
+      const next: BuildTargets = { ...options.targets };
+      delete next[key];
+      options.targets = hasActiveTargets(next) ? next : undefined;
+    }
+    renderTargetRows();
+    void regenerate();
+  }
+
+  function commitTargetInput(key: TargetStatKey, raw: string) {
+    const def = TARGET_DEF_BY_KEY.get(key);
+    if (!def) return;
+    const n = Number(raw.trim());
+    const next: BuildTargets = { ...(options.targets ?? {}) };
+    if (Number.isFinite(n) && n > 0) {
+      next[key] = def.max !== undefined ? Math.min(def.max, n) : n;
+    } else {
+      delete next[key];
+    }
     options.targets = hasActiveTargets(next) ? next : undefined;
-    clearTargetsBtn.hidden = !options.targets;
   }
 
   function updateSidebarMeta(b: GeneratedBuild) {
@@ -366,11 +452,7 @@ async function main() {
     defSel.value = String(options.defenseStyle);
     levelRange.value = String(options.level);
     levelVal.textContent = String(options.level);
-    targetHpInput.value = options.targets?.minHp ? String(options.targets.minHp) : '';
-    targetDpsInput.value = options.targets?.minDps ? String(options.targets.minDps) : '';
-    targetPhysInput.value = options.targets?.minPhysMaxHit ? String(options.targets.minPhysMaxHit) : '';
-    targetEleInput.value = options.targets?.minEleMaxHit ? String(options.targets.minEleMaxHit) : '';
-    clearTargetsBtn.hidden = !hasActiveTargets(options.targets);
+    syncTargetControls();
     seedInput.value = options.seed;
   }
 
@@ -439,7 +521,15 @@ async function main() {
       .slice(0, 8);
 
     const eleCapped = r.fire >= d.maxFireRes && r.cold >= d.maxColdRes && r.lightning >= d.maxLightRes;
+
     const targetEval = evaluateBuildTargets(b);
+    const fmtTargetActual = (val: number, unit: '' | '%') =>
+      !Number.isFinite(val) ? 'Immune' : unit === '%' ? `${Math.round(val)}%` : Math.round(val).toLocaleString();
+    const fmtTargetGoal = (val: number, unit: '' | '%') =>
+      unit === '%' ? `${Math.round(val)}%` : Math.round(val).toLocaleString();
+    const targetTooltip = targetEval.items
+      .map((it) => `${it.met ? '✓' : '✗'} ${it.label}: ${fmtTargetActual(it.actual, it.unit)} / ${fmtTargetGoal(it.target, it.unit)}`)
+      .join('\n');
     const hasCustomCaps = d.maxFireRes !== 75 || d.maxColdRes !== 75 || d.maxLightRes !== 75 || d.maxChaosRes !== 75;
     const resCapSummary = !hasCustomCaps
       ? '75% default cap'
@@ -460,9 +550,14 @@ async function main() {
               <span class="badge">${esc(a.defenseStyle)}</span>
               <span class="badge">${esc(a.critMode === 'crit' ? 'Crit' : a.critMode === 'dot' ? 'DoT' : 'Non-Crit')}</span>
               ${targetEval.active
-                ? `<span class="badge ${targetEval.metAll ? 'badge-ssf' : 'badge-hc'}">${targetEval.metAll ? 'Targets Met' : 'Closest Match'}</span>`
+                ? `<span class="badge ${targetEval.metAll ? 'badge-ssf' : 'badge-hc'}" title="${esc(targetTooltip)}">${targetEval.metAll ? `Targets Met (${targetEval.metCount}/${targetEval.totalCount})` : `Closest Match (${targetEval.metCount}/${targetEval.totalCount})`}</span>`
                 : ''}
             </div>
+            ${targetEval.active
+              ? `<div class="target-status-strip">${targetEval.items
+                  .map((it) => `<span class="target-chip ${it.met ? 'met' : 'missed'}" title="${esc(it.label)}">${it.met ? '✓' : '✗'} ${esc(it.shortLabel)} ${esc(fmtTargetActual(it.actual, it.unit))}/${esc(fmtTargetGoal(it.target, it.unit))}</span>`)
+                  .join('')}</div>`
+              : ''}
           </div>
           <button type="button" class="btn btn-sm" data-jump="tree">View Tree →</button>
         </div>
@@ -1285,25 +1380,48 @@ async function main() {
   });
   levelRange.addEventListener('change', () => void regenerate());
 
-  for (const tinp of [targetHpInput, targetDpsInput, targetPhysInput, targetEleInput]) {
-    tinp.addEventListener('change', () => {
-      syncTargetsFromInputs();
-      void regenerate();
-    });
-    tinp.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        syncTargetsFromInputs();
-        void regenerate();
-      }
-    });
-  }
+  addTargetBtn.addEventListener('click', () => {
+    renderTargetPickerOptions();
+    targetPickerRow.hidden = false;
+    targetStatPicker.value = '';
+    targetStatPicker.focus();
+  });
+
+  cancelTargetPickerBtn.addEventListener('click', () => {
+    targetPickerRow.hidden = true;
+  });
+
+  targetStatPicker.addEventListener('change', () => {
+    const key = targetStatPicker.value as TargetStatKey;
+    if (key) addTargetStat(key);
+  });
+
+  targetRowsEl.addEventListener('change', (e) => {
+    const inp = (e.target as HTMLElement).closest<HTMLInputElement>('input[data-target-key]');
+    if (!inp) return;
+    commitTargetInput(inp.dataset.targetKey as TargetStatKey, inp.value);
+    void regenerate();
+  });
+
+  targetRowsEl.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    const inp = (e.target as HTMLElement).closest<HTMLInputElement>('input[data-target-key]');
+    if (!inp) return;
+    commitTargetInput(inp.dataset.targetKey as TargetStatKey, inp.value);
+    void regenerate();
+  });
+
+  targetRowsEl.addEventListener('click', (e) => {
+    const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-remove-target]');
+    if (!btn) return;
+    removeTargetStat(btn.dataset.removeTarget as TargetStatKey);
+  });
 
   clearTargetsBtn.addEventListener('click', () => {
-    targetHpInput.value = '';
-    targetDpsInput.value = '';
-    targetPhysInput.value = '';
-    targetEleInput.value = '';
-    syncTargetsFromInputs();
+    activeTargetKeys = [];
+    options.targets = undefined;
+    targetPickerRow.hidden = true;
+    renderTargetRows();
     void regenerate();
   });
 
@@ -1324,6 +1442,7 @@ async function main() {
     void regenerate();
   });
 
+  syncTargetControls();
   await regenerate();
 }
 

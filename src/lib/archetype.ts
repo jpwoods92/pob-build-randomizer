@@ -10,12 +10,21 @@ export type DamageElement = 'physical' | 'fire' | 'cold' | 'lightning' | 'chaos'
 export type WeaponSetup = 'bow_quiver' | 'two_hand' | 'one_hand_shield' | 'dual_wield' | 'wand_shield' | 'staff';
 export type WeaponClass = 'sword' | 'axe' | 'mace' | 'claw' | 'dagger' | 'sceptre' | 'wand' | 'staff' | 'bow' | 'unarmed';
 
-export interface BuildTargets {
-  minHp?: number;
-  minPhysMaxHit?: number;
-  minEleMaxHit?: number;
-  minDps?: number;
-}
+export type TargetStatKey =
+  | 'minHp'
+  | 'minDps'
+  | 'minPhysMaxHit'
+  | 'minEleMaxHit'
+  | 'minChaosMaxHit'
+  | 'minArmour'
+  | 'minEvasion'
+  | 'minEvadePct'
+  | 'minSuppressPct'
+  | 'minDodgePct'
+  | 'minMaxFireRes'
+  | 'minCritChancePct';
+
+export type BuildTargets = Partial<Record<TargetStatKey, number>>;
 
 export interface BuildOptions {
   seed: string;
@@ -338,16 +347,21 @@ function chooseWeaponSetup(
 }
 
 export function pickArchetype(data: GameData, options: BuildOptions, rng: Rng): BuildArchetype {
+  const targets = options.targets;
+  const wantEvaTarget = (targets?.minEvasion ?? 0) > 0 || (targets?.minEvadePct ?? 0) > 0 || (targets?.minSuppressPct ?? 0) > 0 || (targets?.minDodgePct ?? 0) > 0;
+  const wantArmTarget = (targets?.minArmour ?? 0) > 0 || (targets?.minPhysMaxHit ?? 0) >= 20000 || (targets?.minMaxFireRes ?? 0) > 75;
+
   // 1. Class + Ascendancy
   const classes = data.tree.classes;
   let classData: ClassData;
   if (options.classId === 'random') {
     classData = rng.weighted(classes, (c) => {
-      if (options.leagueMode === 'hardcore') {
-        const avg = c.ascendancies.reduce((s, a) => s + (ASC_AFFINITIES[a.internal]?.hcFriendly ?? 1), 0) / c.ascendancies.length;
-        return avg;
-      }
-      return 1;
+      let w = options.leagueMode === 'hardcore'
+        ? c.ascendancies.reduce((s, a) => s + (ASC_AFFINITIES[a.internal]?.hcFriendly ?? 1), 0) / c.ascendancies.length
+        : 1;
+      if (wantEvaTarget && (c.name === 'Ranger' || c.name === 'Shadow' || c.name === 'Duelist')) w *= 2.8;
+      if (wantArmTarget && (c.name === 'Marauder' || c.name === 'Templar' || c.name === 'Duelist')) w *= 2.4;
+      return w;
     })!;
   } else {
     classData = classes.find((c) => c.id === options.classId) ?? rng.pick(classes);
@@ -373,8 +387,6 @@ export function pickArchetype(data: GameData, options: BuildOptions, rng: Rng): 
     critBias: 0.5,
   };
 
-  const targets = options.targets;
-
   // 2. Damage style
   const rawStyleChoices = options.damageStyle !== 'random' ? [options.damageStyle] : aff.styles;
   const filteredStyles = (targets?.minDps ?? 0) > 0
@@ -390,9 +402,12 @@ export function pickArchetype(data: GameData, options: BuildOptions, rng: Rng): 
     defenseStyle = options.defenseStyle;
   } else {
     defenseStyle = rng.weighted(aff.defenses, (d) => {
-      if (options.leagueMode === 'hardcore' && d === 'life') return 2.2;
-      if (options.economy === 'ssf' && d === 'es') return 0.55; // CI gearing is harder in SSF
-      return 1;
+      let w = 1;
+      if (options.leagueMode === 'hardcore' && d === 'life') w *= 2.2;
+      if (options.economy === 'ssf' && d === 'es') w *= 0.55; // CI gearing is harder in SSF
+      if (wantEvaTarget && d === 'es') w *= 0.35;
+      if ((targets?.minDodgePct ?? 0) > 0 && d === 'life') w *= 3.0;
+      return w;
     })!;
   }
 
@@ -443,13 +458,14 @@ export function pickArchetype(data: GameData, options: BuildOptions, rng: Rng): 
   // 5. Crit mode
   let critMode: CritMode;
   if (resolvedStyle === 'dot') {
-    critMode = rng.chance(0.15) ? 'crit' : 'dot';
+    critMode = (targets?.minCritChancePct ?? 0) > 0 || rng.chance(0.15) ? 'crit' : 'dot';
   } else if (resolvedStyle === 'minion' || resolvedStyle === 'link_support') {
-    critMode = 'non_crit';
+    critMode = (targets?.minCritChancePct ?? 0) > 0 && resolvedStyle === 'minion' ? 'crit' : 'non_crit';
   } else {
     const bias = aff.critBias ?? 0.5;
     let critChance = options.leagueMode === 'hardcore' ? bias * 0.78 : bias;
     if ((targets?.minDps ?? 0) >= 2_500_000) critChance = Math.min(0.95, critChance + 0.25);
+    if ((targets?.minCritChancePct ?? 0) > 0) critChance = 1;
     critMode = rng.chance(critChance) ? 'crit' : 'non_crit';
   }
 
