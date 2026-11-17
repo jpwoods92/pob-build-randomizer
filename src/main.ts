@@ -860,30 +860,100 @@ async function main() {
     `;
   }
 
+  function renderGearCard(item: GeneratedBuild['gear']['items'][number], slotLabel?: string): string {
+    return `
+      <div class="item-card gear-item-card rarity-${item.rarity}">
+        <div class="gear-item-head">
+          <div class="gear-item-titles">
+            <div class="item-name-${item.rarity}">${esc(item.name)}</div>
+            <div class="item-base">${esc(item.baseName)}</div>
+          </div>
+          <span class="gear-slot-tag">${esc(slotLabel ?? item.slot)}</span>
+        </div>
+        <div class="item-meta-line">
+          <span>iLvl ${item.itemLevel}</span>
+          ${item.quality ? `<span>+${item.quality}%</span>` : ''}
+          ${item.sockets ? `<span>${esc(item.sockets)}</span>` : ''}
+        </div>
+        ${item.implicits.length ? `<div class="item-implicits">${item.implicits.map(esc).join('<br>')}</div>` : ''}
+        <div class="item-mods">
+          ${item.explicits.map((line) =>
+            line.endsWith('(crafted)')
+              ? `<div class="item-crafted">${esc(line)}</div>`
+              : `<div>${esc(line)}</div>`,
+          ).join('')}
+        </div>
+      </div>
+    `;
+  }
+
   function renderGear(b: GeneratedBuild) {
+    const itemById = new Map(b.gear.items.map((it) => [it.id, it]));
+    const slotItem = (slot: string) => {
+      const id = b.gear.slotMap[slot];
+      return id ? itemById.get(id) : undefined;
+    };
+    const renderSlot = (slot: string, areaClass: string, emptyNote?: string) => {
+      const it = slotItem(slot);
+      if (it) {
+        return `<div class="gear-slot ${areaClass}">${renderGearCard(it, slot)}</div>`;
+      }
+      return `
+        <div class="gear-slot ${areaClass}">
+          <div class="item-card gear-item-card gear-slot-empty">
+            <div class="gear-slot-tag">${esc(slot)}</div>
+            <div class="gear-empty-note">${esc(emptyNote ?? 'Empty')}</div>
+          </div>
+        </div>
+      `;
+    };
+
+    const flasks = ['Flask 1', 'Flask 2', 'Flask 3', 'Flask 4', 'Flask 5']
+      .map((slot) => slotItem(slot))
+      .filter((it): it is NonNullable<typeof it> => Boolean(it));
+    const jewels = b.gear.items.filter((it) => it.jewelNodeId !== undefined);
+
     document.getElementById('view-gear')!.innerHTML = `
-      <div class="items-grid">
-        ${b.gear.items.map((item, idx) => `
-          <div class="item-card item-card-hover rarity-${item.rarity}" tabindex="0" data-hover-item="${idx}" data-item-mode="detail">
+      <div class="gear-layout">
+        <div class="bento-card gear-equipment-panel">
+          <div class="card-head gear-section-head">
             <div>
-              <div class="item-name-${item.rarity}">${esc(item.name)}</div>
-              <div class="item-base">${esc(item.baseName)} · ${esc(item.slot)}</div>
-            </div>
-            <div class="item-meta-line">
-              <span>iLvl ${item.itemLevel}</span>
-              ${item.quality ? `<span>Qual +${item.quality}%</span>` : ''}
-              ${item.sockets ? `<span>Sockets: ${esc(item.sockets)}</span>` : ''}
-            </div>
-            ${item.implicits.length ? `<div class="item-implicits">${item.implicits.map(esc).join('<br>')}</div>` : ''}
-            <div class="item-mods">
-              ${item.explicits.map((line) =>
-                line.endsWith('(crafted)')
-                  ? `<div class="item-crafted">${esc(line)}</div>`
-                  : `<div>${esc(line)}</div>`,
-              ).join('')}
+              <h2>Equipment</h2>
+              <p class="card-sub">${esc(b.archetype.weaponSetup.replace(/_/g, ' '))} · ${esc(b.archetype.defenseStyle)} profile</p>
             </div>
           </div>
-        `).join('')}
+
+          <div class="gear-paperdoll">
+            ${renderSlot('Weapon 1', 'slot-weapon1')}
+            ${renderSlot('Helmet', 'slot-helmet')}
+            ${renderSlot('Weapon 2', 'slot-weapon2', 'Occupied by 2H Weapon')}
+            ${renderSlot('Body Armour', 'slot-body')}
+            ${renderSlot('Amulet', 'slot-amulet')}
+            ${renderSlot('Ring 1', 'slot-ring1')}
+            ${renderSlot('Ring 2', 'slot-ring2')}
+            ${renderSlot('Gloves', 'slot-gloves')}
+            ${renderSlot('Belt', 'slot-belt')}
+            ${renderSlot('Boots', 'slot-boots')}
+          </div>
+
+          <div class="gear-flasks">
+            ${flasks.map((f) => renderGearCard(f, f.slot)).join('')}
+          </div>
+        </div>
+
+        ${jewels.length > 0 ? `
+          <div class="bento-card gear-jewels-panel">
+            <div class="card-head gear-section-head">
+              <div>
+                <h3>Socketed Jewels</h3>
+                <p class="card-sub">${jewels.length} jewel socket${jewels.length === 1 ? '' : 's'} allocated on passive tree</p>
+              </div>
+            </div>
+            <div class="gear-jewels-grid">
+              ${jewels.map((j) => renderGearCard(j, `Socket #${j.jewelNodeId}`)).join('')}
+            </div>
+          </div>
+        ` : ''}
       </div>
     `;
   }
@@ -1172,25 +1242,6 @@ async function main() {
     if (target) showNodeTooltipFor(target);
   });
   viewDashEl.addEventListener('focusout', () => {
-    gemTooltip.classList.add('hidden');
-  });
-
-  const viewGearEl = document.getElementById('view-gear')!;
-  viewGearEl.addEventListener('mouseover', (e) => {
-    const target = (e.target as HTMLElement).closest<HTMLElement>('[data-hover-item]');
-    if (target) showItemTooltipFor(target);
-  });
-  viewGearEl.addEventListener('mouseout', (e) => {
-    const target = (e.target as HTMLElement).closest<HTMLElement>('[data-hover-item]');
-    if (!target) return;
-    const related = e.relatedTarget as Node | null;
-    if (!related || !target.contains(related)) gemTooltip.classList.add('hidden');
-  });
-  viewGearEl.addEventListener('focusin', (e) => {
-    const target = (e.target as HTMLElement).closest<HTMLElement>('[data-hover-item]');
-    if (target) showItemTooltipFor(target);
-  });
-  viewGearEl.addEventListener('focusout', () => {
     gemTooltip.classList.add('hidden');
   });
 

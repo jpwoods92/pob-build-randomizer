@@ -1420,6 +1420,194 @@ input[type="range"] {
   color: var(--crafted-fg);
 }
 
+/* PoE Paperdoll Gear Layout */
+.gear-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.gear-equipment-panel,
+.gear-jewels-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.gear-equipment-panel {
+  container-type: inline-size;
+}
+
+.gear-section-head {
+  margin-bottom: 0;
+}
+
+.gear-paperdoll {
+  display: grid;
+  grid-template-columns: repeat(10, minmax(0, 1fr));
+  grid-template-rows: auto auto auto auto;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.gear-slot {
+  display: flex;
+  min-width: 0;
+}
+
+.slot-weapon1 { grid-column: 1 / 3; grid-row: 1 / 4; align-self: stretch; }
+.slot-helmet  { grid-column: 5 / 7; grid-row: 1 / 2; }
+.slot-weapon2 { grid-column: 9 / 11; grid-row: 1 / 4; align-self: stretch; }
+.slot-body    { grid-column: 5 / 7; grid-row: 2 / 4; align-self: stretch; }
+.slot-amulet  { grid-column: 7 / 9; grid-row: 2 / 3; align-self: start; }
+.slot-ring1   { grid-column: 3 / 5; grid-row: 3 / 4; align-self: end; }
+.slot-ring2   { grid-column: 7 / 9; grid-row: 3 / 4; align-self: end; }
+.slot-gloves  { grid-column: 2 / 5; grid-row: 4 / 5; }
+.slot-belt    { grid-column: 5 / 7; grid-row: 4 / 5; }
+.slot-boots   { grid-column: 7 / 10; grid-row: 4 / 5; }
+
+.gear-item-card {
+  width: 100%;
+  padding: 9px 10px;
+  border-radius: 12px;
+  gap: 5px;
+  min-width: 0;
+}
+
+.gear-item-head {
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.gear-item-titles {
+  min-width: 0;
+  width: 100%;
+}
+
+.gear-item-card .item-name-UNIQUE,
+.gear-item-card .item-name-RARE,
+.gear-item-card .item-name-MAGIC {
+  font-size: 0.78rem;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.gear-item-card .item-base {
+  font-size: 0.69rem;
+  line-height: 1.25;
+}
+
+.gear-slot-tag {
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 1px 5px;
+  white-space: nowrap;
+}
+
+.gear-item-card .item-meta-line {
+  font-size: 0.67rem;
+  gap: 6px;
+}
+
+.gear-item-card .item-implicits,
+.gear-item-card .item-mods {
+  font-size: 0.71rem;
+  line-height: 1.32;
+  padding-top: 5px;
+  overflow-wrap: break-word;
+}
+
+.gear-slot-empty {
+  border-style: dashed;
+  background: var(--surface-subtle);
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  min-height: 140px;
+}
+
+.gear-empty-note {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.gear-flasks {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  width: 100%;
+  max-width: 96%;
+  margin: 2px auto 0;
+}
+
+.gear-jewels-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+@container (max-width: 780px) {
+  .gear-paperdoll {
+    gap: 6px;
+  }
+
+  .gear-flasks {
+    max-width: 100%;
+    gap: 6px;
+  }
+
+  .gear-item-card {
+    padding: 7px 8px;
+  }
+
+  .gear-item-card .item-implicits,
+  .gear-item-card .item-mods {
+    font-size: 0.67rem;
+    line-height: 1.28;
+  }
+}
+
+@container (max-width: 620px) {
+  .gear-paperdoll {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: auto;
+  }
+
+  .slot-weapon1,
+  .slot-helmet,
+  .slot-weapon2,
+  .slot-body,
+  .slot-amulet,
+  .slot-ring1,
+  .slot-ring2,
+  .slot-gloves,
+  .slot-belt,
+  .slot-boots {
+    grid-column: auto;
+    grid-row: auto;
+    align-self: stretch;
+  }
+
+  .gear-flasks {
+    max-width: 100%;
+    grid-template-columns: repeat(auto-fit, minmax(175px, 1fr));
+  }
+}
+
+@container (max-width: 420px) {
+  .gear-paperdoll {
+    grid-template-columns: 1fr;
+  }
+}
+
 .code-box {
   width: 100%;
   min-height: 150px;
