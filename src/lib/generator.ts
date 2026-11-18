@@ -17,7 +17,14 @@ import {
 import { generateSkills, rerollSupportGem, type GeneratedSkills } from './skills.ts';
 import { generateGear, rerollGearItem, type GeneratedGear, type GeneratedItem } from './items.ts';
 import { rerollClusterJewelSocket } from './cluster.ts';
-import { computeProjectedDefenses, computeProjectedOffense, type ProjectedDefenses, type ProjectedOffense } from './stats.ts';
+import {
+  DEFAULT_CALC_CONFIG,
+  computeProjectedDefenses,
+  computeProjectedOffense,
+  type CalcConfig,
+  type ProjectedDefenses,
+  type ProjectedOffense,
+} from './stats.ts';
 import { buildPobXml, encodePobCode } from './pob-export.ts';
 
 export interface GeneratedBuild {
@@ -339,13 +346,32 @@ async function finalizeGeneratedBuild(
     defenses?: ProjectedDefenses;
     offense?: ProjectedOffense;
   },
+  calcConfig?: CalcConfig,
 ): Promise<GeneratedBuild> {
-  const defenses = core.defenses ?? computeProjectedDefenses(data, core.archetype, core.tree, core.skills, core.gear);
-  const offense = core.offense ?? computeProjectedOffense(data, core.archetype, core.tree, core.skills, core.gear);
+  const cfg = calcConfig ?? DEFAULT_CALC_CONFIG;
+  const defenses = core.defenses ?? computeProjectedDefenses(data, core.archetype, core.tree, core.skills, core.gear, cfg);
+  const offense = core.offense ?? computeProjectedOffense(data, core.archetype, core.tree, core.skills, core.gear, cfg);
   const fullCore = { ...core, defenses, offense };
-  const xml = buildPobXml({ ...fullCore, data });
+  const xml = buildPobXml({ ...fullCore, data, calcConfig });
   const pobCode = await encodePobCode(xml);
   return { ...fullCore, xml, pobCode };
+}
+
+export async function recomputeBuildWithCalcConfig(
+  data: GameData,
+  build: GeneratedBuild,
+  calcConfig: CalcConfig,
+): Promise<GeneratedBuild> {
+  return finalizeGeneratedBuild(
+    data,
+    {
+      archetype: build.archetype,
+      tree: build.tree,
+      skills: build.skills,
+      gear: build.gear,
+    },
+    calcConfig,
+  );
 }
 
 export async function rerollBuildItem(
@@ -353,6 +379,7 @@ export async function rerollBuildItem(
   build: GeneratedBuild,
   itemId: number,
   rerollSeed: string,
+  calcConfig?: CalcConfig,
 ): Promise<GeneratedBuild> {
   const rng = new Rng(rerollSeed);
   const oldItem = build.gear.items.find((it) => it.id === itemId);
@@ -421,12 +448,16 @@ export async function rerollBuildItem(
     rng.fork('gear'),
     clusterReplacement,
   );
-  return finalizeGeneratedBuild(data, {
-    archetype: build.archetype,
-    tree: nextTree,
-    skills: build.skills,
-    gear: nextGear,
-  });
+  return finalizeGeneratedBuild(
+    data,
+    {
+      archetype: build.archetype,
+      tree: nextTree,
+      skills: build.skills,
+      gear: nextGear,
+    },
+    calcConfig,
+  );
 }
 
 export async function rerollBuildSupportGem(
@@ -435,6 +466,7 @@ export async function rerollBuildSupportGem(
   groupIdx: number,
   gemIdx: number,
   rerollSeed: string,
+  calcConfig?: CalcConfig,
 ): Promise<GeneratedBuild> {
   const rng = new Rng(rerollSeed);
   const nextSkills = rerollSupportGem(data, build.archetype, build.skills, groupIdx, gemIdx, rng.fork('skills'));
@@ -461,10 +493,14 @@ export async function rerollBuildSupportGem(
     requiredAttributes: reqAttrs,
   };
 
-  return finalizeGeneratedBuild(data, {
-    archetype: build.archetype,
-    tree: build.tree,
-    skills: nextSkills,
-    gear: nextGear,
-  });
+  return finalizeGeneratedBuild(
+    data,
+    {
+      archetype: build.archetype,
+      tree: build.tree,
+      skills: nextSkills,
+      gear: nextGear,
+    },
+    calcConfig,
+  );
 }

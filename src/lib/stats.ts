@@ -4,6 +4,70 @@ import { collectAllocatedTreeLines, extractKeystonesFromLines, type GeneratedTre
 import type { GeneratedSkills } from './skills.ts';
 import type { GeneratedGear } from './items.ts';
 
+export interface CalcConfig {
+  useTemporaryBuffs: boolean;     // Fortify, Arctic Armour, Blood Rage, Arcane Surge, Flesh Offering
+  flasksActive: boolean;          // Offensive utility flasks (Diamond, Silver, Sulphur)
+  defensiveFlasksActive: boolean; // Defensive utility flasks on Max Hits/Defenses (Granite, Jade, Basalt, Stibnite, Quartz, Ruby/Sapphire/Topaz, Bismuth, Amethyst + flask suffixes)
+  guardSkillActive: boolean;      // Molten Shell, Steelskin, Immortal Call, Arcane Cloak
+  enduranceCharges: boolean;      // Endurance Charges (+4% PDR & +4% Ele DR per charge)
+  frenzyCharges: boolean;         // Frenzy Charges (4% more Damage & +4% Atk/Cast Speed per charge)
+  powerCharges: boolean;          // Power Charges (+50% Crit Chance per charge)
+  killedRecently: boolean;        // "Killed Recently" conditional buffs
+  hitRecently: boolean;           // "Attacked/Cast/Hit Recently" conditional buffs
+  onslaught: boolean;             // Onslaught (+20% Attack & Cast Speed)
+  cursesActive: boolean;          // Socketed Curse / Mark active on enemy
+  enemyIntimidated: boolean;      // Enemy Intimidated (+10% Attack Damage taken)
+  enemyUnnerved: boolean;         // Enemy Unnerved (+10% Spell Damage taken)
+}
+
+export const DEFAULT_CALC_CONFIG: CalcConfig = {
+  useTemporaryBuffs: true,
+  flasksActive: true,
+  defensiveFlasksActive: false,
+  guardSkillActive: false,
+  enduranceCharges: false,
+  frenzyCharges: false,
+  powerCharges: false,
+  killedRecently: false,
+  hitRecently: true,
+  onslaught: false,
+  cursesActive: true,
+  enemyIntimidated: false,
+  enemyUnnerved: false,
+};
+
+export const UNBUFFED_CALC_CONFIG: CalcConfig = {
+  useTemporaryBuffs: false,
+  flasksActive: false,
+  defensiveFlasksActive: false,
+  guardSkillActive: false,
+  enduranceCharges: false,
+  frenzyCharges: false,
+  powerCharges: false,
+  killedRecently: false,
+  hitRecently: false,
+  onslaught: false,
+  cursesActive: false,
+  enemyIntimidated: false,
+  enemyUnnerved: false,
+};
+
+export const FULL_BURST_CALC_CONFIG: CalcConfig = {
+  useTemporaryBuffs: true,
+  flasksActive: true,
+  defensiveFlasksActive: true,
+  guardSkillActive: true,
+  enduranceCharges: true,
+  frenzyCharges: true,
+  powerCharges: true,
+  killedRecently: true,
+  hitRecently: true,
+  onslaught: true,
+  cursesActive: true,
+  enemyIntimidated: true,
+  enemyUnnerved: true,
+};
+
 export interface ProjectedDefenses {
   lifePct: number;
   esPct: number;
@@ -74,6 +138,7 @@ export function computeProjectedDefenses(
   tree: GeneratedTree,
   skills: GeneratedSkills,
   gear: GeneratedGear,
+  calcConfig: CalcConfig = DEFAULT_CALC_CONFIG,
 ): ProjectedDefenses {
   const { keystones, extraKeystoneLines } = collectEffectiveKeystones(data, tree, gear);
   const treeLines = [...collectAllocatedTreeLines(data, tree), ...extraKeystoneLines];
@@ -133,6 +198,7 @@ export function computeProjectedDefenses(
   let hasMelding = false;
   let lockedMaxRes: number | null = null;
   let flatPdr = arch.pantheonMajor === 'Solaris' ? 6 : 0;
+  let bonusEndCharges = 0;
   let noStrLife = false;
   let physToFire = 0;
   let physToCold = 0;
@@ -227,6 +293,9 @@ export function computeProjectedDefenses(
         }
       }
 
+      const mEndChg = /([+-]\d+) to Maximum Endurance Charges/i.exec(l);
+      if (mEndChg) bonusEndCharges += Number(mEndChg[1]);
+
       const mPdr = /(\d+)% additional Physical Damage Reduction/i.exec(l);
       if (mPdr) flatPdr += Number(mPdr[1]);
 
@@ -251,7 +320,7 @@ export function computeProjectedDefenses(
           .filter((it) => it && (it.base.type === 'Dagger' || it.base.type === 'Rune Dagger')).length;
         const mDag = /\+(\d+)% chance to Suppress Spell Damage/i.exec(l);
         if (mDag) rawSuppress += Number(mDag[1]) * daggerCount;
-      } else if (/if you've Hit an Enemy Recently/i.test(l) && (arch.damageStyle === 'attack' || arch.damageStyle === 'spell')) {
+      } else if (calcConfig.hitRecently && /if you've Hit an Enemy Recently/i.test(l) && (arch.damageStyle === 'attack' || arch.damageStyle === 'spell')) {
         const mHit = /\+(\d+)% chance to Suppress Spell Damage/i.exec(l);
         if (mHit) rawSuppress += Number(mHit[1]);
       } else if (/while on Full Life/i.test(l) && hasCI) {
@@ -304,7 +373,7 @@ export function computeProjectedDefenses(
             if (kind === 'attack') rawAtkBlock += val;
             else rawSpellBlock += val;
           }
-        } else {
+        } else if (calcConfig.hitRecently) {
           const mGuardBlk = /If you've (Attacked|Cast a Spell) Recently, you and Allies within 6 metres have \+(\d+)% Chance to Block (Attack|Spell) Damage/i.exec(l);
           if (mGuardBlk) {
             const trigger = mGuardBlk[1].toLowerCase();
@@ -431,8 +500,34 @@ export function computeProjectedDefenses(
   const hasDetermination = activeGemNames.has('Determination');
   const hasGrace = activeGemNames.has('Grace');
   const hasDiscipline = activeGemNames.has('Discipline');
-  const hasArcticArmour = activeGemNames.has('Arctic Armour');
-  const hasFortify = activeGemNames.has('Fortify');
+  const hasArcticArmour = calcConfig.useTemporaryBuffs && activeGemNames.has('Arctic Armour');
+  const hasFortify = calcConfig.useTemporaryBuffs && activeGemNames.has('Fortify');
+
+  let flaskMoreArmour = 1;
+  let flaskMoreEvasion = 1;
+  const flaskRes = { fire: 0, cold: 0, lightning: 0, chaos: 0 };
+  if (calcConfig.defensiveFlasksActive) {
+    for (const item of gear.items) {
+      if (item.base.type !== 'Flask') continue;
+      if (item.baseName === 'Granite Flask') gearArmour += 1500;
+      else if (item.baseName === 'Jade Flask') gearEvasion += 1500;
+      else if (item.baseName === 'Basalt Flask') flaskMoreArmour *= 1.20;
+      else if (item.baseName === 'Stibnite Flask') flaskMoreEvasion *= 1.20;
+      else if (item.baseName === 'Quartz Flask') rawSuppress += 10;
+      else if (item.baseName === 'Ruby Flask') { maxFireBonus += 5; flaskRes.fire += 40; }
+      else if (item.baseName === 'Sapphire Flask') { maxColdBonus += 5; flaskRes.cold += 40; }
+      else if (item.baseName === 'Topaz Flask') { maxLightBonus += 5; flaskRes.lightning += 40; }
+      else if (item.baseName === 'Bismuth Flask') { flaskRes.fire += 35; flaskRes.cold += 35; flaskRes.lightning += 35; }
+      else if (item.baseName === 'Amethyst Flask') flaskRes.chaos += 35;
+      for (const raw of item.explicits) {
+        const clean = raw.replace(/\{[^}]+\}/g, '');
+        const mArmFx = /(\d+)% increased Armour during Effect/i.exec(clean);
+        if (mArmFx) incArmour += Number(mArmFx[1]);
+        const mEvaFx = /(\d+)% increased Evasion Rating during Effect/i.exec(clean);
+        if (mEvaFx) incEvasion += Number(mEvaFx[1]);
+      }
+    }
+  }
 
   if (activeGemNames.has('Tempest Shield')) rawSpellBlock += 25;
 
@@ -489,8 +584,8 @@ export function computeProjectedDefenses(
 
   // 5. Final Armour, Evasion, Evade Chance, Spell Suppression & Dodge
   const dexEvaBonus = hasMagebane ? 0 : Math.floor(gear.attributes.dex / 5);
-  let totalEvasion = Math.round(gearEvasion * (1 + (incEvasion + dexEvaBonus) / 100) * (hasGrace ? 1.29 : 1));
-  let totalArmour = Math.round(gearArmour * (1 + incArmour / 100) * (hasDetermination ? 1.49 : 1));
+  let totalEvasion = Math.round(gearEvasion * (1 + (incEvasion + dexEvaBonus) / 100) * (hasGrace ? 1.29 : 1) * flaskMoreEvasion);
+  let totalArmour = Math.round(gearArmour * (1 + incArmour / 100) * (hasDetermination ? 1.49 : 1) * flaskMoreArmour);
   if (hasIR) {
     totalArmour += totalEvasion;
     totalEvasion = 0;
@@ -531,15 +626,29 @@ export function computeProjectedDefenses(
     capLight = highest;
   }
 
-  const effFire = Math.min(capFire, gear.resists.fire);
-  const effCold = Math.min(capCold, gear.resists.cold);
-  const effLight = Math.min(capLight, gear.resists.lightning);
+  const effFire = Math.min(capFire, gear.resists.fire + flaskRes.fire);
+  const effCold = Math.min(capCold, gear.resists.cold + flaskRes.cold);
+  const effLight = Math.min(capLight, gear.resists.lightning + flaskRes.lightning);
   const effEleRes = Math.min(effFire, effCold, effLight);
-  const effChaosRes = hasCI ? 100 : Math.min(capChaos, gear.resists.chaos);
+  const effChaosRes = hasCI ? 100 : Math.min(capChaos, gear.resists.chaos + flaskRes.chaos);
   const maxEleRes = Math.min(capFire, capCold, capLight);
 
-  const hitPool = hasCI ? maxEs : (hasEB ? maxLife : maxLife + maxEs);
-  const fortifyMult = hasFortify ? 0.8 : 1.0;
+  let guardBuffer = 0;
+  if (calcConfig.guardSkillActive) {
+    if (activeGemNames.has('Molten Shell')) guardBuffer += Math.min(10000, Math.round(totalArmour * 0.20));
+    if (activeGemNames.has('Steelskin')) guardBuffer += 2200;
+    if (activeGemNames.has('Arcane Cloak')) guardBuffer += Math.round(maxMana * 0.40);
+  }
+  const hitPool = (hasCI ? maxEs : (hasEB ? maxLife : maxLife + maxEs)) + guardBuffer;
+
+  const endCharges = calcConfig.enduranceCharges ? Math.max(0, 3 + bonusEndCharges) : 0;
+  flatPdr += endCharges * 4;
+  const endChargeEleMult = Math.max(0.4, 1 - endCharges * 0.04);
+
+  let fortifyMult = hasFortify ? 0.8 : 1.0;
+  if (calcConfig.guardSkillActive && activeGemNames.has('Immortal Call')) {
+    fortifyMult *= 0.75;
+  }
   const physMult = fortifyMult * (hasArcticArmour ? 0.8 : 1.0);
   const pdrFrac = Math.min(0.75, flatPdr / 100);
 
@@ -562,9 +671,9 @@ export function computeProjectedDefenses(
     const totalMit = Math.min(0.9, pdrFrac + armMit);
     const physDmgTaken = rawPhys * (1 - totalMit) * physMult;
     const convDmgTaken = mid * fortifyMult * (
-      p2f * (1 - effFire / 100) +
-      p2c * (1 - effCold / 100) +
-      p2l * (1 - effLight / 100) +
+      p2f * (1 - effFire / 100) * endChargeEleMult +
+      p2c * (1 - effCold / 100) * endChargeEleMult +
+      p2l * (1 - effLight / 100) * endChargeEleMult +
       p2ch * (1 - effChaosRes / 100)
     );
     if (physDmgTaken + convDmgTaken <= hitPool) lo = mid;
@@ -577,11 +686,12 @@ export function computeProjectedDefenses(
     const scale = sum > 1 ? 1 / sum : 1;
     const f = toF * scale, c = toC * scale, l = toL * scale, ch = toCh * scale;
     const rem = Math.max(0, 1 - (f + c + l + ch));
-    const taken = rem * (1 - selfEff / 100)
+    const taken = (
+      rem * (1 - selfEff / 100)
       + (isSelf === 'f' ? 0 : f * (1 - effFire / 100))
       + (isSelf === 'c' ? 0 : c * (1 - effCold / 100))
       + (isSelf === 'l' ? 0 : l * (1 - effLight / 100))
-      + ch * (1 - effChaosRes / 100);
+    ) * endChargeEleMult + ch * (1 - effChaosRes / 100);
     return Math.max(0.05, taken * fortifyMult);
   };
   const fireMaxHit = hitPool / calcEleTakenFrac(effFire, 0, fireToCold, fireToLight, fireToChaos, 'f');
@@ -637,6 +747,7 @@ export function computeProjectedOffense(
   tree: GeneratedTree,
   skills: GeneratedSkills,
   gear: GeneratedGear,
+  calcConfig: CalcConfig = DEFAULT_CALC_CONFIG,
 ): ProjectedOffense {
   if (arch.damageStyle === 'link_support') {
     return {
@@ -694,11 +805,18 @@ export function computeProjectedOffense(
   let addedFlatSpell = 0;
   let addedFlatAttack = 0;
   let globalWeaponCritBase = 0;
+  let bonusFrenzyCharges = 0;
+  let bonusPowerCharges = 0;
   const maxTotems = arch.damageStyle === 'totem' ? (keystones.has('Ancestral Bond') ? 3 : 2) + (supports.some((s) => s.gem.name.includes('Multiple Totems')) ? 2 : 0) : 1;
 
   for (const raw of allLines) {
     const l = raw.replace(/\{[^}]+\}/g, '');
     const tl = l.toLowerCase();
+
+    const mFrenzyChg = /([+-]\d+) to Maximum Frenzy Charges/i.exec(l);
+    if (mFrenzyChg) bonusFrenzyCharges += Number(mFrenzyChg[1]);
+    const mPowerChg = /([+-]\d+) to Maximum Power Charges/i.exec(l);
+    if (mPowerChg) bonusPowerCharges += Number(mPowerChg[1]);
 
     const mGemLvl = /\+(\d+) to level of all (.+?) skill gems/i.exec(l);
     if (mGemLvl) {
@@ -808,11 +926,13 @@ export function computeProjectedOffense(
   }
 
   // Flask buffs (Diamond / Silver / Sulphur)
-  for (const item of gear.items) {
-    if (item.base.type !== 'Flask') continue;
-    if (item.baseName === 'Diamond Flask') incCrit += 100;
-    if (item.baseName === 'Silver Flask') { incAtkSpeed += 20; incCastSpeed += 20; }
-    if (item.baseName === 'Sulphur Flask') { incDamage += 40; incCrit += 50; }
+  if (calcConfig.flasksActive) {
+    for (const item of gear.items) {
+      if (item.base.type !== 'Flask') continue;
+      if (item.baseName === 'Diamond Flask') incCrit += 100;
+      if (item.baseName === 'Silver Flask') { incAtkSpeed += 20; incCastSpeed += 20; }
+      if (item.baseName === 'Sulphur Flask') { incDamage += 40; incCrit += 50; }
+    }
   }
 
   // Account for Strength melee / Iron Grip / Iron Will
@@ -900,7 +1020,7 @@ export function computeProjectedOffense(
 
     const isFallingZombie = mainGem?.gem.skillId === 'RaiseZombieAltY';
     const basePeriod = minionEntry.isSpell ? (minionEntry.castTime ?? 0.9) : Math.max(0.3, minionEntry.attackTime);
-    const totalMinionSpdInc = minionIncSpeed + minionEntry.incSpeed + (activeGemNames.has('Flesh Offering') ? 30 : 0);
+    const totalMinionSpdInc = minionIncSpeed + minionEntry.incSpeed + (calcConfig.useTemporaryBuffs && activeGemNames.has('Flesh Offering') ? 30 : 0);
     hitsPerSec = isFallingZombie
       ? 1.65 * (1 + incCastSpeed / 100)
       : (1 / basePeriod) * minionEntry.moreSpeed * minionMeta.gemMoreSpeed * (1 + totalMinionSpdInc / 100);
@@ -990,12 +1110,48 @@ export function computeProjectedOffense(
   if (activeGemNames.has('Herald of Ash') || activeGemNames.has('Herald of Ice') || activeGemNames.has('Herald of Thunder') || activeGemNames.has('Herald of Purity')) {
     moreMult *= 1.14;
   }
-  if (activeGemNames.has('Blood Rage')) { hitsPerSec *= 1.20; moreMult *= 1.12; } // Frenzy charges + attack speed
-  if (activeGemNames.has('Arcane Surge')) { hitsPerSec *= 1.12; moreMult *= 1.20; }
-  if (activeGemNames.has("Assassin's Mark")) { incCrit += 90; critMultiBonus += 45; }
-  if (activeGemNames.has("Sniper's Mark")) moreMult *= 1.30;
-  if (activeGemNames.has('Flammability') || activeGemNames.has('Frostbite') || activeGemNames.has('Conductivity') || activeGemNames.has('Elemental Weakness') || activeGemNames.has('Despair') || activeGemNames.has('Vulnerability')) {
-    moreMult *= 1.28;
+  if (calcConfig.useTemporaryBuffs) {
+    if (activeGemNames.has('Blood Rage')) {
+      if (calcConfig.frenzyCharges) {
+        hitsPerSec *= 1.15;
+      } else {
+        hitsPerSec *= 1.20;
+        moreMult *= 1.12;
+      }
+    }
+    if (activeGemNames.has('Arcane Surge')) { hitsPerSec *= 1.12; moreMult *= 1.20; }
+  }
+  if (calcConfig.cursesActive) {
+    if (activeGemNames.has("Assassin's Mark")) { incCrit += 90; critMultiBonus += 45; }
+    if (activeGemNames.has("Sniper's Mark")) moreMult *= 1.30;
+    if (activeGemNames.has('Flammability') || activeGemNames.has('Frostbite') || activeGemNames.has('Conductivity') || activeGemNames.has('Elemental Weakness') || activeGemNames.has('Despair') || activeGemNames.has('Vulnerability')) {
+      moreMult *= 1.28;
+    }
+  }
+  if (calcConfig.frenzyCharges) {
+    const fz = Math.max(0, 3 + bonusFrenzyCharges);
+    moreMult *= Math.pow(1.04, fz);
+    hitsPerSec *= 1 + (fz * 0.04);
+  }
+  if (calcConfig.powerCharges) {
+    const pw = Math.max(0, 3 + bonusPowerCharges);
+    incCrit += pw * 50;
+  }
+  if (calcConfig.onslaught && !(calcConfig.flasksActive && gear.items.some((i) => i.baseName === 'Silver Flask'))) {
+    hitsPerSec *= 1.14;
+  }
+  if (calcConfig.killedRecently) {
+    incDamage += 24;
+    hitsPerSec *= 1.06;
+  }
+  if (!calcConfig.hitRecently) {
+    moreMult *= 0.94;
+  }
+  if (calcConfig.enemyIntimidated && isAttackMain) {
+    moreMult *= 1.10;
+  }
+  if (calcConfig.enemyUnnerved && isSpellMain) {
+    moreMult *= 1.10;
   }
 
   // Keystones & non-crit optimization

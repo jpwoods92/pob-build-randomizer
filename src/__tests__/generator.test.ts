@@ -10,13 +10,19 @@ import {
   TARGET_STAT_DEFS,
   evaluateBuildTargets,
   generateBuild,
+  recomputeBuildWithCalcConfig,
   rerollBuildItem,
   rerollBuildSupportGem,
   serializeTargetsKey,
 } from '../lib/generator.ts';
 import { canSupportSkill, isMandatoryTotemSupport } from '../lib/skills.ts';
 import { extractKeystonesFromLines, isKeystoneNameAllowed } from '../lib/tree.ts';
-import { computeProjectedOffense } from '../lib/stats.ts';
+import {
+  DEFAULT_CALC_CONFIG,
+  FULL_BURST_CALC_CONFIG,
+  UNBUFFED_CALC_CONFIG,
+  computeProjectedOffense,
+} from '../lib/stats.ts';
 import { getPoeWikiGemUrl, getPoeWikiItemUrl } from '../lib/pob-export.ts';
 import type { BuildOptions } from '../lib/archetype.ts';
 import { parseGameVersionsLua } from '../../scripts/pob-version.mjs';
@@ -1069,4 +1075,82 @@ test('getPoeWikiGemUrl and getPoeWikiItemUrl format PoE Wiki URLs for skills and
     getPoeWikiItemUrl({ rarity: 'MAGIC', name: 'Ample Jade Flask of the Curlew', baseName: 'Jade Flask' }),
     'https://www.poewiki.net/wiki/Jade_Flask',
   );
+});
+
+test('CalcConfig toggles (unbuffed, flasks, guard skills, charges, conditions) scale projected DPS, Max Hits, and PoB XML', async () => {
+  const b = await generateBuild(data, baseOptions({
+    seed: 'calcs-test-1',
+    economy: 'trade',
+  }));
+
+  const std = await recomputeBuildWithCalcConfig(data, b, DEFAULT_CALC_CONFIG);
+  assert.equal(std.offense.totalDps, b.offense.totalDps);
+  assert.equal(std.defenses.physMaxHit, b.defenses.physMaxHit);
+  assert.equal(std.defenses.eleMaxHit, b.defenses.eleMaxHit);
+
+  const unbuffed = await recomputeBuildWithCalcConfig(data, b, UNBUFFED_CALC_CONFIG);
+  assert.ok(unbuffed.offense.totalDps < std.offense.totalDps, 'Unbuffed DPS should be lower than Standard Combat DPS');
+
+  const burst = await recomputeBuildWithCalcConfig(data, b, FULL_BURST_CALC_CONFIG);
+  assert.ok(burst.offense.totalDps > std.offense.totalDps, 'Full Burst DPS should exceed Standard Combat DPS');
+  assert.ok(burst.defenses.physMaxHit > unbuffed.defenses.physMaxHit, 'Full Burst physMaxHit should exceed Unbuffed');
+  assert.ok(burst.defenses.eleMaxHit > unbuffed.defenses.eleMaxHit, 'Full Burst eleMaxHit should exceed Unbuffed');
+  assert.ok(burst.xml.includes('<Input name="useEnduranceCharges" boolean="true"/>'));
+  assert.ok(burst.xml.includes('<Input name="useFrenzyCharges" boolean="true"/>'));
+  assert.ok(burst.xml.includes('<Input name="conditionKilledRecently" boolean="true"/>'));
+
+  const withEnd = await recomputeBuildWithCalcConfig(data, unbuffed, { ...UNBUFFED_CALC_CONFIG, enduranceCharges: true });
+  assert.ok(withEnd.defenses.physMaxHit > unbuffed.defenses.physMaxHit, 'Endurance charges should increase physMaxHit');
+  assert.ok(withEnd.defenses.eleMaxHit > unbuffed.defenses.eleMaxHit, 'Endurance charges should increase eleMaxHit');
+
+  const withGuard = await recomputeBuildWithCalcConfig(data, unbuffed, { ...UNBUFFED_CALC_CONFIG, guardSkillActive: true });
+  assert.ok(withGuard.defenses.physMaxHit > unbuffed.defenses.physMaxHit, 'Guard skill active should increase physMaxHit');
+
+  const withDefFlasks = await recomputeBuildWithCalcConfig(data, unbuffed, { ...UNBUFFED_CALC_CONFIG, defensiveFlasksActive: true });
+  assert.ok(
+    withDefFlasks.defenses.physMaxHit >= unbuffed.defenses.physMaxHit
+      && withDefFlasks.defenses.eleMaxHit >= unbuffed.defenses.eleMaxHit,
+  );
+  assert.ok(
+    withDefFlasks.defenses.armour > unbuffed.defenses.armour
+      || withDefFlasks.defenses.evasion > unbuffed.defenses.evasion
+      || withDefFlasks.defenses.spellSuppressPct > unbuffed.defenses.spellSuppressPct
+      || withDefFlasks.defenses.physMaxHit > unbuffed.defenses.physMaxHit
+      || withDefFlasks.defenses.eleMaxHit > unbuffed.defenses.eleMaxHit
+      || (withDefFlasks.defenses.chaosMaxHit ?? 0) > (unbuffed.defenses.chaosMaxHit ?? 0),
+    'Defensive flasks should increase at least one defensive stat',
+  );
+
+  // Explicit defensive flask check (Granite + Ruby/Sapphire/Topaz) verifies armour, physMaxHit, and eleMaxHit scaling
+  const templateFlask = b.gear.items.find((it) => it.base.type === 'Flask');
+  assert.ok(templateFlask, 'Build should have at least one flask');
+  const synthItems = b.gear.items.filter((it) => it.base.type !== 'Flask');
+  const makeFlask = (slot: string, baseName: string) => ({
+    ...templateFlask,
+    slot,
+    baseName,
+    name: baseName,
+    explicits: baseName === 'Granite Flask' ? ['55% increased Armour during Effect'] : [],
+  });
+  const synthBuild = {
+    ...b,
+    gear: {
+      ...b.gear,
+      items: [
+        ...synthItems,
+        makeFlask('Flask 1', 'Granite Flask'),
+        makeFlask('Flask 2', 'Ruby Flask'),
+        makeFlask('Flask 3', 'Sapphire Flask'),
+        makeFlask('Flask 4', 'Topaz Flask'),
+      ],
+    },
+  };
+  const synthUnbuffed = await recomputeBuildWithCalcConfig(data, synthBuild, UNBUFFED_CALC_CONFIG);
+  const synthFlasks = await recomputeBuildWithCalcConfig(data, synthBuild, { ...UNBUFFED_CALC_CONFIG, defensiveFlasksActive: true });
+  assert.ok(synthFlasks.defenses.armour > synthUnbuffed.defenses.armour, 'Granite Flask should increase armour');
+  assert.ok(synthFlasks.defenses.physMaxHit > synthUnbuffed.defenses.physMaxHit, 'Granite Flask should increase physMaxHit');
+  assert.ok(synthFlasks.defenses.eleMaxHit > synthUnbuffed.defenses.eleMaxHit, 'Ruby/Sapphire/Topaz Flasks should increase eleMaxHit');
+
+  const withFrenzy = await recomputeBuildWithCalcConfig(data, unbuffed, { ...UNBUFFED_CALC_CONFIG, frenzyCharges: true });
+  assert.ok(withFrenzy.offense.totalDps > unbuffed.offense.totalDps, 'Frenzy charges should increase DPS');
 });

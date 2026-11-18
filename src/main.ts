@@ -6,10 +6,17 @@ import {
   evaluateBuildTargets,
   generateBuild,
   hasActiveTargets,
+  recomputeBuildWithCalcConfig,
   rerollBuildItem,
   rerollBuildSupportGem,
   type GeneratedBuild,
 } from './lib/generator.ts';
+import {
+  DEFAULT_CALC_CONFIG,
+  FULL_BURST_CALC_CONFIG,
+  UNBUFFED_CALC_CONFIG,
+  type CalcConfig,
+} from './lib/stats.ts';
 import { isMandatoryTotemSupport } from './lib/skills.ts';
 import { getPoeWikiGemUrl, getPoeWikiItemUrl } from './lib/pob-export.ts';
 import type {
@@ -284,6 +291,18 @@ async function main() {
   let editingSavedId: string | null = null;
   const itemRerollCounts = new Map<number, number>();
   const supportRerollCounts = new Map<string, number>();
+  let calcConfig: CalcConfig = { ...DEFAULT_CALC_CONFIG };
+  let calcsPopoverOpen = false;
+
+  const sameCalcConfig = (a: CalcConfig, b: CalcConfig) =>
+    (Object.keys(DEFAULT_CALC_CONFIG) as (keyof CalcConfig)[]).every((k) => a[k] === b[k]);
+
+  function describeCalcMode(cfg: CalcConfig): string {
+    if (sameCalcConfig(cfg, UNBUFFED_CALC_CONFIG)) return 'Unbuffed';
+    if (sameCalcConfig(cfg, DEFAULT_CALC_CONFIG)) return 'Standard';
+    if (sameCalcConfig(cfg, FULL_BURST_CALC_CONFIG)) return 'Full Burst';
+    return 'Custom';
+  }
 
   function applyTheme(pref: ThemePref) {
     themePref = pref;
@@ -515,7 +534,10 @@ async function main() {
       ...options,
       targets: options.targets ? { ...options.targets } : undefined,
     };
-    const build = await generateBuild(data, snapshot);
+    let build = await generateBuild(data, snapshot);
+    if (!sameCalcConfig(calcConfig, DEFAULT_CALC_CONFIG)) {
+      build = await recomputeBuildWithCalcConfig(data, build, calcConfig);
+    }
     applyBuildToUi(build, { syncSaved: true });
   }
 
@@ -599,7 +621,52 @@ async function main() {
                   .join('')}</div>`
               : ''}
           </div>
-          <button type="button" class="btn btn-sm" data-jump="tree">View Tree →</button>
+          <div class="hero-head-actions">
+            <div class="calcs-popover-anchor">
+              <button
+                type="button"
+                class="btn btn-sm calcs-toggle-btn ${calcsPopoverOpen ? 'active' : ''}"
+                id="calcs-popover-btn"
+                aria-expanded="${calcsPopoverOpen}"
+              >⚙ Calcs: ${esc(describeCalcMode(calcConfig))}</button>
+              <div class="calcs-popover ${calcsPopoverOpen ? '' : 'hidden'}" id="calcs-popover" role="dialog" aria-label="PoB Calcs and Temporary Buffs">
+                <div class="calcs-pop-head">
+                  <div>
+                    <div class="calcs-pop-title">Calcs &amp; Temporary Buffs</div>
+                    <div class="calcs-pop-sub">Toggle temporary buffs, charges, and combat conditions for DPS &amp; Max Hits</div>
+                  </div>
+                </div>
+                <div class="calcs-presets">
+                  <button type="button" class="calcs-preset-btn ${sameCalcConfig(calcConfig, UNBUFFED_CALC_CONFIG) ? 'active' : ''}" data-calc-preset="unbuffed">Unbuffed Baseline</button>
+                  <button type="button" class="calcs-preset-btn ${sameCalcConfig(calcConfig, DEFAULT_CALC_CONFIG) ? 'active' : ''}" data-calc-preset="standard">Standard Combat</button>
+                  <button type="button" class="calcs-preset-btn ${sameCalcConfig(calcConfig, FULL_BURST_CALC_CONFIG) ? 'active' : ''}" data-calc-preset="burst">Full Burst</button>
+                </div>
+                <div class="calcs-section">
+                  <div class="calcs-section-title">Flasks, Guard &amp; Skill Buffs</div>
+                  <label class="calcs-check-row"><input type="checkbox" data-calc-key="useTemporaryBuffs" ${calcConfig.useTemporaryBuffs ? 'checked' : ''} /><span>Temporary Combat Buffs (Fortify, Blood Rage, Arcane Surge, Offerings)</span></label>
+                  <label class="calcs-check-row"><input type="checkbox" data-calc-key="flasksActive" ${calcConfig.flasksActive ? 'checked' : ''} /><span>Offensive Utility Flasks (Diamond, Silver, Sulphur)</span></label>
+                  <label class="calcs-check-row"><input type="checkbox" data-calc-key="defensiveFlasksActive" ${calcConfig.defensiveFlasksActive ? 'checked' : ''} /><span>Defensive Utility Flasks on Max Hits (Granite, Jade, Basalt, Quartz, Res)</span></label>
+                  <label class="calcs-check-row"><input type="checkbox" data-calc-key="guardSkillActive" ${calcConfig.guardSkillActive ? 'checked' : ''} /><span>Guard Skill Active on Max Hits (Molten Shell, Steelskin, Immortal Call, Cloak)</span></label>
+                </div>
+                <div class="calcs-section">
+                  <div class="calcs-section-title">Charges</div>
+                  <label class="calcs-check-row"><input type="checkbox" data-calc-key="enduranceCharges" ${calcConfig.enduranceCharges ? 'checked' : ''} /><span>Endurance Charges (+4% PDR &amp; Ele DR per charge)</span></label>
+                  <label class="calcs-check-row"><input type="checkbox" data-calc-key="frenzyCharges" ${calcConfig.frenzyCharges ? 'checked' : ''} /><span>Frenzy Charges (4% more Damage &amp; Speed per charge)</span></label>
+                  <label class="calcs-check-row"><input type="checkbox" data-calc-key="powerCharges" ${calcConfig.powerCharges ? 'checked' : ''} /><span>Power Charges (+50% Crit Chance per charge)</span></label>
+                </div>
+                <div class="calcs-section">
+                  <div class="calcs-section-title">Combat Conditions &amp; Enemy</div>
+                  <label class="calcs-check-row"><input type="checkbox" data-calc-key="killedRecently" ${calcConfig.killedRecently ? 'checked' : ''} /><span>Killed Recently</span></label>
+                  <label class="calcs-check-row"><input type="checkbox" data-calc-key="hitRecently" ${calcConfig.hitRecently ? 'checked' : ''} /><span>Attacked / Cast / Hit Recently</span></label>
+                  <label class="calcs-check-row"><input type="checkbox" data-calc-key="onslaught" ${calcConfig.onslaught ? 'checked' : ''} /><span>Onslaught (+20% Attack &amp; Cast Speed)</span></label>
+                  <label class="calcs-check-row"><input type="checkbox" data-calc-key="cursesActive" ${calcConfig.cursesActive ? 'checked' : ''} /><span>Socketed Curses &amp; Marks Active</span></label>
+                  <label class="calcs-check-row"><input type="checkbox" data-calc-key="enemyIntimidated" ${calcConfig.enemyIntimidated ? 'checked' : ''} /><span>Enemy is Intimidated (+10% Attack Dmg taken)</span></label>
+                  <label class="calcs-check-row"><input type="checkbox" data-calc-key="enemyUnnerved" ${calcConfig.enemyUnnerved ? 'checked' : ''} /><span>Enemy is Unnerved (+10% Spell Dmg taken)</span></label>
+                </div>
+              </div>
+            </div>
+            <button type="button" class="btn btn-sm" data-jump="tree">View Tree →</button>
+          </div>
         </div>
 
         <div class="hero-metrics">
@@ -687,6 +754,12 @@ async function main() {
               <h3>Defenses &amp; Max Hits</h3>
               <p class="card-sub">Projected pools &amp; hit mitigation</p>
             </div>
+            <button
+              type="button"
+              class="badge calcs-status-chip ${calcConfig.defensiveFlasksActive || calcConfig.guardSkillActive || calcConfig.enduranceCharges ? 'is-buffed' : ''}"
+              data-open-calcs="1"
+              title="Click to configure flasks, guard skills, and charges"
+            >${calcConfig.defensiveFlasksActive || calcConfig.guardSkillActive || calcConfig.enduranceCharges ? 'Buffed Max Hits' : 'Unbuffed Max Hits'}</button>
           </div>
           <div class="def-pool-grid">
             <div class="def-stat-box">
@@ -1315,12 +1388,62 @@ async function main() {
   viewDashEl.addEventListener('focusout', () => {
     gemTooltip.classList.add('hidden');
   });
-  viewDashEl.addEventListener('click', (e) => {
+  const setCalcsOpen = (open: boolean) => {
+    calcsPopoverOpen = open;
+    const pop = document.getElementById('calcs-popover');
+    const btn = document.getElementById('calcs-popover-btn');
+    if (pop) pop.classList.toggle('hidden', !open);
+    if (btn) {
+      btn.classList.toggle('active', open);
+      btn.setAttribute('aria-expanded', String(open));
+    }
+  };
+  viewDashEl.addEventListener('change', async (e) => {
+    const cb = (e.target as HTMLElement).closest<HTMLInputElement>('input[data-calc-key]');
+    if (!cb || !currentBuild) return;
+    const key = cb.dataset.calcKey as keyof CalcConfig;
+    if (!(key in DEFAULT_CALC_CONFIG)) return;
+    calcConfig = { ...calcConfig, [key]: cb.checked };
+    calcsPopoverOpen = true;
+    const next = await recomputeBuildWithCalcConfig(data, currentBuild, calcConfig);
+    applyBuildToUi(next, { preserveScroll: true });
+  });
+  viewDashEl.addEventListener('click', async (e) => {
+    const t = e.target as HTMLElement;
+    const calcsBtn = t.closest('#calcs-popover-btn, [data-open-calcs]');
+    if (calcsBtn) {
+      e.stopPropagation();
+      setCalcsOpen(calcsBtn.hasAttribute('data-open-calcs') ? true : !calcsPopoverOpen);
+      return;
+    }
+    const presetBtn = t.closest<HTMLElement>('[data-calc-preset]');
+    if (presetBtn && currentBuild) {
+      const preset = presetBtn.dataset.calcPreset;
+      calcConfig = preset === 'unbuffed'
+        ? { ...UNBUFFED_CALC_CONFIG }
+        : preset === 'burst'
+          ? { ...FULL_BURST_CALC_CONFIG }
+          : { ...DEFAULT_CALC_CONFIG };
+      calcsPopoverOpen = true;
+      const next = await recomputeBuildWithCalcConfig(data, currentBuild, calcConfig);
+      applyBuildToUi(next, { preserveScroll: true });
+      return;
+    }
+    if (t.closest('#calcs-popover')) return;
     if (window.getSelection()?.toString()) return;
-    const itemRow = (e.target as HTMLElement).closest<HTMLElement>('[data-hover-item]');
+    const itemRow = t.closest<HTMLElement>('[data-hover-item]');
     if (!itemRow || !currentBuild) return;
     const item = currentBuild.gear.items[Number(itemRow.dataset.hoverItem)];
     if (item) openWikiInNewTab(getPoeWikiItemUrl(item));
+  });
+  document.addEventListener('click', (e) => {
+    if (!calcsPopoverOpen) return;
+    const t = e.target as HTMLElement;
+    if (t.closest('.calcs-popover-anchor') || t.closest('[data-open-calcs]')) return;
+    setCalcsOpen(false);
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && calcsPopoverOpen) setCalcsOpen(false);
   });
 
   const showGemTooltipFor = (row: HTMLElement) => {
@@ -1389,6 +1512,7 @@ async function main() {
           gIdx,
           gemIdx,
           `${currentBuild.archetype.options.seed}|sup-${gIdx}-${gemIdx}|reroll-${nextCount}`,
+          calcConfig,
         );
         applyBuildToUi(next, { preserveScroll: true });
       } finally {
@@ -1544,6 +1668,7 @@ async function main() {
           currentBuild,
           itemId,
           `${currentBuild.archetype.options.seed}|item-${itemId}|reroll-${nextCount}`,
+          calcConfig,
         );
         applyBuildToUi(next, { preserveScroll: true });
       } finally {

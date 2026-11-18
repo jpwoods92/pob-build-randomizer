@@ -3,6 +3,7 @@ import type { BuildArchetype } from './archetype.ts';
 import type { GeneratedTree } from './tree.ts';
 import type { GeneratedSkills } from './skills.ts';
 import type { GeneratedGear } from './items.ts';
+import type { CalcConfig } from './stats.ts';
 
 function escAttr(s: string): string {
   return s
@@ -25,9 +26,10 @@ export interface BuildArtifactInput {
   skills: GeneratedSkills;
   gear: GeneratedGear;
   data: GameData;
+  calcConfig?: CalcConfig;
 }
 
-export function buildPobXml({ archetype, tree, skills, gear, data }: BuildArtifactInput): string {
+export function buildPobXml({ archetype, tree, skills, gear, data, calcConfig }: BuildArtifactInput): string {
   const { options, classData, ascendancy, bandit, pantheonMajor, pantheonMinor } = archetype;
   const lines: string[] = [];
 
@@ -84,8 +86,11 @@ export function buildPobXml({ archetype, tree, skills, gear, data }: BuildArtifa
     lines.push('\t\t</Item>');
   }
   lines.push('\t\t<ItemSet id="1" title="Default" useSecondWeaponSet="false">');
+  const flasksActiveInExport = calcConfig
+    ? (calcConfig.flasksActive || calcConfig.defensiveFlasksActive)
+    : true;
   for (const [slotName, itemId] of Object.entries(gear.slotMap)) {
-    const activeAttr = slotName.startsWith('Flask') ? ' active="true"' : '';
+    const activeAttr = slotName.startsWith('Flask') && flasksActiveInExport ? ' active="true"' : '';
     lines.push(`\t\t\t<Slot name="${escAttr(slotName)}" itemId="${itemId}"${activeAttr}/>`);
   }
   lines.push('\t\t</ItemSet>');
@@ -99,6 +104,16 @@ export function buildPobXml({ archetype, tree, skills, gear, data }: BuildArtifa
   lines.push(`\t\t\t<Input name="pantheonMinorGod" string="${escAttr(pantheonMinor)}"/>`);
   if (options.leagueMode === 'hardcore') {
     lines.push('\t\t\t<Input name="conditionEnemyRareOrUnique" boolean="true"/>');
+  }
+  if (calcConfig) {
+    if (calcConfig.enduranceCharges) lines.push('\t\t\t<Input name="useEnduranceCharges" boolean="true"/>');
+    if (calcConfig.frenzyCharges) lines.push('\t\t\t<Input name="useFrenzyCharges" boolean="true"/>');
+    if (calcConfig.powerCharges) lines.push('\t\t\t<Input name="usePowerCharges" boolean="true"/>');
+    if (calcConfig.killedRecently) lines.push('\t\t\t<Input name="conditionKilledRecently" boolean="true"/>');
+    if (calcConfig.hitRecently) lines.push('\t\t\t<Input name="conditionHitRecently" boolean="true"/>');
+    if (calcConfig.onslaught) lines.push('\t\t\t<Input name="buffOnslaught" boolean="true"/>');
+    if (calcConfig.enemyIntimidated) lines.push('\t\t\t<Input name="conditionEnemyIntimidated" boolean="true"/>');
+    if (calcConfig.enemyUnnerved) lines.push('\t\t\t<Input name="conditionEnemyUnnerved" boolean="true"/>');
   }
   lines.push('\t\t</ConfigSet>');
   lines.push('\t</Config>');
