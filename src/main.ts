@@ -856,13 +856,14 @@ async function main() {
             <button type="button" class="btn btn-sm" data-jump="gear">Gear →</button>
           </div>
           <div class="feed-list feed-list-compact">
-            ${(['Weapon 1', 'Weapon 2', 'Helmet', 'Body Armour', 'Gloves', 'Boots', 'Amulet', 'Ring 1', 'Ring 2', 'Belt'] as const)
-              .map((slot) => {
-                const idx = b.gear.items.findIndex((it) => it.slot === slot);
-                return idx >= 0 ? { item: b.gear.items[idx], idx } : null;
-              })
-              .filter((x): x is { item: GeneratedBuild['gear']['items'][number]; idx: number } => Boolean(x))
-              .map(({ item, idx }) => `
+            ${(() => {
+              const uniqueItems = b.gear.items
+                .map((item, idx) => ({ item, idx }))
+                .filter(({ item }) => item.rarity === 'UNIQUE');
+              if (uniqueItems.length === 0) {
+                return '<div class="feed-row"><div class="feed-meta">No unique items equipped in this build</div></div>';
+              }
+              return uniqueItems.map(({ item, idx }) => `
               <div class="feed-row feed-row-hover" tabindex="0" data-hover-item="${idx}" data-item-mode="full">
                 <div>
                   <div class="feed-title item-name-${item.rarity}">${esc(item.name)}</div>
@@ -870,7 +871,8 @@ async function main() {
                 </div>
                 <span class="badge">${esc(item.slot)}</span>
               </div>
-            `).join('')}
+            `).join('');
+            })()}
           </div>
         </div>
       </div>
