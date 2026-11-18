@@ -628,7 +628,7 @@ async function main() {
                 class="btn btn-sm calcs-toggle-btn ${calcsPopoverOpen ? 'active' : ''}"
                 id="calcs-popover-btn"
                 aria-expanded="${calcsPopoverOpen}"
-              >⚙ Calcs: ${esc(describeCalcMode(calcConfig))}</button>
+              ><span class="calcs-gear-icon" aria-hidden="true">⚙</span><span>Calcs: ${esc(describeCalcMode(calcConfig))}</span></button>
               <div class="calcs-popover ${calcsPopoverOpen ? '' : 'hidden'}" id="calcs-popover" role="dialog" aria-label="PoB Calcs and Temporary Buffs">
                 <div class="calcs-pop-head">
                   <div>
