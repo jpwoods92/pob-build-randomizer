@@ -49,6 +49,14 @@ function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+function svgIcon(body: string, cls = ''): string {
+  const clsAttr = cls ? ` class="${cls}"` : '';
+  return `<svg${clsAttr} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
+}
+
+const REROLL_ICON_BODY = '<path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 3 21 9 15 9"/>';
+const CLOSE_X_ICON_BODY = '<path d="M18 6 6 18M6 6l12 12"/>';
+
 function getSavedTheme(): ThemePref {
   try {
     const v = localStorage.getItem(THEME_STORAGE_KEY);
@@ -104,29 +112,29 @@ async function main() {
 
         <nav class="nav-list" id="sidebar-nav">
           <button type="button" class="nav-item active" data-view="dashboard">
-            <span class="nav-icon">⊞</span>
+            <span class="nav-icon">${svgIcon('<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>')}</span>
             <span class="nav-label">Dashboard</span>
           </button>
           <button type="button" class="nav-item" data-view="tree">
-            <span class="nav-icon">⑂</span>
+            <span class="nav-icon">${svgIcon('<circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="12" cy="18" r="2.5"/><path d="M6 8.5v2a3 3 0 0 0 3 3h6a3 3 0 0 0 3-3v-2M12 13.5v2"/>')}</span>
             <span class="nav-label">Passive Tree</span>
             <span class="nav-pill" id="nav-pts-pill">115</span>
           </button>
           <button type="button" class="nav-item" data-view="skills">
-            <span class="nav-icon">✦</span>
+            <span class="nav-icon">${svgIcon('<path d="M12 2.5 14.6 9.4 21.5 12 14.6 14.6 12 21.5 9.4 14.6 2.5 12 9.4 9.4Z"/>')}</span>
             <span class="nav-label">Skill Gems</span>
             <span class="nav-pill" id="nav-links-pill">6L</span>
           </button>
           <button type="button" class="nav-item" data-view="gear">
-            <span class="nav-icon">◈</span>
+            <span class="nav-icon">${svgIcon('<path d="M12 2.5 21.5 12 12 21.5 2.5 12Z"/><path d="M12 7.5 16.5 12 12 16.5 7.5 12Z"/>')}</span>
             <span class="nav-label">Gear &amp; Flasks</span>
           </button>
           <button type="button" class="nav-item" data-view="export">
-            <span class="nav-icon">⇄</span>
+            <span class="nav-icon">${svgIcon('<path d="M17 4l4 4-4 4"/><path d="M3 8h18"/><path d="M7 20l-4-4 4-4"/><path d="M21 16H3"/>')}</span>
             <span class="nav-label">PoB Export</span>
           </button>
           <button type="button" class="nav-item" data-view="saved">
-            <span class="nav-icon">★</span>
+            <span class="nav-icon">${svgIcon('<polygon points="12 2.95 14.47 9.55 21.51 9.86 15.99 14.25 17.88 21.04 12 17.15 6.12 21.04 8.01 14.25 2.49 9.86 9.53 9.55 12 2.95" fill="currentColor" stroke-width="1.5"/>')}</span>
             <span class="nav-label">Saved Builds</span>
             <span class="nav-pill" id="nav-saved-pill">0</span>
           </button>
@@ -206,7 +214,7 @@ async function main() {
           </div>
           <div class="target-picker-row" id="target-picker-row" hidden>
             <select id="target-stat-picker" aria-label="Choose target stat"></select>
-            <button type="button" class="target-picker-cancel" id="cancel-target-picker-btn" title="Cancel">×</button>
+            <button type="button" class="target-picker-cancel" id="cancel-target-picker-btn" title="Cancel">${svgIcon(CLOSE_X_ICON_BODY)}</button>
           </div>
           <div class="target-rows" id="target-rows"></div>
           <div class="target-empty-hint" id="target-empty-hint">No targets set — click + Add to steer stats.</div>
@@ -219,7 +227,7 @@ async function main() {
         </div>
 
         <button type="button" class="collapse-btn" id="collapse-btn" title="Collapse or expand sidebar">
-          <span class="collapse-icon">«</span>
+          <span class="collapse-icon">${svgIcon('<path d="m11 17-5-5 5-5"/><path d="m18 17-5-5 5-5"/>')}</span>
           <span class="collapse-label">Collapse sidebar</span>
         </button>
       </aside>
@@ -387,7 +395,7 @@ async function main() {
               />
               ${def.unit ? `<span class="target-row-unit">${def.unit}</span>` : ''}
             </div>
-            <button type="button" class="target-remove-btn" data-remove-target="${key}" title="Remove ${esc(def.label)}">×</button>
+            <button type="button" class="target-remove-btn" data-remove-target="${key}" title="Remove ${esc(def.label)}">${svgIcon(CLOSE_X_ICON_BODY)}</button>
           </div>
         `;
       })
@@ -628,7 +636,7 @@ async function main() {
                 class="btn btn-sm calcs-toggle-btn ${calcsPopoverOpen ? 'active' : ''}"
                 id="calcs-popover-btn"
                 aria-expanded="${calcsPopoverOpen}"
-              ><svg class="calcs-gear-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg><span>Calcs: ${esc(describeCalcMode(calcConfig))}</span></button>
+              >${svgIcon('<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>', 'calcs-gear-icon')}<span>Calcs: ${esc(describeCalcMode(calcConfig))}</span></button>
               <div class="calcs-popover ${calcsPopoverOpen ? '' : 'hidden'}" id="calcs-popover" role="dialog" aria-label="PoB Calcs and Temporary Buffs">
                 <div class="calcs-pop-head">
                   <div>
@@ -951,8 +959,8 @@ async function main() {
               ${grp.gems.map((gi, idx) => {
                 const rerollBtn = gi.gem.support
                   ? (isMandatoryTotemSupport(b.archetype, gi.gem.name)
-                    ? `<button type="button" class="gear-reroll-btn gem-reroll-btn" disabled title="Required by totem setup" aria-label="${esc(gi.gem.name)} required by totem setup">↻</button>`
-                    : `<button type="button" class="gear-reroll-btn gem-reroll-btn" data-reroll-grp="${gIdx}" data-reroll-gem="${idx}" title="Reroll ${esc(gi.gem.name)} for this build" aria-label="Reroll ${esc(gi.gem.name)}">↻</button>`)
+                    ? `<button type="button" class="gear-reroll-btn gem-reroll-btn" disabled title="Required by totem setup" aria-label="${esc(gi.gem.name)} required by totem setup">${svgIcon(REROLL_ICON_BODY)}</button>`
+                    : `<button type="button" class="gear-reroll-btn gem-reroll-btn" data-reroll-grp="${gIdx}" data-reroll-gem="${idx}" title="Reroll ${esc(gi.gem.name)} for this build" aria-label="Reroll ${esc(gi.gem.name)}">${svgIcon(REROLL_ICON_BODY)}</button>`)
                   : '';
                 return `
                   <div class="gem-row gem-row-hover" tabindex="0" data-grp="${gIdx}" data-gem="${idx}">
@@ -994,7 +1002,7 @@ async function main() {
               data-reroll-item="${item.id}"
               title="Reroll ${esc(slotLabel ?? item.slot)} for this build"
               aria-label="Reroll ${esc(slotLabel ?? item.slot)}"
-            >↻</button>
+            >${svgIcon(REROLL_ICON_BODY)}</button>
           </div>
         </div>
         <div class="item-meta-line">

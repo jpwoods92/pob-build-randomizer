@@ -234,9 +234,20 @@ body {
   width: 18px;
   height: 18px;
   flex-shrink: 0;
-  display: grid;
-  place-items: center;
-  font-size: 0.95rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.nav-icon svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+.nav-label {
+  line-height: 1.2;
 }
 
 .nav-pill {
@@ -442,8 +453,20 @@ input[type="range"] {
 }
 
 .collapse-icon {
-  display: inline-block;
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  flex-shrink: 0;
   transition: transform 0.2s ease;
+}
+
+.collapse-icon svg {
+  width: 14px;
+  height: 14px;
+  display: block;
 }
 
 .collapse-btn:hover {
@@ -1470,6 +1493,12 @@ input[type="range"] {
   transition: background 0.14s, color 0.14s, border-color 0.14s, transform 0.14s;
 }
 
+.gear-reroll-btn svg {
+  width: 13px;
+  height: 13px;
+  display: block;
+}
+
 .gear-reroll-btn:hover {
   background: var(--lime);
   color: #0f172a;
@@ -1823,6 +1852,13 @@ input[type="range"] {
   font-size: 0.9rem;
   line-height: 1;
   flex-shrink: 0;
+}
+
+.target-picker-cancel svg,
+.target-remove-btn svg {
+  width: 12px;
+  height: 12px;
+  display: block;
 }
 
 .target-picker-cancel:hover,
