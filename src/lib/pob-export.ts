@@ -143,3 +143,32 @@ export async function encodePobCode(xml: string): Promise<string> {
   const compressed = new Uint8Array(await new Response(cs.readable).arrayBuffer());
   return bytesToBase64(compressed).replace(/\+/g, '-').replace(/\//g, '_');
 }
+
+export function buildPoeWikiUrl(title: string): string {
+  const slug = title.trim().replace(/\s+/g, '_');
+  return `https://www.poewiki.net/wiki/${encodeURI(slug)}`;
+}
+
+const WIKI_GEM_ALIASES: Record<string, string> = {
+  'Multiple Projectiles': 'Lesser Multiple Projectiles Support',
+};
+
+export function getPoeWikiGemUrl(gem: { name: string; support: boolean }): string {
+  const alias = WIKI_GEM_ALIASES[gem.name];
+  if (alias) return buildPoeWikiUrl(alias);
+  const title = gem.support && !gem.name.endsWith(' Support')
+    ? `${gem.name} Support`
+    : gem.name;
+  return buildPoeWikiUrl(title);
+}
+
+export function getPoeWikiItemUrl(item: {
+  rarity: 'UNIQUE' | 'RARE' | 'MAGIC';
+  name: string;
+  baseName: string;
+}): string {
+  const title = item.rarity === 'UNIQUE'
+    ? item.name
+    : item.baseName.replace(/\s*\([^)]+\)\s*$/, '');
+  return buildPoeWikiUrl(title);
+}

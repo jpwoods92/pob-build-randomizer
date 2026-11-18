@@ -17,6 +17,7 @@ import {
 import { canSupportSkill, isMandatoryTotemSupport } from '../lib/skills.ts';
 import { extractKeystonesFromLines, isKeystoneNameAllowed } from '../lib/tree.ts';
 import { computeProjectedOffense } from '../lib/stats.ts';
+import { getPoeWikiGemUrl, getPoeWikiItemUrl } from '../lib/pob-export.ts';
 import type { BuildOptions } from '../lib/archetype.ts';
 import { parseGameVersionsLua } from '../../scripts/pob-version.mjs';
 import {
@@ -1029,4 +1030,43 @@ test('item-granted keystones are validated against build archetype and accounted
     }
   }
   assert.ok(testedTotemStatBoost, 'Expected to find a totem build without tree Ancestral Bond to verify item keystone DPS scaling');
+});
+
+test('getPoeWikiGemUrl and getPoeWikiItemUrl format PoE Wiki URLs for skills and items', () => {
+  assert.equal(
+    getPoeWikiGemUrl({ name: 'Lightning Tendrils', support: false }),
+    'https://www.poewiki.net/wiki/Lightning_Tendrils',
+  );
+  assert.equal(
+    getPoeWikiGemUrl({ name: 'Summon Raging Spirit of Enormity', support: false }),
+    'https://www.poewiki.net/wiki/Summon_Raging_Spirit_of_Enormity',
+  );
+  assert.equal(
+    getPoeWikiGemUrl({ name: 'Spell Echo', support: true }),
+    'https://www.poewiki.net/wiki/Spell_Echo_Support',
+  );
+  assert.equal(
+    getPoeWikiGemUrl({ name: 'Barrage Support', support: true }),
+    'https://www.poewiki.net/wiki/Barrage_Support',
+  );
+  assert.equal(
+    getPoeWikiGemUrl({ name: 'Multiple Projectiles', support: true }),
+    'https://www.poewiki.net/wiki/Lesser_Multiple_Projectiles_Support',
+  );
+  assert.equal(
+    getPoeWikiItemUrl({ rarity: 'UNIQUE', name: 'Dawnstrider', baseName: 'Vaal Greaves' }),
+    'https://www.poewiki.net/wiki/Dawnstrider',
+  );
+  assert.equal(
+    getPoeWikiItemUrl({ rarity: 'RARE', name: 'Havoc Pact', baseName: 'Convoking Wand' }),
+    'https://www.poewiki.net/wiki/Convoking_Wand',
+  );
+  assert.equal(
+    getPoeWikiItemUrl({ rarity: 'RARE', name: 'Pain Spiral', baseName: 'Two-Stone Ring (Fire/Cold)' }),
+    'https://www.poewiki.net/wiki/Two-Stone_Ring',
+  );
+  assert.equal(
+    getPoeWikiItemUrl({ rarity: 'MAGIC', name: 'Ample Jade Flask of the Curlew', baseName: 'Jade Flask' }),
+    'https://www.poewiki.net/wiki/Jade_Flask',
+  );
 });

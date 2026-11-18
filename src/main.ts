@@ -11,6 +11,7 @@ import {
   type GeneratedBuild,
 } from './lib/generator.ts';
 import { isMandatoryTotemSupport } from './lib/skills.ts';
+import { getPoeWikiGemUrl, getPoeWikiItemUrl } from './lib/pob-export.ts';
 import type {
   BuildOptions,
   BuildTargets,
@@ -898,9 +899,13 @@ async function main() {
     `;
   }
 
+  function openWikiInNewTab(url: string) {
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }
+
   function renderGearCard(item: GeneratedBuild['gear']['items'][number], slotLabel?: string): string {
     return `
-      <div class="item-card gear-item-card rarity-${item.rarity}">
+      <div class="item-card gear-item-card rarity-${item.rarity}" data-item-id="${item.id}">
         <div class="gear-item-head">
           <div class="gear-item-titles">
             <div class="item-name-${item.rarity}">${esc(item.name)}</div>
@@ -1310,6 +1315,13 @@ async function main() {
   viewDashEl.addEventListener('focusout', () => {
     gemTooltip.classList.add('hidden');
   });
+  viewDashEl.addEventListener('click', (e) => {
+    if (window.getSelection()?.toString()) return;
+    const itemRow = (e.target as HTMLElement).closest<HTMLElement>('[data-hover-item]');
+    if (!itemRow || !currentBuild) return;
+    const item = currentBuild.gear.items[Number(itemRow.dataset.hoverItem)];
+    if (item) openWikiInNewTab(getPoeWikiItemUrl(item));
+  });
 
   const showGemTooltipFor = (row: HTMLElement) => {
     if (!currentBuild) return;
@@ -1348,30 +1360,47 @@ async function main() {
   viewSkillsEl.addEventListener('focusout', () => {
     gemTooltip.classList.add('hidden');
   });
+  viewSkillsEl.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' || !currentBuild) return;
+    const targetEl = e.target as HTMLElement;
+    if (targetEl.closest('button[data-reroll-grp]')) return;
+    const row = targetEl.closest<HTMLElement>('.gem-row[data-grp][data-gem]');
+    if (!row) return;
+    const gi = currentBuild.skills.groups[Number(row.dataset.grp)]?.gems[Number(row.dataset.gem)];
+    if (gi) openWikiInNewTab(getPoeWikiGemUrl(gi.gem));
+  });
   viewSkillsEl.addEventListener('click', async (e) => {
     const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-reroll-grp]');
-    if (!btn || btn.disabled || !currentBuild) return;
-    e.stopPropagation();
-    gemTooltip.classList.add('hidden');
-    const gIdx = Number(btn.dataset.rerollGrp);
-    const gemIdx = Number(btn.dataset.rerollGem);
-    if (!Number.isFinite(gIdx) || !Number.isFinite(gemIdx)) return;
-    const key = `${gIdx}:${gemIdx}`;
-    const nextCount = (supportRerollCounts.get(key) ?? 0) + 1;
-    supportRerollCounts.set(key, nextCount);
-    btn.disabled = true;
-    try {
-      const next = await rerollBuildSupportGem(
-        data,
-        currentBuild,
-        gIdx,
-        gemIdx,
-        `${currentBuild.archetype.options.seed}|sup-${gIdx}-${gemIdx}|reroll-${nextCount}`,
-      );
-      applyBuildToUi(next, { preserveScroll: true });
-    } finally {
-      btn.disabled = false;
+    if (btn) {
+      if (btn.disabled || !currentBuild) return;
+      e.stopPropagation();
+      gemTooltip.classList.add('hidden');
+      const gIdx = Number(btn.dataset.rerollGrp);
+      const gemIdx = Number(btn.dataset.rerollGem);
+      if (!Number.isFinite(gIdx) || !Number.isFinite(gemIdx)) return;
+      const key = `${gIdx}:${gemIdx}`;
+      const nextCount = (supportRerollCounts.get(key) ?? 0) + 1;
+      supportRerollCounts.set(key, nextCount);
+      btn.disabled = true;
+      try {
+        const next = await rerollBuildSupportGem(
+          data,
+          currentBuild,
+          gIdx,
+          gemIdx,
+          `${currentBuild.archetype.options.seed}|sup-${gIdx}-${gemIdx}|reroll-${nextCount}`,
+        );
+        applyBuildToUi(next, { preserveScroll: true });
+      } finally {
+        btn.disabled = false;
+      }
+      return;
     }
+    if (window.getSelection()?.toString() || !currentBuild) return;
+    const row = (e.target as HTMLElement).closest<HTMLElement>('.gem-row[data-grp][data-gem]');
+    if (!row) return;
+    const gi = currentBuild.skills.groups[Number(row.dataset.grp)]?.gems[Number(row.dataset.gem)];
+    if (gi) openWikiInNewTab(getPoeWikiGemUrl(gi.gem));
   });
 
   document.getElementById('tree-side')!.addEventListener('click', (e) => {
@@ -1502,23 +1531,31 @@ async function main() {
 
   document.getElementById('view-gear')!.addEventListener('click', async (e) => {
     const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-reroll-item]');
-    if (!btn || !currentBuild) return;
-    const itemId = Number(btn.dataset.rerollItem);
-    if (!Number.isFinite(itemId)) return;
-    const nextCount = (itemRerollCounts.get(itemId) ?? 0) + 1;
-    itemRerollCounts.set(itemId, nextCount);
-    btn.disabled = true;
-    try {
-      const next = await rerollBuildItem(
-        data,
-        currentBuild,
-        itemId,
-        `${currentBuild.archetype.options.seed}|item-${itemId}|reroll-${nextCount}`,
-      );
-      applyBuildToUi(next, { preserveScroll: true });
-    } finally {
-      btn.disabled = false;
+    if (btn) {
+      if (!currentBuild) return;
+      const itemId = Number(btn.dataset.rerollItem);
+      if (!Number.isFinite(itemId)) return;
+      const nextCount = (itemRerollCounts.get(itemId) ?? 0) + 1;
+      itemRerollCounts.set(itemId, nextCount);
+      btn.disabled = true;
+      try {
+        const next = await rerollBuildItem(
+          data,
+          currentBuild,
+          itemId,
+          `${currentBuild.archetype.options.seed}|item-${itemId}|reroll-${nextCount}`,
+        );
+        applyBuildToUi(next, { preserveScroll: true });
+      } finally {
+        btn.disabled = false;
+      }
+      return;
     }
+    if (window.getSelection()?.toString() || !currentBuild) return;
+    const card = (e.target as HTMLElement).closest<HTMLElement>('.gear-item-card[data-item-id]');
+    if (!card) return;
+    const item = currentBuild.gear.items.find((it) => it.id === Number(card.dataset.itemId));
+    if (item) openWikiInNewTab(getPoeWikiItemUrl(item));
   });
 
   document.getElementById('league-seg')!.addEventListener('click', (e) => {

@@ -1245,7 +1245,7 @@ input[type="range"] {
 }
 
 .gem-row-hover {
-  cursor: help;
+  cursor: pointer;
   transition: border-color 0.14s, background 0.14s;
 }
 
@@ -1257,7 +1257,7 @@ input[type="range"] {
 }
 
 .feed-row-hover {
-  cursor: help;
+  cursor: pointer;
   transition: border-color 0.14s, background 0.14s, transform 0.12s;
 }
 
@@ -1427,6 +1427,15 @@ input[type="range"] {
   border-radius: 12px;
   gap: 5px;
   min-width: 0;
+}
+
+.gear-item-card:not(.gear-slot-empty) {
+  cursor: pointer;
+  transition: border-color 0.14s, box-shadow 0.14s;
+}
+
+.gear-item-card:not(.gear-slot-empty):hover {
+  border-color: var(--border-strong);
 }
 
 .gear-item-head {
