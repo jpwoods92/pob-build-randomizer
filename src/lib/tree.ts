@@ -262,13 +262,48 @@ export function scoreStatsText(stats: string[] | undefined, arch: BuildArchetype
   return score;
 }
 
-function isKeystoneAllowed(
-  node: TreeNode,
+export const ALL_KEYSTONE_NAMES = [
+  'Iron Reflexes', 'Vaal Pact', 'Wind Dancer', 'Chaos Inoculation', 'Bitter Frost',
+  'Iron Grip', 'Bloodsoaked Blade', 'Crimson Dance', 'Minion Instability', 'The Agnostic',
+  'Arsenal of Vengeance', 'Eternal Youth', 'Elemental Overload', 'Call to Arms', 'Perfect Agony',
+  'Conduit', 'Wicked Ward', 'Ghost Reaver', 'Imbalanced Guard', 'Pain Attunement',
+  'Resolute Technique', 'Mind Over Matter', 'Ghost Dance', 'Elemental Equilibrium', 'Glancing Blows',
+  'Roiling Tempest', 'Unwavering Stance', 'Ancestral Bond', 'Point Blank', 'Runebinder',
+  'Hex Master', 'Avatar of Fire', 'Necromantic Aegis', 'Supreme Ego', 'Iron Will',
+  'Versatile Combatant', 'Acrobatics', 'Arrow Dancing', 'Eldritch Battery', 'Magebane',
+  'The Impaler', 'Blood Magic', 'Divine Shield', 'Solipsism', 'Lethe Shade',
+  "Zealot's Oath", 'Precise Technique', 'Voracious Flame',
+] as const;
+
+/** Extract player keystones granted by item/mod lines (ignoring minion-only or socketed-gem grants). */
+export function extractKeystonesFromLines(lines: string[]): string[] {
+  const found = new Set<string>();
+  for (const raw of lines) {
+    const clean = raw.replace(/\{[^}]+\}/g, '').replace(/\s*\(crafted\)\s*$/i, '').trim();
+    if (/^(?:summoned|raised|minions|socketed gems)\b/i.test(clean)) continue;
+    if (/supported by .* support/i.test(clean)) continue;
+    for (const ks of ALL_KEYSTONE_NAMES) {
+      const esc = ks.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      if (
+        new RegExp(`^${esc}$`, 'i').test(clean)
+        || new RegExp(`^(?:grants|you have) ${esc}\\b`, 'i').test(clean)
+        || new RegExp(`\\bgain ${esc}\\b`, 'i').test(clean)
+        || new RegExp(`^${esc} (?:during effect|while )`, 'i').test(clean)
+      ) {
+        found.add(ks);
+      }
+    }
+  }
+  return [...found];
+}
+
+export function isKeystoneNameAllowed(
+  name: string,
   arch: BuildArchetype,
   manaReservedPct = 80,
   allocatedKeystones?: Set<string>,
+  opts?: { fromItem?: boolean; isEvasionBuild?: boolean },
 ): boolean {
-  const name = node.n;
   const isHC = arch.options.leagueMode === 'hardcore';
   const isSpellSkill = arch.damageStyle === 'spell' || (arch.damageStyle === 'totem' && arch.mainSkill.types.includes('Spell'));
   const isAttackSkill = arch.damageStyle === 'attack' || arch.mainSkill.types.includes('Attack');
@@ -353,9 +388,32 @@ function isKeystoneAllowed(
       return !isHC && arch.elements.length === 1 && arch.elements[0] === 'cold' && arch.damageStyle !== 'minion';
     case 'Roiling Tempest':
       return !isHC && arch.elements.length === 1 && arch.elements[0] === 'lightning' && arch.damageStyle !== 'minion';
+    case 'Unwavering Stance':
+      return Boolean(opts?.fromItem)
+        && !opts?.isEvasionBuild
+        && arch.defenseStyle === 'life'
+        && arch.primaryAttr === 'str'
+        && (arch.options.targets?.minEvasion ?? 0) === 0
+        && (arch.options.targets?.minEvadePct ?? 0) === 0
+        && (arch.options.targets?.minDodgePct ?? 0) === 0
+        && !allocatedKeystones?.has('Acrobatics');
+    case 'Vaal Pact':
+      return Boolean(opts?.fromItem) && !isHC && arch.defenseStyle === 'life' && arch.damageStyle === 'attack';
+    case 'Conduit':
+    case 'Call to Arms':
+      return Boolean(opts?.fromItem);
     default:
       return false;
   }
+}
+
+function isKeystoneAllowed(
+  node: TreeNode,
+  arch: BuildArchetype,
+  manaReservedPct = 80,
+  allocatedKeystones?: Set<string>,
+): boolean {
+  return isKeystoneNameAllowed(node.n, arch, manaReservedPct, allocatedKeystones);
 }
 
 const KEYSTONE_WEIGHT: Record<string, number> = {

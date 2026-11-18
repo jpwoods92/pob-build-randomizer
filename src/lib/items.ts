@@ -1,6 +1,6 @@
 import type { BaseData, GameData, ModData, UniqueData } from './types.ts';
 import type { BuildArchetype } from './archetype.ts';
-import type { GeneratedTree } from './tree.ts';
+import { extractKeystonesFromLines, isKeystoneNameAllowed, type GeneratedTree } from './tree.ts';
 import type { GeneratedSkills } from './skills.ts';
 import type { Rng } from './rng.ts';
 
@@ -487,12 +487,40 @@ function pickBestBase(
   return picked;
 }
 
+function getUniqueActiveVariantLines(u: UniqueData): {
+  variantNum?: number;
+  implicits: string[];
+  explicits: string[];
+  cleanLines: string[];
+} {
+  let variantNum: number | undefined;
+  if (u.variants && u.variants.length > 0) {
+    const curIdx = u.variants.findIndex((v) => v === 'Current');
+    variantNum = curIdx >= 0 ? curIdx + 1 : u.variants.length;
+  }
+  const byVariant = (lines: string[]) =>
+    lines.filter((l) => {
+      const vm = /^\{variant:([\d,]+)\}/.exec(l);
+      if (!vm || !variantNum) return true;
+      return vm[1].split(',').map(Number).includes(variantNum);
+    });
+  const implicits = byVariant(u.implicits);
+  const explicits = byVariant(u.explicits);
+  const cleanLines = [...implicits, ...explicits].map((l) => l.replace(/\{[^}]+\}/g, '').trim());
+  return { variantNum, implicits, explicits, cleanLines };
+}
+
 function isUniqueSuitable(
   u: UniqueData,
   arch: BuildArchetype,
   slotTypes: string[],
   base?: BaseData,
   targetArmourSubType?: ArmourSubType,
+  opts?: {
+    manaReservedPct?: number;
+    effectiveKeystones?: Set<string>;
+    isEvasionBuild?: boolean;
+  },
 ): boolean {
   if (!slotTypes.includes(u.type)) return false;
   if (targetArmourSubType && ARMOUR_SLOTS.has(u.type) && base?.subType !== targetArmourSubType) return false;
@@ -508,28 +536,51 @@ function isUniqueSuitable(
       return false;
     }
   }
+  const { cleanLines } = getUniqueActiveVariantLines(u);
+  const fullTxt = cleanLines.join(' ').toLowerCase();
   if (arch.options.leagueMode === 'hardcore') {
     if (HC_RISKY_UNIQUE.test(u.name)) return false;
-    const rawTxt = [...u.implicits, ...u.explicits].join(' ').toLowerCase();
     if (
-      /damage(?: from hits)? taken as physical/.test(rawTxt)
-      || /-\(?[\d-]+% to (?:all )?maximum .* resistanc/.test(rawTxt)
-      || /your maximum resistances are \(?(?:[0-6]\d|7[0-4])/.test(rawTxt)
-      || /elemental resistances are zero/.test(rawTxt)
+      /damage(?: from hits)? taken as physical/.test(fullTxt)
+      || /-\(?[\d-]+% to (?:all )?maximum .* resistanc/.test(fullTxt)
+      || /your maximum resistances are \(?(?:[0-6]\d|7[0-4])/.test(fullTxt)
+      || /elemental resistances are zero/.test(fullTxt)
     ) return false;
   }
   if (u.extra?.some((e) => /Limited to:/i.test(e))) return false;
-  const fullTxt = [...u.implicits, ...u.explicits].join(' ').toLowerCase();
   if (arch.defenseStyle === 'es' && /cannot have energy shield|blood magic/.test(fullTxt)) return false;
   if (arch.defenseStyle === 'life' && /chaos inoculation|maximum life becomes 1/.test(fullTxt)) return false;
   if (arch.critMode === 'crit' && /never deal critical strikes|critical strikes deal no damage/.test(fullTxt)) return false;
   if (arch.elements.includes('physical') && /deal no physical damage/.test(fullTxt)) return false;
   if (arch.elements.some((e) => e === 'fire' || e === 'cold' || e === 'lightning') && /deal no elemental damage/.test(fullTxt)) return false;
   if (arch.elements.includes('chaos') && /deal no chaos damage/.test(fullTxt)) return false;
+  if (/deal no non-lightning damage/.test(fullTxt) && !(arch.elements.length === 1 && arch.elements[0] === 'lightning')) return false;
+  if (/deal no non-cold damage/.test(fullTxt) && !(arch.elements.length === 1 && arch.elements[0] === 'cold')) return false;
+  if (/deal no non-fire damage/.test(fullTxt) && !(arch.elements.length === 1 && arch.elements[0] === 'fire')) return false;
+  if (/deal no non-physical damage/.test(fullTxt) && !(arch.elements.length === 1 && arch.elements[0] === 'physical')) return false;
+  if (/deal no non-elemental damage/.test(fullTxt) && (arch.elements.includes('physical') || arch.elements.includes('chaos'))) return false;
+  if (/deal no physical or elemental damage/.test(fullTxt) && !(arch.elements.length === 1 && arch.elements[0] === 'chaos')) return false;
+  if (arch.elements.includes('fire') && /deal no fire damage/.test(fullTxt)) return false;
+  if (arch.elements.includes('cold') && /deal no cold damage/.test(fullTxt)) return false;
+  if (arch.elements.includes('lightning') && /deal no lightning damage/.test(fullTxt)) return false;
+  if (/summoned skeletons have avatar of fire/.test(fullTxt) && !(arch.damageStyle === 'minion' && /skeleton/i.test(arch.mainSkill.name) && arch.elements.includes('fire'))) return false;
+  if (/raised zombies have avatar of fire/.test(fullTxt) && !(arch.damageStyle === 'minion' && /zombie/i.test(arch.mainSkill.name) && arch.elements.includes('fire'))) return false;
   if (/cannot use|deal no .* damage/.test(fullTxt) && /deal no (non-)?chaos|deal no elemental/.test(fullTxt)) return false;
   if (/your auras do not affect/.test(fullTxt)) return false;
   if (arch.damageStyle === 'minion' && !arch.mainSkill.types.includes('Attack') && base?.weapon && !/minion/i.test(fullTxt)) {
     return false;
+  }
+
+  const grantedKeystones = extractKeystonesFromLines(cleanLines);
+  for (const ks of grantedKeystones) {
+    if (
+      !isKeystoneNameAllowed(ks, arch, opts?.manaReservedPct ?? 80, opts?.effectiveKeystones, {
+        fromItem: true,
+        isEvasionBuild: opts?.isEvasionBuild,
+      })
+    ) {
+      return false;
+    }
   }
   return true;
 }
@@ -540,8 +591,10 @@ function scoreUniqueForArchetype(
   base: BaseData | undefined,
   hasCI: boolean,
   maxRes: { fire: number; cold: number; lightning: number; chaos: number },
+  opts?: { effectiveKeystones?: Set<string>; manaReservedPct?: number; isEvasionBuild?: boolean },
 ): number {
-  const txt = [...u.implicits, ...u.explicits].join(' ').toLowerCase();
+  const { cleanLines } = getUniqueActiveVariantLines(u);
+  const txt = cleanLines.join(' ').toLowerCase();
   const isHC = arch.options.leagueMode === 'hardcore';
   const isTrade = arch.options.economy === 'trade';
   const reqLvl = u.levelReq ?? base?.req.level ?? 1;
@@ -603,6 +656,19 @@ function scoreUniqueForArchetype(
       if (txt.includes(el)) s += 6 * offMult;
     }
   }
+  const grantedKeystones = extractKeystonesFromLines(cleanLines);
+  for (const ks of grantedKeystones) {
+    if (opts?.effectiveKeystones?.has(ks)) {
+      s *= 0.85;
+    } else if (
+      isKeystoneNameAllowed(ks, arch, opts?.manaReservedPct ?? 80, opts?.effectiveKeystones, {
+        fromItem: true,
+        isEvasionBuild: opts?.isEvasionBuild,
+      })
+    ) {
+      s += 16 * offMult;
+    }
+  }
   if (/level of all .* gems|movement speed/.test(txt)) s += 9 * (isHC ? 1 : 1.4);
   return s;
 }
@@ -618,23 +684,12 @@ function buildUniqueItem(
 ): GeneratedItem {
   const isTrade = arch.options.economy === 'trade';
   const roll = isTrade ? rng.range(0.55, 0.95) : rng.range(0.3, 0.75);
-  let variantNum: number | undefined;
-  if (u.variants && u.variants.length > 0) {
-    const curIdx = u.variants.findIndex((v) => v === 'Current');
-    variantNum = curIdx >= 0 ? curIdx + 1 : u.variants.length;
-  }
+  const { variantNum, implicits: rawImp, explicits: rawExp } = getUniqueActiveVariantLines(u);
+  const resolveLines = (lines: string[]) =>
+    lines.map((l) => applyRange(l.replace(/\{[^}]+\}/g, ''), roll));
 
-  const filterVariantLines = (lines: string[]) =>
-    lines
-      .filter((l) => {
-        const vm = /^\{variant:([\d,]+)\}/.exec(l);
-        if (!vm || !variantNum) return true;
-        return vm[1].split(',').map(Number).includes(variantNum);
-      })
-      .map((l) => applyRange(l.replace(/\{[^}]+\}/g, ''), roll));
-
-  const implicits = filterVariantLines(u.implicits);
-  const explicits = filterVariantLines(u.explicits);
+  const implicits = resolveLines(rawImp);
+  const explicits = resolveLines(rawExp);
 
   const rawLines: string[] = [
     'Rarity: UNIQUE',
@@ -1569,6 +1624,12 @@ export function generateGear(
     [...new Set([...priorityUniqueSlots, ...candidateUniqueSlots])].slice(0, Math.min(maxUniqueSlots, Math.max(targetUniques, priorityUniqueSlots.length))),
   );
   const usedUniqueNames = new Set<string>();
+  const effectiveKeystones = new Set<string>(tree.summary.keystones);
+  const uniqueCheckOpts = {
+    manaReservedPct: skills.manaReservedPct,
+    effectiveKeystones,
+    isEvasionBuild,
+  };
 
   const slotDefs = getSlotDefsForArchetype(arch);
 
@@ -1597,8 +1658,8 @@ export function generateGear(
 
     if (!item && uniqueSlots.has(def.slot)) {
       const pool = data.uniques
-        .filter((u) => !usedUniqueNames.has(u.name) && isUniqueSuitable(u, arch, def.types, data.bases[u.base], targetArmourSubType))
-        .map((u) => ({ u, score: scoreUniqueForArchetype(u, arch, data.bases[u.base], hasCI, maxRes) }))
+        .filter((u) => !usedUniqueNames.has(u.name) && isUniqueSuitable(u, arch, def.types, data.bases[u.base], targetArmourSubType, uniqueCheckOpts))
+        .map((u) => ({ u, score: scoreUniqueForArchetype(u, arch, data.bases[u.base], hasCI, maxRes, uniqueCheckOpts) }))
         .sort((a, b) => b.score - a.score)
         .slice(0, isHC ? 8 : 12);
       if (pool.length > 0) {
@@ -1619,6 +1680,10 @@ export function generateGear(
         isEvasionBuild,
       });
       item = buildRareItem(id, def.slot, baseName, base, sockets, data, arch, needs, hasCI, maxRes, rng, { isEvasionBuild });
+    }
+
+    for (const ks of extractKeystonesFromLines([...item.implicits, ...item.explicits])) {
+      effectiveKeystones.add(ks);
     }
 
     tallyModsStats([...item.implicits, ...item.explicits], resists, attrs, maxRes);
@@ -1824,9 +1889,13 @@ export function rerollGearItem(
   const otherItems = gear.items.filter((it) => it.id !== itemId);
   const reqAttrs = { ...skills.maxReq };
   const otherUniqueNames = new Set<string>();
+  const effectiveKeystones = new Set<string>(tree.summary.keystones);
   for (const it of otherItems) {
     if (it.rarity === 'UNIQUE') otherUniqueNames.add(it.name);
     if (it.base.type === 'Flask' || it.base.subType === 'Cluster') continue;
+    for (const ks of extractKeystonesFromLines([...it.implicits, ...it.explicits])) {
+      effectiveKeystones.add(ks);
+    }
     tallyModsStats([...it.implicits, ...it.explicits], resists, attrs, maxRes);
     currentSuppress += countSuppressLines([...it.implicits, ...it.explicits]);
     if (it.base.req.str) reqAttrs.str = Math.max(reqAttrs.str, it.base.req.str);
@@ -1881,9 +1950,14 @@ export function rerollGearItem(
     const types = slotDef?.types ?? [oldItem.base.type];
     const sockets = oldItem.sockets ?? skills.slotSockets[oldItem.slot] ?? slotDef?.defaultSockets;
 
+    const uniqueCheckOpts = {
+      manaReservedPct: skills.manaReservedPct,
+      effectiveKeystones,
+      isEvasionBuild,
+    };
     const uniquePool = data.uniques
-      .filter((u) => !otherUniqueNames.has(u.name) && isUniqueSuitable(u, arch, types, data.bases[u.base], targetArmourSubType))
-      .map((u) => ({ u, score: scoreUniqueForArchetype(u, arch, data.bases[u.base], hasCI, maxRes) }))
+      .filter((u) => !otherUniqueNames.has(u.name) && isUniqueSuitable(u, arch, types, data.bases[u.base], targetArmourSubType, uniqueCheckOpts))
+      .map((u) => ({ u, score: scoreUniqueForArchetype(u, arch, data.bases[u.base], hasCI, maxRes, uniqueCheckOpts) }))
       .sort((a, b) => b.score - a.score)
       .slice(0, isHC ? 8 : 12);
 

@@ -15,6 +15,8 @@ import {
   serializeTargetsKey,
 } from '../lib/generator.ts';
 import { canSupportSkill, isMandatoryTotemSupport } from '../lib/skills.ts';
+import { extractKeystonesFromLines, isKeystoneNameAllowed } from '../lib/tree.ts';
+import { computeProjectedOffense } from '../lib/stats.ts';
 import type { BuildOptions } from '../lib/archetype.ts';
 import { parseGameVersionsLua } from '../../scripts/pob-version.mjs';
 import {
@@ -949,4 +951,82 @@ test('rerollBuildSupportGem rerolls main and utility support gems cleanly and up
     const untouched = await rerollBuildSupportGem(data, totemBuild, 0, mandatoryIdx, 'sup-totem-lock');
     assert.equal(untouched.skills.groups[0].gems[mandatoryIdx].gem.name, totemBuild.skills.groups[0].gems[mandatoryIdx].gem.name);
   }
+});
+
+test('item-granted keystones are validated against build archetype and accounted for in stats', async () => {
+  const activeLinesForUnique = (name: string) => {
+    const u = data.uniques.find((x) => x.name === name);
+    assert.ok(u, `Missing unique ${name}`);
+    let variantNum: number | undefined;
+    if (u.variants && u.variants.length > 0) {
+      const curIdx = u.variants.findIndex((v) => v === 'Current');
+      variantNum = curIdx >= 0 ? curIdx + 1 : u.variants.length;
+    }
+    return [...u.implicits, ...u.explicits].filter((l) => {
+      const vm = /^\{variant:([\d,]+)\}/.exec(l);
+      if (!vm || !variantNum) return true;
+      return vm[1].split(',').map(Number).includes(variantNum);
+    });
+  };
+
+  assert.deepEqual(extractKeystonesFromLines(activeLinesForUnique('Dawnstrider')), ['Ancestral Bond']);
+  assert.deepEqual(extractKeystonesFromLines(activeLinesForUnique("Wilma's Requital")), ['Ancestral Bond']);
+  assert.deepEqual(extractKeystonesFromLines(activeLinesForUnique("Xoph's Blood")), ['Avatar of Fire']);
+  assert.ok(!extractKeystonesFromLines(activeLinesForUnique("Hyrri's Ire")).includes('Acrobatics'));
+  assert.ok(!extractKeystonesFromLines(activeLinesForUnique('The Covenant')).includes('Blood Magic'));
+
+  const styles = ['attack', 'spell', 'minion', 'dot', 'totem'] as const;
+  for (let i = 0; i < 30; i++) {
+    const style = styles[i % styles.length];
+    const b = await generateBuild(data, baseOptions({
+      seed: `item-ks-${i}`,
+      damageStyle: style,
+      classId: (i % 7) as 0 | 1 | 2 | 3 | 4 | 5 | 6,
+      economy: 'trade',
+    }));
+    const treeKs = new Set(b.tree.summary.keystones);
+    for (const it of b.gear.items) {
+      const granted = extractKeystonesFromLines([...it.implicits, ...it.explicits]);
+      if (b.archetype.damageStyle !== 'totem') {
+        assert.ok(
+          it.name !== 'Dawnstrider' && it.name !== "Wilma's Requital",
+          `Non-totem build ${b.archetype.title} must not equip Ancestral Bond unique ${it.name}`,
+        );
+      }
+      for (const ks of granted) {
+        assert.ok(
+          isKeystoneNameAllowed(ks, b.archetype, b.skills.manaReservedPct, treeKs, { fromItem: true }),
+          `Unique ${it.name} granted disallowed keystone ${ks} for ${b.archetype.title} (${b.archetype.damageStyle})`,
+        );
+      }
+    }
+  }
+
+  // Verify item-granted Ancestral Bond increases projected Totem DPS when not allocated on tree
+  let testedTotemStatBoost = false;
+  for (let i = 0; i < 20; i++) {
+    const tb = await generateBuild(data, baseOptions({
+      seed: `totem-item-stat-${i}`,
+      damageStyle: 'totem',
+      economy: 'trade',
+    }));
+    const boots = tb.gear.items.find((it) => it.slot === 'Boots');
+    if (boots && !tb.tree.summary.keystones.includes('Ancestral Bond') && !boots.explicits.includes('Ancestral Bond')) {
+      const withAncestralBoots = {
+        ...tb.gear,
+        items: tb.gear.items.map((it) =>
+          it.id === boots.id ? { ...it, explicits: [...it.explicits, 'Ancestral Bond'] } : it,
+        ),
+      };
+      const baseOff = computeProjectedOffense(data, tb.archetype, tb.tree, tb.skills, tb.gear);
+      const itemKsOff = computeProjectedOffense(data, tb.archetype, tb.tree, tb.skills, withAncestralBoots);
+      assert.ok(
+        itemKsOff.totalDps > baseOff.totalDps,
+        `Expected item-granted Ancestral Bond to increase totem DPS (${baseOff.totalDps} -> ${itemKsOff.totalDps})`,
+      );
+      testedTotemStatBoost = true;
+      break;
+    }
+  }
+  assert.ok(testedTotemStatBoost, 'Expected to find a totem build without tree Ancestral Bond to verify item keystone DPS scaling');
 });

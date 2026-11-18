@@ -1,6 +1,6 @@
 import type { GameData } from './types.ts';
 import type { BuildArchetype } from './archetype.ts';
-import type { GeneratedTree } from './tree.ts';
+import { extractKeystonesFromLines, type GeneratedTree } from './tree.ts';
 import type { GeneratedSkills } from './skills.ts';
 import type { GeneratedGear } from './items.ts';
 
@@ -61,6 +61,27 @@ function collectTreeLines(data: GameData, tree: GeneratedTree): string[] {
   return lines;
 }
 
+function collectEffectiveKeystones(
+  data: GameData,
+  tree: GeneratedTree,
+  gear: GeneratedGear,
+): { keystones: Set<string>; extraKeystoneLines: string[] } {
+  const keystones = new Set<string>(tree.summary.keystones);
+  const extraKeystoneLines: string[] = [];
+  const keystoneNodes = Object.values(data.tree.nodes).filter((n) => n.t === 'keystone');
+  for (const it of gear.items) {
+    if (it.base.subType === 'Cluster') continue;
+    for (const ks of extractKeystonesFromLines([...it.implicits, ...it.explicits])) {
+      if (!keystones.has(ks)) {
+        keystones.add(ks);
+        const ksNode = keystoneNodes.find((n) => n.n === ks);
+        if (ksNode?.s) extraKeystoneLines.push(...ksNode.s);
+      }
+    }
+  }
+  return { keystones, extraKeystoneLines };
+}
+
 export function computeProjectedDefenses(
   data: GameData,
   arch: BuildArchetype,
@@ -68,8 +89,8 @@ export function computeProjectedDefenses(
   skills: GeneratedSkills,
   gear: GeneratedGear,
 ): ProjectedDefenses {
-  const treeLines = collectTreeLines(data, tree);
-  const keystones = new Set(tree.summary.keystones);
+  const { keystones, extraKeystoneLines } = collectEffectiveKeystones(data, tree, gear);
+  const treeLines = [...collectTreeLines(data, tree), ...extraKeystoneLines];
   const hasCI = keystones.has('Chaos Inoculation');
   const hasEB = keystones.has('Eldritch Battery');
   const hasIR = keystones.has('Iron Reflexes');
@@ -649,7 +670,8 @@ export function computeProjectedOffense(
   const supports = mainGroup ? mainGroup.gems.slice(1) : [];
   let skillLevel = mainGem?.level ?? 20;
 
-  const treeLines = collectTreeLines(data, tree);
+  const { keystones, extraKeystoneLines } = collectEffectiveKeystones(data, tree, gear);
+  const treeLines = [...collectTreeLines(data, tree), ...extraKeystoneLines];
   const gearLines: string[] = [];
   for (const item of gear.items) {
     if (item.base.type === 'Flask') continue;
@@ -657,7 +679,6 @@ export function computeProjectedOffense(
   }
   const allLines = [...treeLines, ...gearLines];
 
-  const keystones = new Set(tree.summary.keystones);
   const activeGemNames = new Set<string>();
   for (const grp of skills.groups) {
     for (const gi of grp.gems) activeGemNames.add(gi.gem.name);
