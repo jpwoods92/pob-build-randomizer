@@ -326,9 +326,26 @@ export async function generateBuild(data: GameData, options: BuildOptions): Prom
     }
   }
 
-  const xml = buildPobXml({ ...bestCandidate, data });
+  return finalizeGeneratedBuild(data, bestCandidate);
+}
+
+async function finalizeGeneratedBuild(
+  data: GameData,
+  core: {
+    archetype: BuildArchetype;
+    tree: GeneratedTree;
+    skills: GeneratedSkills;
+    gear: GeneratedGear;
+    defenses?: ProjectedDefenses;
+    offense?: ProjectedOffense;
+  },
+): Promise<GeneratedBuild> {
+  const defenses = core.defenses ?? computeProjectedDefenses(data, core.archetype, core.tree, core.skills, core.gear);
+  const offense = core.offense ?? computeProjectedOffense(data, core.archetype, core.tree, core.skills, core.gear);
+  const fullCore = { ...core, defenses, offense };
+  const xml = buildPobXml({ ...fullCore, data });
   const pobCode = await encodePobCode(xml);
-  return { ...bestCandidate, xml, pobCode };
+  return { ...fullCore, xml, pobCode };
 }
 
 export async function rerollBuildItem(
@@ -404,19 +421,12 @@ export async function rerollBuildItem(
     rng.fork('gear'),
     clusterReplacement,
   );
-  const defenses = computeProjectedDefenses(data, build.archetype, nextTree, build.skills, nextGear);
-  const offense = computeProjectedOffense(data, build.archetype, nextTree, build.skills, nextGear);
-  const nextCore = {
+  return finalizeGeneratedBuild(data, {
     archetype: build.archetype,
     tree: nextTree,
     skills: build.skills,
     gear: nextGear,
-    defenses,
-    offense,
-  };
-  const xml = buildPobXml({ ...nextCore, data });
-  const pobCode = await encodePobCode(xml);
-  return { ...nextCore, xml, pobCode };
+  });
 }
 
 export async function rerollBuildSupportGem(
@@ -451,17 +461,10 @@ export async function rerollBuildSupportGem(
     requiredAttributes: reqAttrs,
   };
 
-  const defenses = computeProjectedDefenses(data, build.archetype, build.tree, nextSkills, nextGear);
-  const offense = computeProjectedOffense(data, build.archetype, build.tree, nextSkills, nextGear);
-  const nextCore = {
+  return finalizeGeneratedBuild(data, {
     archetype: build.archetype,
     tree: build.tree,
     skills: nextSkills,
     gear: nextGear,
-    defenses,
-    offense,
-  };
-  const xml = buildPobXml({ ...nextCore, data });
-  const pobCode = await encodePobCode(xml);
-  return { ...nextCore, xml, pobCode };
+  });
 }

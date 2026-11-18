@@ -923,19 +923,6 @@ input[type="range"] {
 .badge-ssf { background: var(--ssf-bg); border-color: var(--ssf-border); color: var(--ssf-fg); }
 .badge-trade { background: var(--trade-bg); border-color: var(--trade-border); color: var(--trade-fg); }
 
-.meter-list {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 12px 18px;
-  margin-top: 16px;
-}
-
-@media (max-width: 640px) {
-  .meter-list {
-    grid-template-columns: 1fr;
-  }
-}
-
 .meter-item {
   display: flex;
   flex-direction: column;
@@ -962,24 +949,6 @@ input[type="range"] {
   border-radius: 999px;
 }
 
-.kpi-stack {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.kpi-tile {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 13px 16px;
-  box-shadow: var(--shadow);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 10px;
-}
-
 .kpi-label {
   font-size: 0.76rem;
   color: var(--muted);
@@ -1002,32 +971,6 @@ input[type="range"] {
   color: var(--lime-text);
   white-space: nowrap;
   flex-shrink: 0;
-}
-
-/* Radial Gauge */
-.gauge-wrap {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 6px 0;
-}
-
-.gauge-svg {
-  width: 200px;
-  height: 118px;
-  overflow: visible;
-}
-
-.gauge-num {
-  font-size: 1.55rem;
-  font-weight: 800;
-  fill: var(--text);
-}
-
-.gauge-sub {
-  font-size: 0.72rem;
-  fill: var(--muted);
 }
 
 /* Lists inside bento cards */
@@ -1250,8 +1193,7 @@ input[type="range"] {
 }
 
 /* Skills & Gear Grids */
-.skills-grid,
-.items-grid {
+.skills-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
   gap: 14px;
@@ -1314,8 +1256,7 @@ input[type="range"] {
   outline: none;
 }
 
-.feed-row-hover,
-.item-card-hover {
+.feed-row-hover {
   cursor: help;
   transition: border-color 0.14s, background 0.14s, transform 0.12s;
 }
@@ -1323,12 +1264,6 @@ input[type="range"] {
 .feed-row-hover:hover,
 .feed-row-hover:focus-visible {
   background: var(--surface-hover);
-  outline: none;
-}
-
-.item-card-hover:hover,
-.item-card-hover:focus-visible {
-  transform: translateY(-1px);
   outline: none;
 }
 

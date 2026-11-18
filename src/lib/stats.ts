@@ -1,6 +1,6 @@
 import type { GameData } from './types.ts';
 import type { BuildArchetype } from './archetype.ts';
-import { extractKeystonesFromLines, type GeneratedTree } from './tree.ts';
+import { collectAllocatedTreeLines, extractKeystonesFromLines, type GeneratedTree } from './tree.ts';
 import type { GeneratedSkills } from './skills.ts';
 import type { GeneratedGear } from './items.ts';
 
@@ -47,20 +47,6 @@ export interface ProjectedOffense {
   dpsMode: 'Hit DPS' | 'DoT DPS' | 'Totem DPS' | 'Minion DPS' | 'Trap/Mine DPS' | 'Support';
 }
 
-function collectTreeLines(data: GameData, tree: GeneratedTree): string[] {
-  const lines: string[] = [];
-  for (const id of tree.nodes) {
-    const n = tree.clusterNodes?.[id] ?? data.tree.nodes[id];
-    if (!n) continue;
-    if (n.s) lines.push(...n.s);
-    if (n.t === 'mastery' && tree.masteryEffects[id]) {
-      const eff = n.me?.find((m) => m.e === tree.masteryEffects[id]);
-      if (eff) lines.push(...eff.s);
-    }
-  }
-  return lines;
-}
-
 function collectEffectiveKeystones(
   data: GameData,
   tree: GeneratedTree,
@@ -90,7 +76,7 @@ export function computeProjectedDefenses(
   gear: GeneratedGear,
 ): ProjectedDefenses {
   const { keystones, extraKeystoneLines } = collectEffectiveKeystones(data, tree, gear);
-  const treeLines = [...collectTreeLines(data, tree), ...extraKeystoneLines];
+  const treeLines = [...collectAllocatedTreeLines(data, tree), ...extraKeystoneLines];
   const hasCI = keystones.has('Chaos Inoculation');
   const hasEB = keystones.has('Eldritch Battery');
   const hasIR = keystones.has('Iron Reflexes');
@@ -671,7 +657,7 @@ export function computeProjectedOffense(
   let skillLevel = mainGem?.level ?? 20;
 
   const { keystones, extraKeystoneLines } = collectEffectiveKeystones(data, tree, gear);
-  const treeLines = [...collectTreeLines(data, tree), ...extraKeystoneLines];
+  const treeLines = [...collectAllocatedTreeLines(data, tree), ...extraKeystoneLines];
   const gearLines: string[] = [];
   for (const item of gear.items) {
     if (item.base.type === 'Flask') continue;

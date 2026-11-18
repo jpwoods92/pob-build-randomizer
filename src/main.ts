@@ -487,6 +487,25 @@ async function main() {
     saveBuildBtn.classList.toggle('is-saved', isSaved);
   }
 
+  function applyBuildToUi(
+    build: GeneratedBuild,
+    opts?: { preserveScroll?: boolean; syncSaved?: boolean },
+  ) {
+    const ws = opts?.preserveScroll ? document.querySelector<HTMLElement>('.workspace') : null;
+    const prevScroll = ws?.scrollTop ?? 0;
+    currentBuild = build;
+    updateSidebarMeta(build);
+    if (opts?.syncSaved) updateSavedUiState();
+    renderDashboard(build);
+    renderTreeSide(build);
+    renderSkills(build);
+    renderGear(build);
+    renderExport(build);
+    if (opts?.syncSaved) renderSavedBuilds();
+    treeCanvas?.setBuildTree(build.tree);
+    if (ws) ws.scrollTop = prevScroll;
+  }
+
   async function regenerate() {
     seedInput.value = options.seed;
     itemRerollCounts.clear();
@@ -496,16 +515,7 @@ async function main() {
       targets: options.targets ? { ...options.targets } : undefined,
     };
     const build = await generateBuild(data, snapshot);
-    currentBuild = build;
-    updateSidebarMeta(build);
-    updateSavedUiState();
-    renderDashboard(build);
-    renderTreeSide(build);
-    renderSkills(build);
-    renderGear(build);
-    renderExport(build);
-    renderSavedBuilds();
-    treeCanvas?.setBuildTree(build.tree);
+    applyBuildToUi(build, { syncSaved: true });
   }
 
   function meterHtml(label: string, valText: string, pct: number, color: string): string {
@@ -1358,15 +1368,7 @@ async function main() {
         gemIdx,
         `${currentBuild.archetype.options.seed}|sup-${gIdx}-${gemIdx}|reroll-${nextCount}`,
       );
-      const ws = document.querySelector<HTMLElement>('.workspace');
-      const prevScroll = ws?.scrollTop ?? 0;
-      currentBuild = next;
-      updateSidebarMeta(next);
-      renderDashboard(next);
-      renderSkills(next);
-      renderGear(next);
-      renderExport(next);
-      if (ws) ws.scrollTop = prevScroll;
+      applyBuildToUi(next, { preserveScroll: true });
     } finally {
       btn.disabled = false;
     }
@@ -1513,16 +1515,7 @@ async function main() {
         itemId,
         `${currentBuild.archetype.options.seed}|item-${itemId}|reroll-${nextCount}`,
       );
-      const ws = document.querySelector<HTMLElement>('.workspace');
-      const prevScroll = ws?.scrollTop ?? 0;
-      currentBuild = next;
-      updateSidebarMeta(next);
-      renderDashboard(next);
-      renderTreeSide(next);
-      renderGear(next);
-      renderExport(next);
-      treeCanvas?.setBuildTree(next.tree);
-      if (ws) ws.scrollTop = prevScroll;
+      applyBuildToUi(next, { preserveScroll: true });
     } finally {
       btn.disabled = false;
     }

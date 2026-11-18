@@ -492,6 +492,44 @@ function shortestPathInSubgraph(
   return null;
 }
 
+function resolveParentSocketIdBits(
+  clusters: GameData['clusters'],
+  socketNodeId: number,
+): number | null {
+  const socketMeta = clusters.sockets[String(socketNodeId)];
+  if (!socketMeta) return null;
+  let parentIdBits = 0x10000;
+  if (socketMeta.size === 1 && socketMeta.parent) {
+    const parentMeta = clusters.sockets[String(socketMeta.parent)];
+    if (parentMeta?.size === 2) parentIdBits += parentMeta.index << 6;
+  } else if (socketMeta.size === 0 && socketMeta.parent) {
+    const medMeta = clusters.sockets[String(socketMeta.parent)];
+    const largeMeta = medMeta?.parent ? clusters.sockets[String(medMeta.parent)] : undefined;
+    if (largeMeta?.size === 2) parentIdBits += largeMeta.index << 6;
+    if (medMeta?.size === 1) parentIdBits += medMeta.index << 9;
+  }
+  return parentIdBits;
+}
+
+function allocatePathToTargets(
+  nodes: Record<number, TreeNode>,
+  allocated: Set<number>,
+  targetIds: number[],
+  maxBudget: number,
+  maxPathLen = Infinity,
+): number {
+  let spent = 0;
+  for (const tid of targetIds) {
+    const path = shortestPathInSubgraph(nodes, allocated, tid);
+    if (!path || path.length > maxPathLen || spent + path.length > maxBudget) continue;
+    for (const pid of path) {
+      allocated.add(pid);
+      spent++;
+    }
+  }
+  return spent;
+}
+
 export function allocateClusterJewelsForTree(
   data: GameData,
   arch: BuildArchetype,
@@ -541,33 +579,12 @@ export function allocateClusterJewelsForTree(
     remaining--;
     pointsSpent++;
 
-    // Sort notables/sockets in Large subgraph so front notables + sockets get allocated efficiently
-    const largeTargets = [
-      ...largeRoll.subgraph.notableIds.filter((id) => {
-        const p = shortestPathInSubgraph(largeRoll.subgraph.nodes, subAlloc, id);
-        return p !== null;
-      }),
-    ];
-
-    // Allocate front notable(s) + socket(s) cleanly within remaining budget
-    for (const targetSocketId of largeRoll.subgraph.socketIds) {
-      const path = shortestPathInSubgraph(largeRoll.subgraph.nodes, subAlloc, targetSocketId);
-      if (!path || path.length > remaining) continue;
-      for (const pid of path) {
-        subAlloc.add(pid);
-        remaining--;
-        pointsSpent++;
-      }
-    }
-    for (const targetNotId of largeTargets) {
-      const path = shortestPathInSubgraph(largeRoll.subgraph.nodes, subAlloc, targetNotId);
-      if (!path || path.length > remaining || path.length > 2) continue;
-      for (const pid of path) {
-        subAlloc.add(pid);
-        remaining--;
-        pointsSpent++;
-      }
-    }
+    const largeSockSpent = allocatePathToTargets(largeRoll.subgraph.nodes, subAlloc, largeRoll.subgraph.socketIds, remaining);
+    remaining -= largeSockSpent;
+    pointsSpent += largeSockSpent;
+    const largeNotSpent = allocatePathToTargets(largeRoll.subgraph.nodes, subAlloc, largeRoll.subgraph.notableIds, remaining, 2);
+    remaining -= largeNotSpent;
+    pointsSpent += largeNotSpent;
 
     const largeAllocated = [...subAlloc];
     largeRoll.jewel.allocatedNodeIds = largeAllocated;
@@ -614,24 +631,12 @@ export function allocateClusterJewelsForTree(
       remaining--;
       pointsSpent++;
 
-      for (const nid of childRoll.subgraph.notableIds) {
-        const path = shortestPathInSubgraph(childRoll.subgraph.nodes, childAlloc, nid);
-        if (!path || path.length > remaining) continue;
-        for (const pid of path) {
-          childAlloc.add(pid);
-          remaining--;
-          pointsSpent++;
-        }
-      }
-      for (const sid of childRoll.subgraph.socketIds) {
-        const path = shortestPathInSubgraph(childRoll.subgraph.nodes, childAlloc, sid);
-        if (!path || path.length > remaining) continue;
-        for (const pid of path) {
-          childAlloc.add(pid);
-          remaining--;
-          pointsSpent++;
-        }
-      }
+      const childNotSpent = allocatePathToTargets(childRoll.subgraph.nodes, childAlloc, childRoll.subgraph.notableIds, remaining);
+      remaining -= childNotSpent;
+      pointsSpent += childNotSpent;
+      const childSockSpent = allocatePathToTargets(childRoll.subgraph.nodes, childAlloc, childRoll.subgraph.socketIds, remaining);
+      remaining -= childSockSpent;
+      pointsSpent += childSockSpent;
 
       const childAllocatedIds = [...childAlloc];
       childRoll.jewel.allocatedNodeIds = childAllocatedIds;
@@ -659,15 +664,9 @@ export function allocateClusterJewelsForTree(
               const sAlloc = new Set<number>([smallRoll.subgraph.entranceId]);
               remaining--;
               pointsSpent++;
-              for (const snid of smallRoll.subgraph.notableIds) {
-                const path = shortestPathInSubgraph(smallRoll.subgraph.nodes, sAlloc, snid);
-                if (!path || path.length > remaining) continue;
-                for (const pid of path) {
-                  sAlloc.add(pid);
-                  remaining--;
-                  pointsSpent++;
-                }
-              }
+              const sNotSpent = allocatePathToTargets(smallRoll.subgraph.nodes, sAlloc, smallRoll.subgraph.notableIds, remaining);
+              remaining -= sNotSpent;
+              pointsSpent += sNotSpent;
               smallRoll.jewel.allocatedNodeIds = [...sAlloc];
               allocatedNodeIds.push(...sAlloc);
               clusterJewels.push(smallRoll.jewel);
@@ -705,19 +704,8 @@ export function rerollClusterJewelSocket(
   if (idx < 0) return null;
   const oldCj = clusterJewels[idx];
   const socketMeta = data.clusters.sockets[String(socketNodeId)];
-  if (!socketMeta) return null;
-
-  // Determine exact parent idBits matching BuildSubgraph bit encoding
-  let parentIdBits = 0x10000;
-  if (socketMeta.size === 1 && socketMeta.parent) {
-    const parentMeta = data.clusters.sockets[String(socketMeta.parent)];
-    if (parentMeta?.size === 2) parentIdBits += parentMeta.index << 6;
-  } else if (socketMeta.size === 0 && socketMeta.parent) {
-    const medMeta = data.clusters.sockets[String(socketMeta.parent)];
-    const largeMeta = medMeta?.parent ? data.clusters.sockets[String(medMeta.parent)] : undefined;
-    if (largeMeta?.size === 2) parentIdBits += largeMeta.index << 6;
-    if (medMeta?.size === 1) parentIdBits += medMeta.index << 9;
-  }
+  const parentIdBits = resolveParentSocketIdBits(data.clusters, socketNodeId);
+  if (!socketMeta || parentIdBits === null) return null;
 
   const rolled = rollOneClusterJewel(
     data,
@@ -760,16 +748,8 @@ export function rerollClusterJewelSocket(
   const occupiedChildSockets = rolled.subgraph.socketIds.filter((sid) =>
     clusterJewels.some((c, ci) => ci !== idx && c.socketNodeId === sid) || allTreeNodes.includes(sid),
   );
-  for (const sid of occupiedChildSockets) {
-    const path = shortestPathInSubgraph(rolled.subgraph.nodes, subAlloc, sid);
-    if (!path || spent + path.length > maxSpend) continue;
-    for (const pid of path) { subAlloc.add(pid); spent++; }
-  }
-  for (const nid of rolled.subgraph.notableIds) {
-    const path = shortestPathInSubgraph(rolled.subgraph.nodes, subAlloc, nid);
-    if (!path || path.length > 2 || spent + path.length > maxSpend) continue;
-    for (const pid of path) { subAlloc.add(pid); spent++; }
-  }
+  spent += allocatePathToTargets(rolled.subgraph.nodes, subAlloc, occupiedChildSockets, maxSpend - spent);
+  spent += allocatePathToTargets(rolled.subgraph.nodes, subAlloc, rolled.subgraph.notableIds, maxSpend - spent, 2);
 
   rolled.jewel.allocatedNodeIds = [...subAlloc];
   const nextJewels = clusterJewels.map((c, ci) => (ci === idx ? rolled.jewel : c));

@@ -873,30 +873,11 @@ function buildRareItem(
   }
 
   const name = `${rng.pick(RARE_FIRST)} ${rng.pick(RARE_SECOND)}`;
-  const implicits = base.implicit ? [applyRange(base.implicit, rollRange())] : [];
-  const explicits = [
-    ...prefixes.flatMap((p) => p.resolvedLines),
-    ...suffixes.flatMap((s) => s.resolvedLines),
-    ...(craftedMod ? [`${craftedMod} (crafted)`] : []),
-  ];
-
+  const implicitRange = base.implicit ? rollRange() : 0.75;
+  const implicits = base.implicit ? [applyRange(base.implicit, implicitRange)] : [];
   const hasQuality = !opts.isJewel && !['Ring', 'Amulet', 'Belt', 'Quiver'].includes(base.type);
-  const rawLines: string[] = [
-    'Rarity: RARE',
-    name,
-    baseName,
-    'Crafted: true',
-    ...prefixes.map((p) => `Prefix: {range:${p.range.toFixed(3)}}${p.mod.id}`),
-    ...suffixes.map((s) => `Suffix: {range:${s.range.toFixed(3)}}${s.mod.id}`),
-    `Item Level: ${ilvl}`,
-  ];
-  if (hasQuality) rawLines.push('Quality: 20');
-  if (sockets) rawLines.push(`Sockets: ${sockets}`);
-  rawLines.push(`Implicits: ${implicits.length}`);
-  if (base.implicit) rawLines.push(`{range:${rollRange().toFixed(3)}}${base.implicit}`);
-  if (craftedMod) rawLines.push(`{crafted}${craftedMod}`);
 
-  return {
+  const item: GeneratedItem = {
     id,
     slot,
     jewelNodeId: opts.jewelNodeId,
@@ -908,12 +889,14 @@ function buildRareItem(
     quality: hasQuality ? 20 : undefined,
     sockets,
     implicits,
-    explicits,
+    explicits: [],
     prefixes,
     suffixes,
     craftedMod,
-    rawText: rawLines.join('\n'),
+    rawText: '',
   };
+  rebuildRareItem(item, implicitRange);
+  return item;
 }
 
 function buildFlask(
@@ -1072,7 +1055,7 @@ function tallyModsStats(
   }
 }
 
-function rebuildRareItem(it: GeneratedItem): void {
+function rebuildRareItem(it: GeneratedItem, implicitRange = 0.75): void {
   it.explicits = [
     ...it.prefixes.flatMap((p) => p.resolvedLines),
     ...it.suffixes.flatMap((s) => s.resolvedLines),
@@ -1091,7 +1074,7 @@ function rebuildRareItem(it: GeneratedItem): void {
   if (hasQuality) rawLines.push('Quality: 20');
   if (it.sockets) rawLines.push(`Sockets: ${it.sockets}`);
   rawLines.push(`Implicits: ${it.implicits.length}`);
-  if (it.base.implicit) rawLines.push(`{range:0.750}${it.base.implicit}`);
+  if (it.base.implicit) rawLines.push(`{range:${implicitRange.toFixed(3)}}${it.base.implicit}`);
   if (it.craftedMod) rawLines.push(`{crafted}${it.craftedMod}`);
   it.rawText = rawLines.join('\n');
 }
@@ -1505,20 +1488,37 @@ function patchGearDeficits(
   }
 }
 
-export function generateGear(
+function countSuppressLines(lines: string[]): number {
+  let sum = 0;
+  for (const raw of lines) {
+    const m = /\+(\d+)% chance to Suppress Spell Damage\b(?! (?:while|if|for))/i.exec(raw);
+    if (m) sum += Number(m[1]);
+  }
+  return sum;
+}
+
+function pickBaseJewelName(arch: BuildArchetype): string {
+  return arch.primaryAttr === 'str'
+    ? 'Crimson Jewel'
+    : arch.primaryAttr === 'dex'
+      ? 'Viridian Jewel'
+      : 'Cobalt Jewel';
+}
+
+function computeBaselineGearState(
   data: GameData,
   arch: BuildArchetype,
   tree: GeneratedTree,
   skills: GeneratedSkills,
-  rng: Rng,
-): GeneratedGear {
+  isEvasionBuild: boolean,
+) {
   const isTrade = arch.options.economy === 'trade';
   const isHC = arch.options.leagueMode === 'hardcore';
   const hasCI = tree.summary.keystones.includes('Chaos Inoculation');
   const wantChaosCap = isHC || (arch.options.targets?.minChaosMaxHit ?? 0) > 0;
   const targetChaosRes = hasCI ? -999 : (wantChaosCap ? 75 : 0);
 
-  // Baseline resistances & attributes from tree + Alira + Purity of Elements + Kitava (-60%)
+  // Baseline resistances & attributes from tree + Alira + Purity + Kitava (-60%)
   const resists = {
     fire: -60 + (arch.bandit === 'Alira' ? 15 : 0),
     cold: -60 + (arch.bandit === 'Alira' ? 15 : 0),
@@ -1528,24 +1528,13 @@ export function generateGear(
   const attrs = { ...tree.attributes };
   const maxRes = { fire: 75, cold: 75, lightning: 75, chaos: hasCI ? 100 : 75 };
   const dummyAttrs = { str: 0, dex: 0, int: 0 };
-  const targetArmourSubType = resolveTargetArmourSubType(arch, tree, skills, rng);
-  const wantSuppTarget = (arch.options.targets?.minSuppressPct ?? 0) > 0 || (arch.options.targets?.minDodgePct ?? 0) > 0;
-  const isEvasionBuild = (targetArmourSubType.includes('Evasion') || wantSuppTarget) && arch.defenseStyle !== 'es';
+
   const hasAcrobatics = tree.summary.keystones.includes('Acrobatics');
   const hasMagebane = tree.summary.keystones.includes('Magebane');
-
-  const countSuppressLines = (lines: string[]) => {
-    let sum = 0;
-    for (const raw of lines) {
-      const m = /\+(\d+)% chance to Suppress Spell Damage\b(?! (?:while|if|for))/i.exec(raw);
-      if (m) sum += Number(m[1]);
-    }
-    return sum;
-  };
-
   let currentSuppress = hasMagebane ? Math.floor(attrs.dex / 15) : 0;
   let hasValako = false;
   let hasArmourMaxResMastery = false;
+
   for (const id of tree.nodes) {
     const n = tree.clusterNodes?.[id] ?? data.tree.nodes[id];
     if (n?.s) {
@@ -1569,9 +1558,11 @@ export function generateGear(
       }
     }
   }
+
   const suppressTarget = hasAcrobatics
     ? Math.max(150, (arch.options.targets?.minDodgePct ?? 0) * 2)
     : Math.max(isEvasionBuild || isHC ? 100 : 0, arch.options.targets?.minSuppressPct ?? 0);
+
   for (const grp of skills.groups) {
     for (const gi of grp.gems) {
       if (gi.gem.name === 'Purity of Elements') {
@@ -1582,6 +1573,61 @@ export function generateGear(
       if (gi.gem.name === 'Purity of Lightning') maxRes.lightning = Math.min(90, maxRes.lightning + 4);
     }
   }
+
+  return {
+    isTrade,
+    isHC,
+    hasCI,
+    wantChaosCap,
+    targetChaosRes,
+    resists,
+    attrs,
+    maxRes,
+    currentSuppress,
+    suppressTarget,
+    hasValako,
+    hasArmourMaxResMastery,
+  };
+}
+
+function applyTreeMasteryMaxRes(
+  items: GeneratedItem[],
+  slotMap: Record<string, number>,
+  maxRes: { fire: number; cold: number; lightning: number; chaos: number },
+  hasArmourMaxResMastery: boolean,
+  hasValako: boolean,
+): void {
+  if (hasArmourMaxResMastery) {
+    const allHaveArmour = ['Helmet', 'Body Armour', 'Gloves', 'Boots'].every((slot) => {
+      const id = slotMap[slot];
+      const it = id ? items.find((x) => x.id === id) : undefined;
+      return (it?.base.armour?.ArmourBaseMax ?? 0) > 0;
+    });
+    if (allHaveArmour) {
+      maxRes.fire = Math.min(90, maxRes.fire + 1);
+      maxRes.cold = Math.min(90, maxRes.cold + 1);
+      maxRes.lightning = Math.min(90, maxRes.lightning + 1);
+    }
+  }
+  if (hasValako) {
+    maxRes.cold = Math.min(90, Math.max(maxRes.cold, maxRes.fire));
+    maxRes.lightning = Math.min(90, Math.max(maxRes.lightning, maxRes.fire));
+  }
+}
+
+export function generateGear(
+  data: GameData,
+  arch: BuildArchetype,
+  tree: GeneratedTree,
+  skills: GeneratedSkills,
+  rng: Rng,
+): GeneratedGear {
+  const targetArmourSubType = resolveTargetArmourSubType(arch, tree, skills, rng);
+  const wantSuppTarget = (arch.options.targets?.minSuppressPct ?? 0) > 0 || (arch.options.targets?.minDodgePct ?? 0) > 0;
+  const isEvasionBuild = (targetArmourSubType.includes('Evasion') || wantSuppTarget) && arch.defenseStyle !== 'es';
+  const baseline = computeBaselineGearState(data, arch, tree, skills, isEvasionBuild);
+  const { isTrade, isHC, hasCI, wantChaosCap, targetChaosRes, resists, attrs, maxRes, suppressTarget, hasValako, hasArmourMaxResMastery } = baseline;
+  let { currentSuppress } = baseline;
   const items: GeneratedItem[] = [];
   const slotMap: Record<string, number> = {};
   const jewelMap: Record<number, number> = {};
@@ -1736,11 +1782,7 @@ export function generateGear(
         continue;
       }
     }
-    const jewelBaseName = arch.primaryAttr === 'str'
-      ? 'Crimson Jewel'
-      : arch.primaryAttr === 'dex'
-        ? 'Viridian Jewel'
-        : 'Cobalt Jewel';
+    const jewelBaseName = pickBaseJewelName(arch);
     const base = data.bases[jewelBaseName];
     if (base) {
       const jewel = buildRareItem(
@@ -1763,22 +1805,7 @@ export function generateGear(
     }
   }
 
-  if (hasArmourMaxResMastery) {
-    const allHaveArmour = ['Helmet', 'Body Armour', 'Gloves', 'Boots'].every((slot) => {
-      const id = slotMap[slot];
-      const it = id ? items.find((x) => x.id === id) : undefined;
-      return (it?.base.armour?.ArmourBaseMax ?? 0) > 0;
-    });
-    if (allHaveArmour) {
-      maxRes.fire = Math.min(90, maxRes.fire + 1);
-      maxRes.cold = Math.min(90, maxRes.cold + 1);
-      maxRes.lightning = Math.min(90, maxRes.lightning + 1);
-    }
-  }
-  if (hasValako) {
-    maxRes.cold = Math.min(90, Math.max(maxRes.cold, maxRes.fire));
-    maxRes.lightning = Math.min(90, Math.max(maxRes.lightning, maxRes.fire));
-  }
+  applyTreeMasteryMaxRes(items, slotMap, maxRes, hasArmourMaxResMastery, hasValako);
 
   patchGearDeficits(
     data,
@@ -1811,33 +1838,6 @@ export function rerollGearItem(
   const oldItem = gear.items.find((it) => it.id === itemId);
   if (!oldItem) return gear;
 
-  const isTrade = arch.options.economy === 'trade';
-  const isHC = arch.options.leagueMode === 'hardcore';
-  const hasCI = tree.summary.keystones.includes('Chaos Inoculation');
-  const wantChaosCap = isHC || (arch.options.targets?.minChaosMaxHit ?? 0) > 0;
-  const targetChaosRes = hasCI ? -999 : (wantChaosCap ? 75 : 0);
-
-  const resists = {
-    fire: -60 + (arch.bandit === 'Alira' ? 15 : 0),
-    cold: -60 + (arch.bandit === 'Alira' ? 15 : 0),
-    lightning: -60 + (arch.bandit === 'Alira' ? 15 : 0),
-    chaos: -60,
-  };
-  const attrs = { ...tree.attributes };
-  const maxRes = { fire: 75, cold: 75, lightning: 75, chaos: hasCI ? 100 : 75 };
-  const dummyAttrs = { str: 0, dex: 0, int: 0 };
-
-  const countSuppressLines = (lines: string[]) => {
-    let sum = 0;
-    for (const raw of lines) {
-      const m = /\+(\d+)% chance to Suppress Spell Damage\b(?! (?:while|if|for))/i.exec(raw);
-      if (m) sum += Number(m[1]);
-    }
-    return sum;
-  };
-
-  const hasAcrobatics = tree.summary.keystones.includes('Acrobatics');
-  const hasMagebane = tree.summary.keystones.includes('Magebane');
   const keptArmourSub = gear.items.find(
     (x) => x.id !== itemId && ARMOUR_SLOTS.has(x.base.type) && Boolean(x.base.subType),
   )?.base.subType as ArmourSubType | undefined;
@@ -1845,46 +1845,9 @@ export function rerollGearItem(
   const wantSuppTarget = (arch.options.targets?.minSuppressPct ?? 0) > 0 || (arch.options.targets?.minDodgePct ?? 0) > 0;
   const isEvasionBuild = (targetArmourSubType.includes('Evasion') || wantSuppTarget) && arch.defenseStyle !== 'es';
 
-  let currentSuppress = hasMagebane ? Math.floor(attrs.dex / 15) : 0;
-  let hasValako = false;
-  let hasArmourMaxResMastery = false;
-  for (const id of tree.nodes) {
-    const n = tree.clusterNodes?.[id] ?? data.tree.nodes[id];
-    if (n?.s) {
-      tallyModsStats(n.s, resists, dummyAttrs, maxRes);
-      currentSuppress += countSuppressLines(n.s);
-      if (n.s.some((s) => /Modifiers to Maximum Fire Resistance also apply to Maximum Cold and Lightning Resistances/i.test(s))) {
-        hasValako = true;
-      }
-    }
-    if (n?.t === 'mastery' && tree.masteryEffects[id]) {
-      const eff = n.me?.find((m) => m.e === tree.masteryEffects[id]);
-      if (eff) {
-        tallyModsStats(eff.s, resists, dummyAttrs, maxRes);
-        currentSuppress += countSuppressLines(eff.s);
-        if (isEvasionBuild && eff.s.some((s) => /if Equipped Helmet, Body Armour, Gloves, and Boots all have Evasion Rating/i.test(s))) {
-          currentSuppress += 15;
-        }
-        if (eff.s.some((s) => /if Equipped Helmet, Body Armour, Gloves, and Boots all have Armour/i.test(s))) {
-          hasArmourMaxResMastery = true;
-        }
-      }
-    }
-  }
-  const suppressTarget = hasAcrobatics
-    ? Math.max(150, (arch.options.targets?.minDodgePct ?? 0) * 2)
-    : Math.max(isEvasionBuild || isHC ? 100 : 0, arch.options.targets?.minSuppressPct ?? 0);
-
-  for (const grp of skills.groups) {
-    for (const gi of grp.gems) {
-      if (gi.gem.name === 'Purity of Elements') {
-        resists.fire += 34; resists.cold += 34; resists.lightning += 34;
-      }
-      if (gi.gem.name === 'Purity of Fire') maxRes.fire = Math.min(90, maxRes.fire + 4);
-      if (gi.gem.name === 'Purity of Ice') maxRes.cold = Math.min(90, maxRes.cold + 4);
-      if (gi.gem.name === 'Purity of Lightning') maxRes.lightning = Math.min(90, maxRes.lightning + 4);
-    }
-  }
+  const baseline = computeBaselineGearState(data, arch, tree, skills, isEvasionBuild);
+  const { isTrade, isHC, hasCI, wantChaosCap, targetChaosRes, resists, attrs, maxRes, suppressTarget, hasValako, hasArmourMaxResMastery } = baseline;
+  let { currentSuppress } = baseline;
 
   const otherItems = gear.items.filter((it) => it.id !== itemId);
   const reqAttrs = { ...skills.maxReq };
@@ -1925,11 +1888,7 @@ export function rerollGearItem(
     const base = data.bases[baseName] ?? oldItem.base;
     replacement = buildFlask(oldItem.id, oldItem.slot, baseName, base, data, arch, rng);
   } else if (!replacement && oldItem.jewelNodeId !== undefined) {
-    const jewelBaseName = arch.primaryAttr === 'str'
-      ? 'Crimson Jewel'
-      : arch.primaryAttr === 'dex'
-        ? 'Viridian Jewel'
-        : 'Cobalt Jewel';
+    const jewelBaseName = pickBaseJewelName(arch);
     const base = data.bases[jewelBaseName] ?? oldItem.base;
     replacement = buildRareItem(
       oldItem.id,
@@ -1990,22 +1949,7 @@ export function rerollGearItem(
   }
 
   const nextItems = gear.items.map((it) => (it.id === itemId ? replacement! : it));
-  if (hasArmourMaxResMastery) {
-    const allHaveArmour = ['Helmet', 'Body Armour', 'Gloves', 'Boots'].every((slot) => {
-      const id = gear.slotMap[slot];
-      const it = id ? nextItems.find((x) => x.id === id) : undefined;
-      return (it?.base.armour?.ArmourBaseMax ?? 0) > 0;
-    });
-    if (allHaveArmour) {
-      maxRes.fire = Math.min(90, maxRes.fire + 1);
-      maxRes.cold = Math.min(90, maxRes.cold + 1);
-      maxRes.lightning = Math.min(90, maxRes.lightning + 1);
-    }
-  }
-  if (hasValako) {
-    maxRes.cold = Math.min(90, Math.max(maxRes.cold, maxRes.fire));
-    maxRes.lightning = Math.min(90, Math.max(maxRes.lightning, maxRes.fire));
-  }
+  applyTreeMasteryMaxRes(nextItems, gear.slotMap, maxRes, hasArmourMaxResMastery, hasValako);
 
   if (replacement.rarity === 'RARE' && replacement.base.type !== 'Flask' && replacement.base.subType !== 'Cluster') {
     patchGearDeficits(

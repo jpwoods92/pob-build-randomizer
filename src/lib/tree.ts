@@ -26,6 +26,43 @@ export interface GeneratedTree {
   url: string;
 }
 
+export function tallyNodeAttributes(
+  node: TreeNode | undefined,
+  attrs: { str: number; dex: number; int: number },
+): void {
+  if (!node) return;
+  if (node.gs) attrs.str += node.gs;
+  if (node.gd) attrs.dex += node.gd;
+  if (node.gi) attrs.int += node.gi;
+  for (const s of node.s ?? []) {
+    const ms = /\+(\d+) to Strength/.exec(s);
+    if (ms) attrs.str += Number(ms[1]);
+    const md = /\+(\d+) to Dexterity/.exec(s);
+    if (md) attrs.dex += Number(md[1]);
+    const mi = /\+(\d+) to Intelligence/.exec(s);
+    if (mi) attrs.int += Number(mi[1]);
+    const ma = /\+(\d+) to all Attributes/.exec(s);
+    if (ma) {
+      const v = Number(ma[1]);
+      attrs.str += v; attrs.dex += v; attrs.int += v;
+    }
+  }
+}
+
+export function collectAllocatedTreeLines(data: GameData, tree: GeneratedTree): string[] {
+  const lines: string[] = [];
+  for (const id of tree.nodes) {
+    const n = tree.clusterNodes?.[id] ?? data.tree.nodes[id];
+    if (!n) continue;
+    if (n.s) lines.push(...n.s);
+    if (n.t === 'mastery' && tree.masteryEffects[id]) {
+      const eff = n.me?.find((m) => m.e === tree.masteryEffects[id]);
+      if (eff) lines.push(...eff.s);
+    }
+  }
+  return lines;
+}
+
 const PATH_TO_CLASS_START: Record<string, number> = {
   'Path of the Scion': 0,
   'Path of the Marauder': 1,
@@ -622,26 +659,7 @@ export function generatePassiveTree(
 
   // Track live attributes so pure +30 stat nodes are only picked if requirements actually demand them
   const curAttrs = { str: arch.classData.str, dex: arch.classData.dex, int: arch.classData.int };
-  const addNodeAttrs = (nid: number) => {
-    const n = tree.nodes[nid];
-    if (!n) return;
-    if (n.gs) curAttrs.str += n.gs;
-    if (n.gd) curAttrs.dex += n.gd;
-    if (n.gi) curAttrs.int += n.gi;
-    for (const s of n.s ?? []) {
-      const ms = /\+(\d+) to Strength/.exec(s);
-      if (ms) curAttrs.str += Number(ms[1]);
-      const md = /\+(\d+) to Dexterity/.exec(s);
-      if (md) curAttrs.dex += Number(md[1]);
-      const mi = /\+(\d+) to Intelligence/.exec(s);
-      if (mi) curAttrs.int += Number(mi[1]);
-      const ma = /\+(\d+) to all Attributes/.exec(s);
-      if (ma) {
-        const v = Number(ma[1]);
-        curAttrs.str += v; curAttrs.dex += v; curAttrs.int += v;
-      }
-    }
-  };
+  const addNodeAttrs = (nid: number) => tallyNodeAttributes(tree.nodes[nid], curAttrs);
   for (const aid of ascendancyNodes) addNodeAttrs(aid);
   // Rare gear & amulets reliably supply ~60 off-attributes; only take +30 nodes late if still short
   const needStr = Math.max(0, attrReqs.str - 60);
@@ -815,23 +833,7 @@ export function generatePassiveTree(
   );
   for (const nid of clusterRes.allocatedNodeIds) {
     allocated.add(nid);
-    const cn = clusterRes.clusterNodes[nid];
-    if (cn?.gs) curAttrs.str += cn.gs;
-    if (cn?.gd) curAttrs.dex += cn.gd;
-    if (cn?.gi) curAttrs.int += cn.gi;
-    for (const s of cn?.s ?? []) {
-      const ms = /\+(\d+) to Strength/.exec(s);
-      if (ms) curAttrs.str += Number(ms[1]);
-      const md = /\+(\d+) to Dexterity/.exec(s);
-      if (md) curAttrs.dex += Number(md[1]);
-      const mi = /\+(\d+) to Intelligence/.exec(s);
-      if (mi) curAttrs.int += Number(mi[1]);
-      const ma = /\+(\d+) to all Attributes/.exec(s);
-      if (ma) {
-        const v = Number(ma[1]);
-        curAttrs.str += v; curAttrs.dex += v; curAttrs.int += v;
-      }
-    }
+    tallyNodeAttributes(clusterRes.clusterNodes[nid], curAttrs);
   }
   pointsUsed += clusterRes.pointsSpent;
 
@@ -871,9 +873,11 @@ export function generatePassiveTree(
   const allNodes = [...new Set([...mainNodes, ...ascendancyNodes])].sort((a, b) => a - b);
 
   // Tally summary stats
-  let str = arch.classData.str;
-  let dex = arch.classData.dex;
-  let int = arch.classData.int;
+  const summaryAttrs = {
+    str: arch.classData.str,
+    dex: arch.classData.dex,
+    int: arch.classData.int,
+  };
   let lifePct = 0;
   let esPct = 0;
   const keystones: string[] = [];
@@ -884,9 +888,7 @@ export function generatePassiveTree(
   for (const id of allNodes) {
     const n = tree.nodes[id] ?? clusterRes.clusterNodes[id];
     if (!n) continue;
-    if (n.gs) str += n.gs;
-    if (n.gd) dex += n.gd;
-    if (n.gi) int += n.gi;
+    tallyNodeAttributes(n, summaryAttrs);
     if (n.t === 'keystone') keystones.push(n.n);
     if (n.t === 'notable' && !n.a) notables.push(n.n);
     if (n.t === 'jewel') jewelSockets.push(id);
@@ -895,17 +897,6 @@ export function generatePassiveTree(
       if (eff) masteries.push({ nodeId: id, name: n.n, effectId: eff.e, text: eff.s.join(' / ') });
     }
     for (const s of n.s ?? []) {
-      const mStr = /\+(\d+) to Strength/.exec(s);
-      if (mStr) str += Number(mStr[1]);
-      const mDex = /\+(\d+) to Dexterity/.exec(s);
-      if (mDex) dex += Number(mDex[1]);
-      const mInt = /\+(\d+) to Intelligence/.exec(s);
-      if (mInt) int += Number(mInt[1]);
-      const mAll = /\+(\d+) to all Attributes/.exec(s);
-      if (mAll) {
-        const v = Number(mAll[1]);
-        str += v; dex += v; int += v;
-      }
       const mLife = /(\d+)% increased maximum Life/.exec(s);
       if (mLife) lifePct += Number(mLife[1]);
       const mEs = /(\d+)% increased maximum Energy Shield/.exec(s);
@@ -934,7 +925,7 @@ export function generatePassiveTree(
     pointsUsed,
     pointsBudget,
     ascPointsUsed,
-    attributes: { str, dex, int },
+    attributes: summaryAttrs,
     summary: { lifePct, esPct, keystones, notables, masteries },
     url,
   };
