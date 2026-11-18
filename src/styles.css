@@ -1933,14 +1933,15 @@ input[type="range"] {
 }
 
 .calcs-toggle-btn {
-  gap: 5px;
+  gap: 6px;
+  line-height: 1;
 }
 
 .calcs-gear-icon {
-  font-size: 16px;
-  line-height: 1;
-  display: inline-flex;
-  align-items: center;
+  width: 14px;
+  height: 14px;
+  display: block;
+  flex-shrink: 0;
 }
 
 .calcs-toggle-btn.active {
