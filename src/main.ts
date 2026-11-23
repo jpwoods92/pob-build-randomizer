@@ -54,8 +54,82 @@ function svgIcon(body: string, cls = ''): string {
   return `<svg${clsAttr} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
 }
 
-const REROLL_ICON_BODY = '<path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 3 21 9 15 9"/>';
-const CLOSE_X_ICON_BODY = '<path d="M18 6 6 18M6 6l12 12"/>';
+const ICONS = {
+  dashboard: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
+  tree: '<circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="12" cy="18" r="2.5"/><path d="M6 8.5v2a3 3 0 0 0 3 3h6a3 3 0 0 0 3-3v-2M12 13.5v2"/>',
+  skills: '<path d="M12 2.5 14.6 9.4 21.5 12 14.6 14.6 12 21.5 9.4 14.6 2.5 12 9.4 9.4Z"/>',
+  gear: '<path d="M12 2.5 21.5 12 12 21.5 2.5 12Z"/><path d="M12 7.5 16.5 12 12 16.5 7.5 12Z"/>',
+  export: '<path d="M17 4l4 4-4 4"/><path d="M3 8h18"/><path d="M7 20l-4-4 4-4"/><path d="M21 16H3"/>',
+  saved: '<polygon points="12 2.95 14.47 9.55 21.51 9.86 15.99 14.25 17.88 21.04 12 17.15 6.12 21.04 8.01 14.25 2.49 9.86 9.53 9.55 12 2.95" fill="currentColor" stroke-width="1.5"/>',
+  collapse: '<path d="m11 17-5-5 5-5"/><path d="m18 17-5-5 5-5"/>',
+  reroll: '<path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 3 21 9 15 9"/>',
+  close: '<path d="M18 6 6 18M6 6l12 12"/>',
+  sliders: '<line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/>',
+  monitor: '<rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>',
+  moon: '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
+  bookmark: '<path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2Z"/>',
+  bookmarkFilled: '<path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2Z" fill="currentColor"/>',
+  copy: '<rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
+  check: '<polyline points="20 6 9 17 4 12"/>',
+  download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>',
+  externalLink: '<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>',
+  arrowRight: '<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',
+  hash: '<line x1="4" y1="9" x2="20" y2="9"/><line x1="4" y1="15" x2="20" y2="15"/><line x1="10" y1="3" x2="8" y2="21"/><line x1="16" y1="3" x2="14" y2="21"/>',
+  play: '<polygon points="6 3 20 12 6 21 6 3" fill="currentColor" stroke-width="1.5"/>',
+  edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4Z"/>',
+  trash: '<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
+  settings: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
+} as const;
+
+interface NavItemDef {
+  view: NavView;
+  label: string;
+  shortLabel: string;
+  icon: keyof typeof ICONS;
+  pillId?: 'pts' | 'links' | 'saved';
+  defaultPill?: string;
+}
+
+const NAV_ITEMS: NavItemDef[] = [
+  { view: 'dashboard', label: 'Dashboard', shortLabel: 'Home', icon: 'dashboard' },
+  { view: 'tree', label: 'Passive Tree', shortLabel: 'Tree', icon: 'tree', pillId: 'pts', defaultPill: '115' },
+  { view: 'skills', label: 'Skill Gems', shortLabel: 'Gems', icon: 'skills', pillId: 'links', defaultPill: '6L' },
+  { view: 'gear', label: 'Gear & Flasks', shortLabel: 'Gear', icon: 'gear' },
+  { view: 'export', label: 'PoB Export', shortLabel: 'Export', icon: 'export' },
+  { view: 'saved', label: 'Saved Builds', shortLabel: 'Saved', icon: 'saved', pillId: 'saved', defaultPill: '0' },
+];
+
+function renderNavItems(variant: 'sidebar' | 'bottom'): string {
+  return NAV_ITEMS.map((item) => {
+    const active = item.view === 'dashboard' ? ' active' : '';
+    if (variant === 'sidebar') {
+      return `
+        <button type="button" class="nav-item${active}" data-view="${item.view}">
+          <span class="nav-icon">${svgIcon(ICONS[item.icon])}</span>
+          <span class="nav-label">${item.label}</span>
+          ${item.pillId ? `<span class="nav-pill" data-nav-pill="${item.pillId}">${item.defaultPill ?? ''}</span>` : ''}
+        </button>`;
+    }
+    return `
+      <button type="button" class="mobile-nav-btn${active}" data-view="${item.view}" aria-label="${item.label}" title="${item.label}">
+        <span class="mobile-nav-icon-wrap">
+          ${svgIcon(ICONS[item.icon], 'mobile-nav-icon')}
+          ${item.pillId ? `<span class="mobile-nav-badge" data-nav-pill="${item.pillId}">${item.defaultPill ?? ''}</span>` : ''}
+        </span>
+        <span class="mobile-nav-label">${item.shortLabel}</span>
+      </button>`;
+  }).join('');
+}
+
+function setBtnIconAndLabel(btn: HTMLButtonElement, iconBody: string, label: string, shortLabel?: string) {
+  const iconSlot = btn.querySelector<HTMLElement>('.btn-icon-slot');
+  if (iconSlot) iconSlot.innerHTML = svgIcon(iconBody, 'btn-icon');
+  const labelEl = btn.querySelector<HTMLElement>('.btn-label');
+  if (labelEl) labelEl.textContent = label;
+  const shortEl = btn.querySelector<HTMLElement>('.btn-label-short');
+  if (shortEl && shortLabel !== undefined) shortEl.textContent = shortLabel;
+}
 
 function getSavedTheme(): ThemePref {
   try {
@@ -101,43 +175,19 @@ async function main() {
 
   root.innerHTML = `
     <div class="layout" id="app-layout">
-      <aside class="sidebar">
+      <div class="drawer-backdrop" id="drawer-backdrop"></div>
+      <aside class="sidebar" id="app-sidebar">
         <div class="brand">
           <div class="brand-mark">PoB</div>
           <div class="brand-text">
             <h1>PoB Forge</h1>
             <p>PoE 1 (${esc(data.tree.version.replace('_', '.'))}) Randomizer</p>
           </div>
+          <button type="button" class="drawer-close-btn" id="drawer-close-btn" aria-label="Close build settings" title="Close">${svgIcon(ICONS.close)}</button>
         </div>
 
         <nav class="nav-list" id="sidebar-nav">
-          <button type="button" class="nav-item active" data-view="dashboard">
-            <span class="nav-icon">${svgIcon('<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>')}</span>
-            <span class="nav-label">Dashboard</span>
-          </button>
-          <button type="button" class="nav-item" data-view="tree">
-            <span class="nav-icon">${svgIcon('<circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="12" cy="18" r="2.5"/><path d="M6 8.5v2a3 3 0 0 0 3 3h6a3 3 0 0 0 3-3v-2M12 13.5v2"/>')}</span>
-            <span class="nav-label">Passive Tree</span>
-            <span class="nav-pill" id="nav-pts-pill">115</span>
-          </button>
-          <button type="button" class="nav-item" data-view="skills">
-            <span class="nav-icon">${svgIcon('<path d="M12 2.5 14.6 9.4 21.5 12 14.6 14.6 12 21.5 9.4 14.6 2.5 12 9.4 9.4Z"/>')}</span>
-            <span class="nav-label">Skill Gems</span>
-            <span class="nav-pill" id="nav-links-pill">6L</span>
-          </button>
-          <button type="button" class="nav-item" data-view="gear">
-            <span class="nav-icon">${svgIcon('<path d="M12 2.5 21.5 12 12 21.5 2.5 12Z"/><path d="M12 7.5 16.5 12 12 16.5 7.5 12Z"/>')}</span>
-            <span class="nav-label">Gear &amp; Flasks</span>
-          </button>
-          <button type="button" class="nav-item" data-view="export">
-            <span class="nav-icon">${svgIcon('<path d="M17 4l4 4-4 4"/><path d="M3 8h18"/><path d="M7 20l-4-4 4-4"/><path d="M21 16H3"/>')}</span>
-            <span class="nav-label">PoB Export</span>
-          </button>
-          <button type="button" class="nav-item" data-view="saved">
-            <span class="nav-icon">${svgIcon('<polygon points="12 2.95 14.47 9.55 21.51 9.86 15.99 14.25 17.88 21.04 12 17.15 6.12 21.04 8.01 14.25 2.49 9.86 9.53 9.55 12 2.95" fill="currentColor" stroke-width="1.5"/>')}</span>
-            <span class="nav-label">Saved Builds</span>
-            <span class="nav-pill" id="nav-saved-pill">0</span>
-          </button>
+          ${renderNavItems('sidebar')}
         </nav>
 
         <div class="sidebar-section">
@@ -214,7 +264,7 @@ async function main() {
           </div>
           <div class="target-picker-row" id="target-picker-row" hidden>
             <select id="target-stat-picker" aria-label="Choose target stat"></select>
-            <button type="button" class="target-picker-cancel" id="cancel-target-picker-btn" title="Cancel">${svgIcon(CLOSE_X_ICON_BODY)}</button>
+            <button type="button" class="target-picker-cancel" id="cancel-target-picker-btn" title="Cancel" aria-label="Cancel">${svgIcon(ICONS.close)}</button>
           </div>
           <div class="target-rows" id="target-rows"></div>
           <div class="target-empty-hint" id="target-empty-hint">No targets set — click + Add to steer stats.</div>
@@ -227,29 +277,56 @@ async function main() {
         </div>
 
         <button type="button" class="collapse-btn" id="collapse-btn" title="Collapse or expand sidebar">
-          <span class="collapse-icon">${svgIcon('<path d="m11 17-5-5 5-5"/><path d="m18 17-5-5 5-5"/>')}</span>
+          <span class="collapse-icon">${svgIcon(ICONS.collapse)}</span>
           <span class="collapse-label">Collapse sidebar</span>
         </button>
       </aside>
 
       <main class="workspace">
+        <header class="mobile-header">
+          <div class="mobile-brand">
+            <div class="brand-mark">PoB</div>
+            <div class="mobile-brand-text">
+              <strong>PoB Forge</strong>
+              <span>PoE 1 (${esc(data.tree.version.replace('_', '.'))})</span>
+            </div>
+          </div>
+          <div class="mobile-header-actions">
+            <button
+              type="button"
+              class="btn btn-icon-only mobile-header-btn"
+              id="mobile-menu-btn"
+              aria-label="Build knobs and targets"
+              aria-expanded="false"
+              title="Build Knobs &amp; Targets"
+            >${svgIcon(ICONS.sliders, 'btn-icon')}<span class="mobile-pending-dot" id="mobile-pending-dot" hidden></span></button>
+            <button
+              type="button"
+              class="btn btn-cta btn-icon-only mobile-header-btn"
+              id="mobile-reroll-btn"
+              aria-label="Randomize Build"
+              title="Randomize Build"
+            >${svgIcon(ICONS.reroll, 'btn-icon')}</button>
+          </div>
+        </header>
+
         <header class="topbar">
           <div class="seed-search">
-            <span>Seed</span>
-            <input type="text" id="seed-input" value="${esc(options.seed)}" aria-label="Build seed" />
-            <button type="button" class="btn btn-sm" id="apply-seed-btn">Apply</button>
+            <span class="seed-icon" title="Seed">${svgIcon(ICONS.hash, 'btn-icon')}</span>
+            <input type="text" id="seed-input" value="${esc(options.seed)}" placeholder="Seed" aria-label="Build seed" />
+            <button type="button" class="btn btn-sm" id="apply-seed-btn" title="Apply seed" aria-label="Apply seed">${svgIcon(ICONS.arrowRight, 'btn-icon')}<span class="btn-label">Apply</span></button>
           </div>
 
           <div class="topbar-actions">
-            <div class="theme-switch" id="theme-switch" title="Color Theme">
-              <button type="button" data-theme-pref="system">Auto</button>
-              <button type="button" data-theme-pref="light">Light</button>
-              <button type="button" data-theme-pref="dark">Dark</button>
+            <div class="theme-switch" id="theme-switch" role="group" aria-label="Color Theme">
+              <button type="button" data-theme-pref="system" title="System theme" aria-label="System theme">${svgIcon(ICONS.monitor, 'theme-icon')}</button>
+              <button type="button" data-theme-pref="light" title="Light theme" aria-label="Light theme">${svgIcon(ICONS.sun, 'theme-icon')}</button>
+              <button type="button" data-theme-pref="dark" title="Dark theme" aria-label="Dark theme">${svgIcon(ICONS.moon, 'theme-icon')}</button>
             </div>
-            <button type="button" class="btn" id="save-build-btn">Save Build</button>
-            <button type="button" class="btn btn-cta" id="copy-pob-btn">Copy PoB Code</button>
-            <button type="button" class="btn" id="download-xml-btn">Download .xml</button>
-            <a class="btn" id="official-tree-link" href="#" target="_blank" rel="noreferrer">Official Tree</a>
+            <button type="button" class="btn" id="save-build-btn" title="Save Build" aria-label="Save Build"><span class="btn-icon-slot">${svgIcon(ICONS.bookmark, 'btn-icon')}</span><span class="btn-label">Save Build</span></button>
+            <button type="button" class="btn btn-cta" id="copy-pob-btn" title="Copy PoB Code" aria-label="Copy PoB Code"><span class="btn-icon-slot">${svgIcon(ICONS.copy, 'btn-icon')}</span><span class="btn-label">Copy PoB Code</span><span class="btn-label-short">PoB</span></button>
+            <button type="button" class="btn" id="download-xml-btn" title="Download .xml" aria-label="Download .xml"><span class="btn-icon-slot">${svgIcon(ICONS.download, 'btn-icon')}</span><span class="btn-label">Download .xml</span></button>
+            <a class="btn" id="official-tree-link" href="#" target="_blank" rel="noreferrer" title="Official Tree" aria-label="Official Tree"><span class="btn-icon-slot">${svgIcon(ICONS.externalLink, 'btn-icon')}</span><span class="btn-label">Official Tree</span></a>
           </div>
         </header>
 
@@ -267,6 +344,10 @@ async function main() {
         <section class="view-panel" id="view-export"></section>
         <section class="view-panel" id="view-saved"></section>
       </main>
+
+      <nav class="mobile-bottom-nav" id="mobile-bottom-nav" aria-label="Primary navigation">
+        ${renderNavItems('bottom')}
+      </nav>
     </div>
   `;
 
@@ -275,6 +356,11 @@ async function main() {
   });
 
   const layoutEl = document.getElementById('app-layout')!;
+  const drawerBackdrop = document.getElementById('drawer-backdrop')!;
+  const drawerCloseBtn = document.getElementById('drawer-close-btn')!;
+  const mobileMenuBtn = document.getElementById('mobile-menu-btn') as HTMLButtonElement;
+  const mobileRerollBtn = document.getElementById('mobile-reroll-btn') as HTMLButtonElement;
+  const mobilePendingDot = document.getElementById('mobile-pending-dot')!;
   const classSel = document.getElementById('class-select') as HTMLSelectElement;
   const ascSel = document.getElementById('asc-select') as HTMLSelectElement;
   const styleSel = document.getElementById('style-select') as HTMLSelectElement;
@@ -294,13 +380,26 @@ async function main() {
   const promoCardEl = knobSummaryEl.closest('.promo-card')!;
   const officialTreeLink = document.getElementById('official-tree-link') as HTMLAnchorElement;
   const saveBuildBtn = document.getElementById('save-build-btn') as HTMLButtonElement;
-  const navSavedPill = document.getElementById('nav-saved-pill')!;
+  let saveFlashTimer: number | null = null;
   let savedBuilds: SavedBuildEntry[] = loadSavedBuilds();
   let editingSavedId: string | null = null;
   const itemRerollCounts = new Map<number, number>();
   const supportRerollCounts = new Map<string, number>();
   let calcConfig: CalcConfig = { ...DEFAULT_CALC_CONFIG };
   let calcsPopoverOpen = false;
+  let drawerOpen = false;
+
+  const setDrawerOpen = (open: boolean) => {
+    drawerOpen = open;
+    layoutEl.classList.toggle('drawer-open', open);
+    mobileMenuBtn.setAttribute('aria-expanded', String(open));
+  };
+
+  const setNavPill = (pillId: 'pts' | 'links' | 'saved', value: string) => {
+    document.querySelectorAll(`[data-nav-pill="${pillId}"]`).forEach((el) => {
+      el.textContent = value;
+    });
+  };
 
   const sameCalcConfig = (a: CalcConfig, b: CalcConfig) =>
     (Object.keys(DEFAULT_CALC_CONFIG) as (keyof CalcConfig)[]).every((k) => a[k] === b[k]);
@@ -334,8 +433,9 @@ async function main() {
 
   function switchView(view: NavView) {
     activeView = view;
+    setDrawerOpen(false);
     gemTooltip.classList.add('hidden');
-    document.querySelectorAll('#sidebar-nav .nav-item').forEach((b) => {
+    document.querySelectorAll('#sidebar-nav .nav-item, #mobile-bottom-nav .mobile-nav-btn').forEach((b) => {
       b.classList.toggle('active', (b as HTMLElement).dataset.view === view);
     });
     document.querySelectorAll('.view-panel').forEach((p) => {
@@ -395,7 +495,7 @@ async function main() {
               />
               ${def.unit ? `<span class="target-row-unit">${def.unit}</span>` : ''}
             </div>
-            <button type="button" class="target-remove-btn" data-remove-target="${key}" title="Remove ${esc(def.label)}">${svgIcon(CLOSE_X_ICON_BODY)}</button>
+            <button type="button" class="target-remove-btn" data-remove-target="${key}" title="Remove ${esc(def.label)}" aria-label="Remove ${esc(def.label)}">${svgIcon(ICONS.close)}</button>
           </div>
         `;
       })
@@ -475,13 +575,14 @@ async function main() {
     const dirty = hasPendingSidebarChanges();
     knobSummaryEl.textContent = `${modeLabel} · ${ecoLabel} · Level ${options.level}${targetTag}${dirty ? ' · Pending' : ''}`;
     promoCardEl.classList.toggle('has-pending', dirty);
+    mobilePendingDot.hidden = !dirty;
   }
 
   function updateSidebarMeta(b: GeneratedBuild) {
     updateKnobSummary();
-    document.getElementById('nav-pts-pill')!.textContent = String(b.tree.pointsUsed);
+    setNavPill('pts', String(b.tree.pointsUsed));
     const mainLinks = b.skills.groups[0]?.gems.length ?? 6;
-    document.getElementById('nav-links-pill')!.textContent = `${mainLinks}L`;
+    setNavPill('links', `${mainLinks}L`);
     officialTreeLink.href = b.tree.url;
   }
 
@@ -508,10 +609,12 @@ async function main() {
   }
 
   function updateSavedUiState() {
-    navSavedPill.textContent = String(savedBuilds.length);
+    setNavPill('saved', String(savedBuilds.length));
     const sig = buildOptionsSignature(currentBuild?.archetype.options ?? options);
     const isSaved = savedBuilds.some((e) => e.id === sig);
-    saveBuildBtn.textContent = isSaved ? 'Saved ✓' : 'Save Build';
+    setBtnIconAndLabel(saveBuildBtn, isSaved ? ICONS.bookmarkFilled : ICONS.bookmark, isSaved ? 'Saved' : 'Save Build');
+    saveBuildBtn.title = isSaved ? 'Saved' : 'Save Build';
+    saveBuildBtn.setAttribute('aria-label', saveBuildBtn.title);
     saveBuildBtn.classList.toggle('is-saved', isSaved);
   }
 
@@ -636,13 +739,15 @@ async function main() {
                 class="btn btn-sm calcs-toggle-btn ${calcsPopoverOpen ? 'active' : ''}"
                 id="calcs-popover-btn"
                 aria-expanded="${calcsPopoverOpen}"
-              >${svgIcon('<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>', 'calcs-gear-icon')}<span>Calcs: ${esc(describeCalcMode(calcConfig))}</span></button>
+                title="Calcs &amp; Temporary Buffs"
+              >${svgIcon(ICONS.settings, 'calcs-gear-icon')}<span><span class="calcs-label-prefix">Calcs: </span>${esc(describeCalcMode(calcConfig))}</span></button>
               <div class="calcs-popover ${calcsPopoverOpen ? '' : 'hidden'}" id="calcs-popover" role="dialog" aria-label="PoB Calcs and Temporary Buffs">
                 <div class="calcs-pop-head">
                   <div>
                     <div class="calcs-pop-title">Calcs &amp; Temporary Buffs</div>
                     <div class="calcs-pop-sub">Toggle temporary buffs, charges, and combat conditions for DPS &amp; Max Hits</div>
                   </div>
+                  <button type="button" class="calcs-close-btn" id="calcs-close-btn" title="Close" aria-label="Close calculation settings">${svgIcon(ICONS.close)}</button>
                 </div>
                 <div class="calcs-presets">
                   <button type="button" class="calcs-preset-btn ${sameCalcConfig(calcConfig, UNBUFFED_CALC_CONFIG) ? 'active' : ''}" data-calc-preset="unbuffed">Unbuffed Baseline</button>
@@ -673,7 +778,7 @@ async function main() {
                 </div>
               </div>
             </div>
-            <button type="button" class="btn btn-sm" data-jump="tree">View Tree →</button>
+            <button type="button" class="btn btn-sm card-jump-btn" data-jump="tree" title="View Tree" aria-label="View Tree"><span class="btn-label">View Tree</span>${svgIcon(ICONS.arrowRight, 'btn-icon')}</button>
           </div>
         </div>
 
@@ -847,7 +952,7 @@ async function main() {
               <h3>Keystones &amp; Notables</h3>
               <p class="card-sub">${b.tree.summary.masteries.length} masteries · ${b.tree.jewelSockets.length} jewel sockets</p>
             </div>
-            <button type="button" class="btn btn-sm" data-jump="tree">Inspect →</button>
+            <button type="button" class="btn btn-sm card-jump-btn" data-jump="tree" title="Inspect Tree" aria-label="Inspect Tree"><span class="btn-label">Inspect</span>${svgIcon(ICONS.arrowRight, 'btn-icon')}</button>
           </div>
           <div class="pill-list">
             ${keystoneNodes.map(({ id, node }) => `<span class="pill pill-hover pill-accent" tabindex="0" data-hover-node="${id}">${esc(node.n)}</span>`).join('')}
@@ -861,7 +966,7 @@ async function main() {
               <h3>Loadout Highlights</h3>
               <p class="card-sub">${b.gear.items.length} equipped · ${uniques.length} unique${uniques.length === 1 ? '' : 's'}</p>
             </div>
-            <button type="button" class="btn btn-sm" data-jump="gear">Gear →</button>
+            <button type="button" class="btn btn-sm card-jump-btn" data-jump="gear" title="View Gear &amp; Flasks" aria-label="View Gear and Flasks"><span class="btn-label">Gear</span>${svgIcon(ICONS.arrowRight, 'btn-icon')}</button>
           </div>
           <div class="feed-list feed-list-compact">
             ${(() => {
@@ -959,8 +1064,8 @@ async function main() {
               ${grp.gems.map((gi, idx) => {
                 const rerollBtn = gi.gem.support
                   ? (isMandatoryTotemSupport(b.archetype, gi.gem.name)
-                    ? `<button type="button" class="gear-reroll-btn gem-reroll-btn" disabled title="Required by totem setup" aria-label="${esc(gi.gem.name)} required by totem setup">${svgIcon(REROLL_ICON_BODY)}</button>`
-                    : `<button type="button" class="gear-reroll-btn gem-reroll-btn" data-reroll-grp="${gIdx}" data-reroll-gem="${idx}" title="Reroll ${esc(gi.gem.name)} for this build" aria-label="Reroll ${esc(gi.gem.name)}">${svgIcon(REROLL_ICON_BODY)}</button>`)
+                    ? `<button type="button" class="gear-reroll-btn gem-reroll-btn" disabled title="Required by totem setup" aria-label="${esc(gi.gem.name)} required by totem setup">${svgIcon(ICONS.reroll)}</button>`
+                    : `<button type="button" class="gear-reroll-btn gem-reroll-btn" data-reroll-grp="${gIdx}" data-reroll-gem="${idx}" title="Reroll ${esc(gi.gem.name)} for this build" aria-label="Reroll ${esc(gi.gem.name)}">${svgIcon(ICONS.reroll)}</button>`)
                   : '';
                 return `
                   <div class="gem-row gem-row-hover" tabindex="0" data-grp="${gIdx}" data-gem="${idx}">
@@ -1002,7 +1107,7 @@ async function main() {
               data-reroll-item="${item.id}"
               title="Reroll ${esc(slotLabel ?? item.slot)} for this build"
               aria-label="Reroll ${esc(slotLabel ?? item.slot)}"
-            >${svgIcon(REROLL_ICON_BODY)}</button>
+            >${svgIcon(ICONS.reroll)}</button>
           </div>
         </div>
         <div class="item-meta-line">
@@ -1120,7 +1225,7 @@ async function main() {
             <h2>Path of Building Import Code</h2>
             <p class="card-sub">In Path of Building Community: Import/Export Build → Import from Pastebin / Code</p>
           </div>
-          <button type="button" class="btn btn-cta" id="copy-code-tab-btn">Copy Code</button>
+          <button type="button" class="btn btn-cta" id="copy-code-tab-btn" title="Copy Code" aria-label="Copy Code"><span class="btn-icon-slot">${svgIcon(ICONS.copy, 'btn-icon')}</span><span class="btn-label">Copy Code</span></button>
         </div>
         <textarea class="code-box" readonly id="pob-code-area">${esc(b.pobCode)}</textarea>
         <div class="card-head" style="margin:6px 0 0;">
@@ -1132,8 +1237,8 @@ async function main() {
     document.getElementById('copy-code-tab-btn')!.addEventListener('click', async (e) => {
       const btn = e.currentTarget as HTMLButtonElement;
       await navigator.clipboard.writeText(b.pobCode);
-      btn.textContent = 'Copied!';
-      setTimeout(() => { btn.textContent = 'Copy Code'; }, 1500);
+      setBtnIconAndLabel(btn, ICONS.check, 'Copied!');
+      setTimeout(() => { setBtnIconAndLabel(btn, ICONS.copy, 'Copy Code'); }, 1500);
     });
   }
 
@@ -1156,8 +1261,8 @@ async function main() {
             <p class="card-sub">${savedBuilds.length} saved in browser localStorage · deterministic by seed &amp; knobs</p>
           </div>
           <div class="saved-header-actions">
-            <button type="button" class="btn btn-cta" id="saved-tab-save-btn">Save Current Build</button>
-            ${savedBuilds.length ? `<button type="button" class="btn" id="saved-clear-all-btn">Clear All</button>` : ''}
+            <button type="button" class="btn btn-cta" id="saved-tab-save-btn"><span class="btn-icon-slot">${svgIcon(ICONS.bookmark, 'btn-icon')}</span><span class="btn-label">Save Current Build</span></button>
+            ${savedBuilds.length ? `<button type="button" class="btn saved-compact-btn" id="saved-clear-all-btn" title="Clear All" aria-label="Clear All"><span class="btn-icon-slot">${svgIcon(ICONS.trash, 'btn-icon')}</span><span class="btn-label">Clear All</span></button>` : ''}
           </div>
         </div>
       </div>
@@ -1205,9 +1310,9 @@ async function main() {
                   <div class="saved-card-foot">
                     <span class="saved-date">Saved ${esc(formatSavedDate(entry.savedAt))}</span>
                     <div class="saved-actions">
-                      <button type="button" class="btn btn-sm btn-cta" data-saved-action="load" data-id="${esc(entry.id)}">Load</button>
-                      <button type="button" class="btn btn-sm" data-saved-action="rename" data-id="${esc(entry.id)}">Rename</button>
-                      <button type="button" class="btn btn-sm" data-saved-action="delete" data-id="${esc(entry.id)}">Delete</button>
+                      <button type="button" class="btn btn-sm btn-cta" data-saved-action="load" data-id="${esc(entry.id)}" title="Load" aria-label="Load build"><span class="btn-icon-slot">${svgIcon(ICONS.play, 'btn-icon')}</span><span class="btn-label">Load</span></button>
+                      <button type="button" class="btn btn-sm saved-compact-btn" data-saved-action="rename" data-id="${esc(entry.id)}" title="Rename" aria-label="Rename build"><span class="btn-icon-slot">${svgIcon(ICONS.edit, 'btn-icon')}</span><span class="btn-label">Rename</span></button>
+                      <button type="button" class="btn btn-sm saved-compact-btn" data-saved-action="delete" data-id="${esc(entry.id)}" title="Delete" aria-label="Delete build"><span class="btn-icon-slot">${svgIcon(ICONS.trash, 'btn-icon')}</span><span class="btn-label">Delete</span></button>
                     </div>
                   </div>
                 </div>
@@ -1420,6 +1525,10 @@ async function main() {
   });
   viewDashEl.addEventListener('click', async (e) => {
     const t = e.target as HTMLElement;
+    if (t.closest('#calcs-close-btn')) {
+      setCalcsOpen(false);
+      return;
+    }
     const calcsBtn = t.closest('#calcs-popover-btn, [data-open-calcs]');
     if (calcsBtn) {
       e.stopPropagation();
@@ -1453,7 +1562,10 @@ async function main() {
     setCalcsOpen(false);
   });
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && calcsPopoverOpen) setCalcsOpen(false);
+    if (e.key === 'Escape') {
+      if (calcsPopoverOpen) setCalcsOpen(false);
+      if (drawerOpen) setDrawerOpen(false);
+    }
   });
 
   const showGemTooltipFor = (row: HTMLElement) => {
@@ -1546,11 +1658,19 @@ async function main() {
     treeCanvas?.focusNode(nodeId);
   });
 
-  document.getElementById('sidebar-nav')!.addEventListener('click', (e) => {
-    const btn = (e.target as HTMLElement).closest('button[data-view]') as HTMLElement | null;
-    if (!btn) return;
-    switchView(btn.dataset.view as NavView);
-  });
+  const bindViewNav = (el: Element | null) => {
+    el?.addEventListener('click', (e) => {
+      const btn = (e.target as HTMLElement).closest('button[data-view]') as HTMLElement | null;
+      if (!btn) return;
+      switchView(btn.dataset.view as NavView);
+    });
+  };
+  bindViewNav(document.getElementById('sidebar-nav'));
+  bindViewNav(document.getElementById('mobile-bottom-nav'));
+
+  mobileMenuBtn.addEventListener('click', () => setDrawerOpen(!drawerOpen));
+  drawerBackdrop.addEventListener('click', () => setDrawerOpen(false));
+  drawerCloseBtn.addEventListener('click', () => setDrawerOpen(false));
 
   document.getElementById('collapse-btn')!.addEventListener('click', () => {
     layoutEl.classList.toggle('sidebar-collapsed');
@@ -1571,14 +1691,11 @@ async function main() {
     savedBuilds = res.entries;
     updateSavedUiState();
     renderSavedBuilds();
-    const orig = saveBuildBtn.textContent;
-    saveBuildBtn.textContent = res.updated ? 'Updated!' : 'Saved!';
-    setTimeout(() => {
-      if (saveBuildBtn.textContent === 'Saved!' || saveBuildBtn.textContent === 'Updated!') {
-        updateSavedUiState();
-      } else {
-        saveBuildBtn.textContent = orig;
-      }
+    if (saveFlashTimer !== null) window.clearTimeout(saveFlashTimer);
+    setBtnIconAndLabel(saveBuildBtn, ICONS.check, res.updated ? 'Updated!' : 'Saved!');
+    saveFlashTimer = window.setTimeout(() => {
+      saveFlashTimer = null;
+      updateSavedUiState();
     }, 1200);
   }
 
@@ -1643,13 +1760,19 @@ async function main() {
     }
   });
 
+  let copyPobTimer: number | null = null;
   document.getElementById('copy-pob-btn')!.addEventListener('click', async (e) => {
     if (!currentBuild) return;
     const btn = e.currentTarget as HTMLButtonElement;
     await navigator.clipboard.writeText(currentBuild.pobCode);
-    const orig = btn.textContent;
-    btn.textContent = 'Copied!';
-    setTimeout(() => { btn.textContent = orig; }, 1500);
+    if (copyPobTimer !== null) window.clearTimeout(copyPobTimer);
+    setBtnIconAndLabel(btn, ICONS.check, 'Copied!', 'Copied');
+    btn.classList.add('is-copied');
+    copyPobTimer = window.setTimeout(() => {
+      copyPobTimer = null;
+      setBtnIconAndLabel(btn, ICONS.copy, 'Copy PoB Code', 'PoB');
+      btn.classList.remove('is-copied');
+    }, 1500);
   });
 
   document.getElementById('download-xml-btn')!.addEventListener('click', () => {
@@ -1795,11 +1918,14 @@ async function main() {
     }
   });
 
-  document.getElementById('reroll-btn')!.addEventListener('click', () => {
+  const triggerReroll = () => {
     commitAllTargetInputs();
     options.seed = randomSeed();
+    setDrawerOpen(false);
     void regenerate();
-  });
+  };
+  document.getElementById('reroll-btn')!.addEventListener('click', triggerReroll);
+  mobileRerollBtn.addEventListener('click', triggerReroll);
 
   syncTargetControls();
   await regenerate();

@@ -105,9 +105,9 @@ export class TreeCanvas {
     const controls = document.createElement('div');
     controls.className = 'tree-controls';
     controls.innerHTML = `
-      <button type="button" data-zoom="in" title="Zoom In">+</button>
-      <button type="button" data-zoom="out" title="Zoom Out">-</button>
-      <button type="button" data-zoom="fit" title="Center on Build">Fit</button>
+      <button type="button" data-zoom="in" title="Zoom In" aria-label="Zoom In"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
+      <button type="button" data-zoom="out" title="Zoom Out" aria-label="Zoom Out"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/></svg></button>
+      <button type="button" data-zoom="fit" title="Center on Build" aria-label="Center on Build"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg></button>
     `;
     container.appendChild(controls);
 
@@ -241,16 +241,20 @@ export class TreeCanvas {
     this.draw();
   }
 
-  private zoomBy(factor: number, clientX?: number, clientY?: number): void {
-    const rect = this.canvas.getBoundingClientRect();
-    const cx = clientX !== undefined ? clientX - rect.left : rect.width / 2;
-    const cy = clientY !== undefined ? clientY - rect.top : rect.height / 2;
-    const nextScale = Math.min(0.35, Math.max(0.02, this.scale * factor));
+  private zoomAt(nextScaleRaw: number, cx: number, cy: number): void {
+    const nextScale = Math.min(0.35, Math.max(0.02, nextScaleRaw));
     const ratio = nextScale / this.scale;
     this.offsetX = cx - (cx - this.offsetX) * ratio;
     this.offsetY = cy - (cy - this.offsetY) * ratio;
     this.scale = nextScale;
     this.draw();
+  }
+
+  private zoomBy(factor: number, clientX?: number, clientY?: number): void {
+    const rect = this.canvas.getBoundingClientRect();
+    const cx = clientX !== undefined ? clientX - rect.left : rect.width / 2;
+    const cy = clientY !== undefined ? clientY - rect.top : rect.height / 2;
+    this.zoomAt(this.scale * factor, cx, cy);
   }
 
   private attachEvents(): void {
@@ -292,12 +296,82 @@ export class TreeCanvas {
       },
       { passive: false },
     );
+
+    let touchPanStartX = 0;
+    let touchPanStartY = 0;
+    let touchDownX = 0;
+    let touchDownY = 0;
+    let touchMoved = false;
+    let pinchStartDist = 0;
+    let pinchStartScale = this.scale;
+
+    const touchDist = (a: Touch, b: Touch) =>
+      Math.hypot(b.clientX - a.clientX, b.clientY - a.clientY);
+
+    this.canvas.addEventListener(
+      'touchstart',
+      (e) => {
+        if (e.touches.length === 1) {
+          const t = e.touches[0];
+          touchDownX = t.clientX;
+          touchDownY = t.clientY;
+          touchPanStartX = t.clientX - this.offsetX;
+          touchPanStartY = t.clientY - this.offsetY;
+          touchMoved = false;
+          pinchStartDist = 0;
+        } else if (e.touches.length === 2) {
+          touchMoved = true;
+          pinchStartDist = touchDist(e.touches[0], e.touches[1]);
+          pinchStartScale = this.scale;
+        }
+      },
+      { passive: true },
+    );
+
+    this.canvas.addEventListener(
+      'touchmove',
+      (e) => {
+        e.preventDefault();
+        if (e.touches.length === 1 && pinchStartDist === 0) {
+          const t = e.touches[0];
+          if (Math.hypot(t.clientX - touchDownX, t.clientY - touchDownY) > 6) {
+            touchMoved = true;
+          }
+          this.offsetX = t.clientX - touchPanStartX;
+          this.offsetY = t.clientY - touchPanStartY;
+          this.tooltip.classList.add('hidden');
+          this.draw();
+        } else if (e.touches.length === 2) {
+          const d = touchDist(e.touches[0], e.touches[1]);
+          if (pinchStartDist > 0 && d > 0) {
+            const rect = this.canvas.getBoundingClientRect();
+            const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left;
+            const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top;
+            this.zoomAt(pinchStartScale * (d / pinchStartDist), midX, midY);
+            this.tooltip.classList.add('hidden');
+          }
+        }
+      },
+      { passive: false },
+    );
+
+    this.canvas.addEventListener('touchend', (e) => {
+      if (e.touches.length === 1) {
+        const t = e.touches[0];
+        touchPanStartX = t.clientX - this.offsetX;
+        touchPanStartY = t.clientY - this.offsetY;
+        pinchStartDist = 0;
+        return;
+      }
+      if (e.touches.length === 0 && !touchMoved && e.changedTouches.length > 0) {
+        const t = e.changedTouches[0];
+        this.inspectAtClientPoint(t.clientX, t.clientY);
+      }
+      pinchStartDist = 0;
+    });
   }
 
-  private handleHover(e: MouseEvent): void {
-    const rect = this.canvas.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
+  private findNodeAt(mx: number, my: number): number | null {
     const wx = (mx - this.offsetX) / this.scale;
     const wy = (my - this.offsetY) / this.scale;
     const hitDist = 180 / Math.max(0.03, Math.sqrt(this.scale * 20));
@@ -313,6 +387,14 @@ export class TreeCanvas {
         bestId = id;
       }
     }
+    return bestId;
+  }
+
+  private inspectAtClientPoint(clientX: number, clientY: number): void {
+    const rect = this.canvas.getBoundingClientRect();
+    const mx = clientX - rect.left;
+    const my = clientY - rect.top;
+    const bestId = this.findNodeAt(mx, my);
 
     if (bestId !== this.hoveredId) {
       this.hoveredId = bestId;
@@ -325,6 +407,10 @@ export class TreeCanvas {
     }
 
     this.showTooltip(bestId, mx, my, rect);
+  }
+
+  private handleHover(e: MouseEvent): void {
+    this.inspectAtClientPoint(e.clientX, e.clientY);
   }
 
   private showTooltip(nodeId: number, mx: number, my: number, rect: DOMRect): void {
@@ -351,8 +437,11 @@ export class TreeCanvas {
       ${statsHtml}
     `;
     this.tooltip.classList.remove('hidden');
-    const left = Math.min(rect.width - 280, Math.max(10, mx + 14));
-    const top = Math.min(rect.height - 140, Math.max(10, my + 14));
+    const tipRect = this.tooltip.getBoundingClientRect();
+    const maxW = tipRect.width || 240;
+    const maxH = tipRect.height || 120;
+    const left = Math.max(10, Math.min(rect.width - maxW - 10, mx + 14));
+    const top = Math.max(10, Math.min(rect.height - maxH - 10, my + 14));
     this.tooltip.style.left = `${left}px`;
     this.tooltip.style.top = `${top}px`;
   }
